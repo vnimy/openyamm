@@ -4255,6 +4255,76 @@ GameplayDialogController::Result GameplayDialogController::openNpcDialogue(
     return result;
 }
 
+bool GameplayDialogController::activateMm9ActorDialogue(
+    Context &context,
+    const Mm9ActorDialogueActivation &activation,
+    const std::function<void(size_t)> &presentPendingDialog,
+    const std::function<void()> &presentActiveDialog) const
+{
+    EventRuntimeState &eventRuntimeState = context.eventRuntimeState;
+    std::optional<uint16_t> entryEventId;
+
+    if (activation.sourceObjectIndex.has_value()
+        && activation.pLocalEventProgram != nullptr
+        && activation.pLocalEventProgram->has_value())
+    {
+        const std::optional<uint16_t> useEventId = mm9RudeUseEventIdForSourceObject(*activation.sourceObjectIndex);
+
+        if (useEventId.has_value() && (*activation.pLocalEventProgram)->hasEvent(*useEventId))
+        {
+            entryEventId = useEventId;
+        }
+    }
+
+    if (entryEventId.has_value())
+    {
+        EventRuntimeState::ActiveHookContext hookContext = {};
+        hookContext.actorIndex = activation.actorIndex;
+        const std::optional<EventRuntimeState::ActiveHookContext> previousHookContext =
+            eventRuntimeState.activeHookContext;
+        eventRuntimeState.activeHookContext = std::move(hookContext);
+        size_t previousMessageCount = eventRuntimeState.messages.size();
+        const bool executed = context.pWorldRuntime != nullptr
+            && context.pWorldRuntime->executeMapEvent(*entryEventId, previousMessageCount);
+        eventRuntimeState.activeHookContext = previousHookContext;
+
+        if (executed && eventRuntimeState.pendingDialogueContext.has_value())
+        {
+            presentPendingDialog(previousMessageCount);
+        }
+
+        const bool dialogActive = context.activeEventDialog.isActive
+            && context.activeEventDialog.presentation == EventDialogPresentation::Mm9Rude;
+        eventRuntimeState.lastActivationResult = executed
+            ? "MM9 SCR entry " + std::to_string(*entryEventId) + " executed"
+            : "MM9 SCR entry " + std::to_string(*entryEventId) + " failed";
+        GAMEPLAY_DEBUG_TRACE(
+            "mm9_scr_activation"
+            " event_id=" + std::to_string(*entryEventId)
+            + " runtime_actor=" + std::to_string(activation.actorIndex)
+            + " executed=" + std::string(executed ? "true" : "false")
+            + " dialog_active=" + std::string(dialogActive ? "true" : "false"));
+        return executed;
+    }
+
+    openMm9RudeDialogue(context, activation.rudeId, activation.actorIndex);
+    presentActiveDialog();
+
+    const bool dialogActive = context.activeEventDialog.isActive
+        && context.activeEventDialog.presentation == EventDialogPresentation::Mm9Rude;
+    GAMEPLAY_DEBUG_TRACE(
+        "mm9_rude_activation"
+        " rude_id=" + std::to_string(activation.rudeId)
+        + " runtime_actor=" + std::to_string(activation.actorIndex)
+        + " dialog_active=" + std::string(dialogActive ? "true" : "false")
+        + " title=\"" + context.activeEventDialog.title + "\""
+        + " actions=" + std::to_string(context.activeEventDialog.actions.size()));
+    eventRuntimeState.lastActivationResult = dialogActive
+        ? "MM9 RUDE " + std::to_string(activation.rudeId) + " engaged"
+        : "MM9 RUDE " + std::to_string(activation.rudeId) + " failed";
+    return dialogActive;
+}
+
 GameplayDialogController::Result GameplayDialogController::openMm9RudeDialogue(
     Context &context,
     uint32_t rudeId,

@@ -26,7 +26,6 @@ constexpr size_t ChestInventoryMatrixOffset = ChestItemsOffset + ChestItemsSize;
 constexpr size_t ActorNpcIdOffset = 0x20;
 constexpr size_t ActorAttributesOffset = 0x24;
 constexpr size_t ActorHpOffset = 0x28;
-constexpr size_t ActorHostilityTypeOffset = 0x2c;
 constexpr size_t ActorMonsterInfoIdOffset = 0x6a;
 constexpr size_t ActorMonsterIdOffset = 0x7c;
 constexpr size_t ActorRadiusOffset = 0x90;
@@ -105,6 +104,8 @@ bool parseActorVector(const ByteReader &reader, size_t offset, MapDeltaData &map
     for (uint32_t actorIndex = 0; actorIndex < actorCount; ++actorIndex)
     {
         const size_t actorOffset = actorDataOffset + static_cast<size_t>(actorIndex) * ActorRecordSize;
+        // hostilityType stays 0: the saved record holds a pointer at 0x2c and a snapshot of the monster table's Hst
+        // at 0x3d, neither authored. The runtime gives actors hostile to the party their Hst value.
         MapDeltaActor actor = {};
         actor.diagnosticSourceActorIndex = actorIndex;
         actor.name = reader.readFixedString(actorOffset, ActorNameSize);
@@ -113,7 +114,6 @@ bool parseActorVector(const ByteReader &reader, size_t offset, MapDeltaData &map
         if (!reader.readInt16(actorOffset + ActorNpcIdOffset, actor.npcId)
             || !reader.readUInt32(actorOffset + ActorAttributesOffset, actor.attributes)
             || !reader.readInt16(actorOffset + ActorHpOffset, hitPoints)
-            || !reader.readUInt8(actorOffset + ActorHostilityTypeOffset, actor.hostilityType)
             || !reader.readInt16(actorOffset + ActorMonsterInfoIdOffset, actor.monsterInfoId)
             || !reader.readInt16(actorOffset + ActorMonsterIdOffset, actor.monsterId)
             || !reader.readUInt16(actorOffset + ActorRadiusOffset, actor.radius)

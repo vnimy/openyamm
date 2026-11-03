@@ -418,6 +418,24 @@ settings:
   name: Blood splats
   type: toggle
   desc: Leave a pool of blood beneath slain creatures.
+- id: surface_materials
+  section: video
+  group: Experimental
+  name: Surface materials
+  type: toggle
+  desc: Walls, floors and doors show their relief, metal, glass and glowing windows. Takes effect on the next map.
+- id: surface_parallax
+  section: video
+  group: Experimental
+  name: Surface depth
+  type: toggle
+  desc: Nearby bricks, stones and carvings show their depth. Costs a little extra rendering.
+- id: surface_reflections
+  section: video
+  group: Experimental
+  name: Surface reflections
+  type: toggle
+  desc: Marble, glass, metal and puddles reflect the buildings around them. Needs surface materials.
 - id: sound_volume
   section: audio
   group: Volume

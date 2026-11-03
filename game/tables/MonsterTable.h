@@ -224,6 +224,11 @@ public:
         int lightResistance = 0;
         int darkResistance = 0;
         int physicalResistance = 0;
+        // The Special column's "explode,AdB+C,element" (MM8 Special 3: Gogs, Boulders, Light Elementals, Golems): it
+        // bursts when it dies (MonsterDeathExplosion.h).
+        bool explodesOnDeath = false;
+        DamageProfile deathExplosionDamage = {};
+        std::string deathExplosionType;
         std::string treasureDefinition;
         LootPrototype loot = {};
         uint16_t attackSoundId = 0;

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "game/render/SurfaceReflectionBinding.h"
 #include "game/render/SpriteAtlasCache.h"
 #include "game/render/NativeSpriteTextureCache.h"
 #include "game/render/TextureFiltering.h"
@@ -283,6 +284,8 @@ private:
         float secretPulse;
         // Layer of the face's texture in its size array (BModelTextureArray); 0 when the texture is not arrayed.
         float textureLayer;
+        // Layer of its surface material maps in the array's material arrays; -1 when the texture has none.
+        float materialLayer = -1.0f;
         float flowUPerSecond;
         float flowVPerSecond;
         float lavaFlow;
@@ -290,6 +293,9 @@ private:
         float lightmapU;
         float lightmapV;
         uint32_t staticColorAbgr;
+        // The face's texture gradients per world unit (surface materials; SurfaceTextureGradients.h).
+        std::array<float, 3> gradientU = {};
+        std::array<float, 3> gradientV = {};
 
         static void init();
 
@@ -327,6 +333,11 @@ private:
         std::vector<bgfx::TextureHandle> frameTextureHandles;
         int32_t arrayIndex = -1;
         uint16_t arrayLayer = 0;
+        // Surface material maps of a single-frame texture (devdocs/SURFACE_MATERIALS_PLAN.md): a layer of the size
+        // array's material arrays (-1: none), or 2D textures beside a 2D frame.
+        int32_t materialLayer = -1;
+        bgfx::TextureHandle materialNormal = BGFX_INVALID_HANDLE;
+        bgfx::TextureHandle materialDetail = BGFX_INVALID_HANDLE;
         // Physical size of the first frame's texture.
         uint16_t width = 0;
         uint16_t height = 0;
@@ -342,6 +353,9 @@ private:
         uint16_t width = 0;
         uint16_t height = 0;
         uint16_t layers = 0;
+        // The material maps of its layers that have them, in their own arrays (invalid when none has maps).
+        bgfx::TextureHandle materialNormal = BGFX_INVALID_HANDLE;
+        bgfx::TextureHandle materialDetail = BGFX_INVALID_HANDLE;
     };
 
     struct ResolvedBModelDrawGroup
@@ -734,6 +748,20 @@ private:
     bgfx::ProgramHandle m_outdoorBModelShadowProgramHandle = BGFX_INVALID_HANDLE;
     // The same programs sampling arrayed bmodel textures (per-vertex layer, or u_bmodelTextureLayer for one face).
     bgfx::ProgramHandle m_outdoorBModelLightmapArrayProgramHandle = BGFX_INVALID_HANDLE;
+    // Baked bmodel faces with surface material maps: 2D and array, without and with mesh-shadow receivers. Loaded
+    // only for a map whose textures came with their maps (m_surfaceMaterialMaps).
+    bool m_surfaceMaterialMaps = false;
+    bgfx::ProgramHandle m_outdoorBModelMaterialProgramHandle = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_outdoorBModelMaterialArrayProgramHandle = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_outdoorBModelMaterialShadowProgramHandle = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_outdoorBModelMaterialShadowArrayProgramHandle = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle m_surfaceNormalSamplerHandle = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle m_surfaceDetailSamplerHandle = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle m_surfaceMaterialUniformHandle = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle m_surfaceSunUniformHandle = BGFX_INVALID_HANDLE;
+    // How lit the windows are from inside (0 by day, 1 at night), from the game clock.
+    float m_surfaceNightGlow = 0.0f;
+    SurfaceReflectionBinding m_surfaceReflectionBinding;
     bgfx::ProgramHandle m_outdoorBModelShadowArrayProgramHandle = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_outdoorTexturedFogArrayProgramHandle = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_outdoorTexturedFogShadowArrayProgramHandle = BGFX_INVALID_HANDLE;

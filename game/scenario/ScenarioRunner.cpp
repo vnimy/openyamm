@@ -7994,6 +7994,14 @@ bool assertActorVisible(
         success = false;
     }
 
+    // hidden: the actor is invisible (a script removed or hid it), or shown.
+    if (actorNode["hidden"] && actorNode["hidden"].IsScalar()
+        && (!hasRuntimeState || runtimeState.isInvisible != actorNode["hidden"].as<bool>()))
+    {
+        failures.push_back(stepLocation(step) + ": actor_visible hidden state mismatch");
+        success = false;
+    }
+
     const auto checkRuntimeField = [&](const char *pKey, const std::string &actual)
     {
         const YAML::Node expected = actorNode[pKey];

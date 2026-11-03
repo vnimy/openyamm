@@ -5044,6 +5044,61 @@ std::string EditorDocument::serializeIndoorScene(
         emitter << YAML::EndSeq;
     }
 
+    if (!sceneData.translucentFaces.empty())
+    {
+        emitter << YAML::Key << "translucent_faces" << YAML::Value << YAML::BeginSeq;
+
+        for (const Game::IndoorSceneTranslucentFaces &entry : sceneData.translucentFaces)
+        {
+            emitter << YAML::BeginMap;
+            emitter << YAML::Key << "faces" << YAML::Value << YAML::Flow << entry.faceIds;
+            emitter << YAML::Key << "opacity" << YAML::Value << entry.translucency.opacity;
+            emitter << YAML::Key << "tint" << YAML::Value << YAML::Flow << YAML::BeginSeq
+                    << entry.translucency.tint[0] << entry.translucency.tint[1] << entry.translucency.tint[2]
+                    << YAML::EndSeq;
+            emitter << YAML::Key << "two_sided" << YAML::Value << entry.translucency.twoSided;
+            emitter << YAML::EndMap;
+        }
+
+        emitter << YAML::EndSeq;
+    }
+
+    if (sceneData.fog.enabled)
+    {
+        emitter << YAML::Key << "fog" << YAML::Value << YAML::BeginMap;
+        emitter << YAML::Key << "color_rgb" << YAML::Value << YAML::Flow << YAML::BeginSeq
+                << sceneData.fog.color[0] * 255.0f << sceneData.fog.color[1] * 255.0f
+                << sceneData.fog.color[2] * 255.0f << YAML::EndSeq;
+        emitter << YAML::Key << "near_distance" << YAML::Value << sceneData.fog.nearDistance;
+        emitter << YAML::Key << "far_distance" << YAML::Value << sceneData.fog.farDistance;
+        emitter << YAML::EndMap;
+    }
+
+    if (!sceneData.ladders.empty())
+    {
+        const auto emitFloatTriple = [&emitter](const char *pKey, const std::array<float, 3> &value)
+        {
+            emitter << YAML::Key << pKey << YAML::Value << YAML::Flow << YAML::BeginSeq
+                    << value[0] << value[1] << value[2] << YAML::EndSeq;
+        };
+        emitter << YAML::Key << "ladders" << YAML::Value << YAML::BeginSeq;
+
+        for (const Game::IndoorLadder &ladder : sceneData.ladders)
+        {
+            emitter << YAML::BeginMap;
+            emitter << YAML::Key << "id" << YAML::Value << ladder.id;
+            emitFloatTriple("bottom", ladder.bottom);
+            emitFloatTriple("top", ladder.top);
+            emitter << YAML::Key << "facing_degrees" << YAML::Value << ladder.facingDegrees;
+            emitter << YAML::Key << "width" << YAML::Value << ladder.width;
+            emitter << YAML::Key << "reach" << YAML::Value << ladder.reach;
+            emitFloatTriple("top_exit", ladder.topExit);
+            emitter << YAML::EndMap;
+        }
+
+        emitter << YAML::EndSeq;
+    }
+
     emitter << YAML::Key << "initial_state" << YAML::Value << YAML::BeginMap;
     emitter << YAML::Key << "location" << YAML::Value << YAML::BeginMap;
     emitter << YAML::Key << "respawn_count" << YAML::Value << sceneData.initialState.locationInfo.respawnCount;
@@ -5211,6 +5266,34 @@ std::string EditorDocument::serializeIndoorScene(
         emitSequence(emitter, door.door.yOffsets);
         emitter << YAML::Key << "z_offsets" << YAML::Value;
         emitSequence(emitter, door.door.zOffsets);
+
+        if (door.mover)
+        {
+            const Game::IndoorMoverDefinition &mover = *door.mover;
+            const char *const pBodies[] = {"ignore", "hold", "reverse", "push"};
+            emitter << YAML::Key << "mover" << YAML::Value << YAML::BeginMap;
+
+            if (mover.rotation)
+            {
+                const Game::IndoorMoverRotation &rotation = *mover.rotation;
+                emitter << YAML::Key << "rotation" << YAML::Value << YAML::BeginMap;
+                emitter << YAML::Key << "pivot" << YAML::Value << YAML::Flow << YAML::BeginSeq
+                        << rotation.pivot[0] << rotation.pivot[1] << rotation.pivot[2] << YAML::EndSeq;
+                emitter << YAML::Key << "axis" << YAML::Value << YAML::Flow << YAML::BeginSeq
+                        << rotation.axis[0] << rotation.axis[1] << rotation.axis[2] << YAML::EndSeq;
+                emitter << YAML::Key << "open_degrees" << YAML::Value << rotation.openDegrees;
+                emitter << YAML::Key << "open_away" << YAML::Value << rotation.openAway;
+                emitter << YAML::EndMap;
+            }
+
+            emitter << YAML::Key << "easing" << YAML::Value
+                    << (mover.easing == Game::IndoorMoverEasing::Sine ? "sine" : "linear");
+            emitter << YAML::Key << "bodies" << YAML::Value << pBodies[static_cast<size_t>(mover.bodies)];
+            emitter << YAML::Key << "carry" << YAML::Value << mover.carry;
+            emitter << YAML::Key << "auto_close_seconds" << YAML::Value << mover.autoCloseSeconds;
+            emitter << YAML::EndMap;
+        }
+
         emitter << YAML::EndMap;
     }
 

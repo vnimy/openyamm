@@ -22,7 +22,7 @@ namespace OpenYAMM::Game
 {
 namespace
 {
-constexpr uint32_t SaveVersion = 140;
+constexpr uint32_t SaveVersion = 142;
 constexpr uint32_t SaveVersionAttackSpell = 19;
 constexpr uint32_t SaveVersionIndoorCorpseViews = 21;
 constexpr uint32_t SaveVersionIndoorChestViews = 22;
@@ -206,6 +206,11 @@ constexpr uint32_t SaveVersionActorAngeredByParty = 138;
 constexpr uint32_t SaveVersionBloodSplatsWithoutGeometry = 139;
 // The Load and Save screens' summary (GameSaveSummary) leads the save behind its size; a save list reads only that.
 constexpr uint32_t SaveVersionSummaryFirst = 140;
+// History pages are numbered as in the history tables; MMerge events recorded them two pages late before
+// (LegacyLuaExport read MM8's History variables with MM7's numbering).
+constexpr uint32_t SaveVersionHistoryNumbering = 141;
+// Outdoor actors keep MM's Nearby attribute (MapActorState::nearby) for Wizard Eye.
+constexpr uint32_t SaveVersionOutdoorNearby = 142;
 constexpr char SaveMagic[8] = {'O', 'Y', 'S', 'A', 'V', 'E', '1', '\0'};
 
 std::string toLowerCopy(const std::string &value)
@@ -3691,6 +3696,7 @@ void writeValue(BinaryWriter &writer, const OutdoorWorldRuntime::MapActorState &
     writeValue(writer, value.provokedAttackReach);
     writeValue(writer, value.dormant);
     writeValue(writer, value.angeredByParty);
+    writeValue(writer, value.nearby);
 }
 
 bool readValue(BinaryReader &reader, OutdoorWorldRuntime::MapActorState &value)
@@ -3850,7 +3856,8 @@ bool readValue(BinaryReader &reader, OutdoorWorldRuntime::MapActorState &value)
         && (reader.version() < SaveVersionOutdoorProvokedActors || readValue(reader, value.provokedByParty))
         && (reader.version() < SaveVersionOutdoorProvokedAttackReach || readValue(reader, value.provokedAttackReach))
         && (reader.version() < SaveVersionActorDormant || readValue(reader, value.dormant))
-        && (reader.version() < SaveVersionActorAngeredByParty || readValue(reader, value.angeredByParty));
+        && (reader.version() < SaveVersionActorAngeredByParty || readValue(reader, value.angeredByParty))
+        && (reader.version() < SaveVersionOutdoorNearby || readValue(reader, value.nearby));
 }
 
 void writeValue(BinaryWriter &writer, const OutdoorWorldRuntime::ChestItemState &value)
@@ -5054,6 +5061,65 @@ void migrateLegacyMapHistory(GameSaveData &data, uint32_t sourceSaveVersion)
     }
 }
 
+// Older events recorded every history page two pages late. Pages 1 and 2 are the forward pages, which no event recorded
+// late, so only pages from 3 move.
+void migrateLegacyHistoryNumbering(GameSaveData &data, uint32_t sourceSaveVersion)
+{
+    if (sourceSaveVersion >= SaveVersionHistoryNumbering)
+    {
+        return;
+    }
+
+    constexpr uint32_t HistoryPageShift = 2;
+    const auto renumber = [](std::unordered_map<uint32_t, int32_t> &historyTimes)
+    {
+        std::unordered_map<uint32_t, int32_t> renumbered;
+
+        for (const auto &[historyId, gameMinutes] : historyTimes)
+        {
+            const uint32_t correctedId = historyId > HistoryPageShift ? historyId - HistoryPageShift : historyId;
+            const auto [iterator, inserted] = renumbered.try_emplace(correctedId, gameMinutes);
+
+            if (!inserted)
+            {
+                iterator->second = std::min(iterator->second, gameMinutes);
+            }
+        }
+
+        historyTimes = std::move(renumbered);
+    };
+    const auto renumberState = [&renumber](std::optional<EventRuntimeState> &state)
+    {
+        if (!state)
+        {
+            return;
+        }
+
+        renumber(state->historyEventTimes);
+
+        for (auto &[continentId, historyTimes] : state->historyEventTimesByContinent)
+        {
+            renumber(historyTimes);
+        }
+    };
+
+    for (auto &[continentId, historyTimes] : data.party.historyEventTimesByContinent)
+    {
+        renumber(historyTimes);
+    }
+
+    renumberState(data.outdoorWorld.eventRuntimeState);
+    renumberState(data.indoorScene.eventRuntimeState);
+    for (auto &[mapFileName, snapshot] : data.outdoorWorldStates)
+    {
+        renumberState(snapshot.eventRuntimeState);
+    }
+    for (auto &[mapFileName, snapshot] : data.indoorSceneStates)
+    {
+        renumberState(snapshot.eventRuntimeState);
+    }
+}
+
 void migrateLegacyMapJournalNotes(GameSaveData &data, uint32_t sourceSaveVersion)
 {
     if (sourceSaveVersion >= SaveVersionPartyJournalMapNotes)
@@ -5402,6 +5468,7 @@ std::optional<GameSaveData> loadGameDataFromPath(const std::filesystem::path &pa
     migrateLegacyNpcRosters(data);
     migrateLegacyMapAutonotes(data, version);
     migrateLegacyMapHistory(data, version);
+    migrateLegacyHistoryNumbering(data, version);
     migrateLegacyMapJournalNotes(data, version);
     markLegacyCampFireDecorVars(data, version);
     data.sourceSaveVersion = version;

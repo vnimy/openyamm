@@ -1,4 +1,5 @@
 #include "game/indoor/IndoorMovementController.h"
+#include "game/indoor/IndoorMovers.h"
 
 #include "game/FaceEnums.h"
 #include "game/indoor/IndoorCollisionPrimitives.h"
@@ -460,6 +461,25 @@ float resolveDoorDistance(
     return runtimeMechanism.currentDistance;
 }
 
+int8_t resolveDoorRotationDirection(
+    const MapDeltaDoor &door,
+    const std::optional<EventRuntimeState> *pEventRuntimeState
+)
+{
+    if (pEventRuntimeState != nullptr && pEventRuntimeState->has_value())
+    {
+        const std::unordered_map<uint32_t, RuntimeMechanismState>::const_iterator iterator =
+            (*pEventRuntimeState)->mechanisms.find(door.doorId);
+
+        if (iterator != (*pEventRuntimeState)->mechanisms.end())
+        {
+            return iterator->second.rotationDirection;
+        }
+    }
+
+    return 1;
+}
+
 IndoorSweptBody buildPrimitiveSweptBody(
     float x,
     float y,
@@ -620,7 +640,12 @@ void IndoorMovementController::applyMechanismGeometryUpdate(const std::vector<ui
 
         const MapDeltaDoor &door = *doorIterator;
         const float distance = resolveDoorDistance(door, m_pEventRuntimeState);
-        applyIndoorMechanismDoorToVertices(door, distance, m_runtimeGeometryCache.vertices);
+        applyIndoorMechanismDoorToVertices(
+            door,
+            findIndoorMoverDefinition(*m_pIndoorMapData, door.doorId),
+            distance,
+            resolveDoorRotationDirection(door, m_pEventRuntimeState),
+            m_runtimeGeometryCache.vertices);
 
         for (uint16_t faceId : door.faceIds)
         {
@@ -687,7 +712,11 @@ void IndoorMovementController::refreshRuntimeGeometryCache() const
 
         for (const MapDeltaDoor &door : pMapDeltaData->doors)
         {
-            if (!indoorDoorCarriesPartySupport(door))
+            // A carrying rotating mover's faces all may be floors at some point of its swing (the sampler checks).
+            const IndoorMoverDefinition *pMover = findIndoorMoverDefinition(*m_pIndoorMapData, door.doorId);
+            const bool rotatingCarrier = pMover != nullptr && pMover->carry && pMover->rotation;
+
+            if (!indoorDoorCarriesPartySupport(door) && !rotatingCarrier)
             {
                 continue;
             }
@@ -706,7 +735,8 @@ void IndoorMovementController::refreshRuntimeGeometryCache() const
                         m_runtimeGeometryCache.vertices,
                         faceId);
 
-                if (pGeometry != nullptr && pGeometry->kind == IndoorFaceKind::Floor && pGeometry->isWalkable)
+                if (pGeometry != nullptr
+                    && (rotatingCarrier || (pGeometry->kind == IndoorFaceKind::Floor && pGeometry->isWalkable)))
                 {
                     m_runtimeGeometryCache.mechanismSupportFaceIds.push_back(faceId);
 
@@ -2067,6 +2097,38 @@ IndoorMoveState IndoorMovementController::resolveMoveSingleStep(
             pDebugInfo->invalidEyeSectorId = debugEyeSectorId.value_or(int16_t(-1));
         };
 
+        // A floor of the current sector at (x, y), too high to step onto and within `reach` above that: the rising
+        // part of a steep cave slope, which floor samples skip.
+        const auto sampleSectorFloorOverhead = [&](float x, float y, float reach) -> IndoorFloorSample
+        {
+            if (flying || state.sectorId < 0 || static_cast<size_t>(state.sectorId) >= m_pIndoorMapData->sectors.size())
+            {
+                return {};
+            }
+
+            for (uint16_t faceId : m_pIndoorMapData->sectors[state.sectorId].floorFaceIds)
+            {
+                const IndoorFloorSample sample = sampleIndoorFloorOnFace(
+                    *m_pIndoorMapData,
+                    vertices,
+                    faceId,
+                    x,
+                    y,
+                    positionFootZ + MaximumRise,
+                    reach,
+                    0.0f,
+                    &supportFaceMask,
+                    &geometryCache);
+
+                if (sample.hasFloor && sample.height > positionFootZ + MaximumRise)
+                {
+                    return sample;
+                }
+            }
+
+            return {};
+        };
+
         if (guardGroundActorAgainstLedgeDrop && floorDropsBelowActorLedgeGuard(floor))
         {
             recordInvalidPosition(
@@ -2110,15 +2172,31 @@ IndoorMoveState IndoorMovementController::resolveMoveSingleStep(
                 return false;
             }
 
-            // A coplanar face ahead changes no height; keeping the face under the centre stops the support face
-            // flickering across tile seams, where it would toggle pressure plates every step.
+            // The probe ahead can reach under a steep cave slope of this room and find another room's floor far below,
+            // which would drop the body into that room.
+            const auto probeReachedUnderSectorFloor = [&]()
+            {
+                constexpr float AnyHeight = 8192.0f;
+                const float middleX = (candidateX + probeX) * 0.5f;
+                const float middleY = (candidateY + probeY) * 0.5f;
+                return leadingFootprintFloor.sectorId != state.sectorId
+                    && leadingFootprintFloor.height < floor.height - MaximumDrop
+                    && (sampleSectorFloorOverhead(candidateX, candidateY, AnyHeight).hasFloor
+                        || sampleSectorFloorOverhead(middleX, middleY, AnyHeight).hasFloor
+                        || sampleSectorFloorOverhead(probeX, probeY, AnyHeight).hasFloor);
+            };
+
+            // A face ahead at another height is stepped onto early. A coplanar one changes no height; keeping the face
+            // under the centre stops the support face flickering across tile seams, where it would toggle pressure
+            // plates every step.
             if (floor.hasFloor
                 && floor.faceIndex == state.supportFaceIndex
                 && leadingFootprintFloor.hasFloor
                 && leadingFootprintFloor.faceIndex != floor.faceIndex
                 && std::abs(leadingFootprintFloor.height - floor.height) > CoplanarFloorHeightTolerance
                 && !floorTooSteepForUphillStep(leadingFootprintFloor, state.footZ)
-                && leadingFootprintFloor.height <= state.footZ + MaximumStepUpFromCurrentFootZ)
+                && leadingFootprintFloor.height <= state.footZ + MaximumStepUpFromCurrentFootZ
+                && !probeReachedUnderSectorFloor())
             {
                 floor = leadingFootprintFloor;
             }
@@ -2185,6 +2263,26 @@ IndoorMoveState IndoorMovementController::resolveMoveSingleStep(
                 std::nullopt,
                 positionFootZ);
             return false;
+        }
+
+        // The floor sample skipped a slope of the current room and took another room's floor far below: the body
+        // would stand inside the slope.
+        if (floor.hasFloor && floor.sectorId != state.sectorId && floor.height < positionFootZ - MaximumDrop)
+        {
+            const IndoorFloorSample embeddingFloor =
+                sampleSectorFloorOverhead(candidateX, candidateY, body.height - MaximumRise);
+
+            if (embeddingFloor.hasFloor)
+            {
+                recordInvalidPosition(
+                    IndoorMoveInvalidPositionReason::StepUpTooHigh,
+                    embeddingFloor,
+                    leadingFootprintFloor,
+                    nullptr,
+                    std::nullopt,
+                    positionFootZ);
+                return false;
+            }
         }
 
         if (floor.hasFloor

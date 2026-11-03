@@ -664,6 +664,11 @@ public:
         return GameplayWorldPoint{partyX() + 1024.0f, partyY(), partyFootZ()};
     }
     virtual bool isIndoorMap() const = 0;
+    // The party is on a ladder (the flight arrows then climb it).
+    virtual bool partyClimbingLadder() const
+    {
+        return false;
+    }
     virtual bool isUnderwaterMap() const
     {
         return false;

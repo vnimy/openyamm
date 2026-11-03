@@ -13,6 +13,7 @@ add_library(openyamm_game STATIC
     render/CinematicGrading.cpp
     render/WaterRenderer.cpp
     render/ShieldDomeRenderer.cpp
+    render/SurfaceReflectionBinding.cpp
     render/WeatherRenderer.cpp
     render/SkyPresets.cpp
     render/SkyState.cpp
@@ -74,6 +75,7 @@ add_library(openyamm_game STATIC
     gameplay/GameplayController.cpp
     gameplay/CorpseLootRuntime.cpp
     gameplay/GameplayLootFilter.cpp
+    gameplay/MonsterDeathExplosion.cpp
     gameplay/ChestRuntime.cpp
     gameplay/BountyHuntRuntime.cpp
     gameplay/ArenaRuntime.cpp
@@ -130,6 +132,7 @@ add_library(openyamm_game STATIC
     audio/HouseVideoPlayer.cpp
     content/ContentManifest.cpp
     content/ContentTableComposer.cpp
+    content/WorldDecorations.cpp
     content/RulesetDefinition.cpp
     content/RulesetOptions.cpp
     items/InventoryItemUseRuntime.cpp
@@ -168,6 +171,7 @@ add_library(openyamm_game STATIC
     indoor/IndoorGameView.cpp
     indoor/IndoorCollisionPrimitives.cpp
     indoor/IndoorGeometryUtils.cpp
+    indoor/IndoorMovers.cpp
     indoor/IndoorLightingRuntime.cpp
     indoor/IndoorMapData.cpp
     indoor/IndoorMovementController.cpp
@@ -251,6 +255,10 @@ add_library(openyamm_game STATIC
     outdoor/OutdoorInteractionController.cpp
     outdoor/OutdoorLightingRuntime.cpp
     outdoor/OutdoorLightingData.cpp
+    render/lighting/BakedLightingFormat.cpp
+    indoor/IndoorBakedLighting.cpp
+    indoor/IndoorBakeSceneExport.cpp
+    render/IndoorStaticLighting.cpp
     outdoor/OutdoorMapData.cpp
     outdoor/OutdoorNavigationData.cpp
     outdoor/OutdoorRenderData.cpp

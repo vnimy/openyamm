@@ -2,6 +2,7 @@
 
 #include <deque>
 
+#include "game/render/SurfaceReflectionBinding.h"
 #include "game/render/SpriteAtlasCache.h"
 #include "game/render/NativeSpriteTextureCache.h"
 
@@ -177,6 +178,10 @@ private:
     float viewYawRadians() const;
     float viewPitchRadians() const;
     void setBillboardFogColor(const float *pFogColor);
+    // The billboard fog uniforms: the map's fog, or the constants every map without one has always passed.
+    void setBillboardFog();
+    // The face and blood splat fog uniforms, for the fog programs.
+    void setFaceFog();
     struct TerrainVertex
     {
         float x;
@@ -205,7 +210,17 @@ private:
         float lavaFlow;
         float fluidFlow;
         uint32_t bakedLightAbgr;
+        // The face's texture gradients per world unit (surface materials; SurfaceTextureGradients.h).
+        std::array<float, 3> gradientU = {};
+        std::array<float, 3> gradientV = {};
 
+        static void init();
+        static bgfx::VertexLayout ms_layout;
+    };
+
+    // The second vertex stream of a lightmapped batch: each vertex's coordinate on its lightmap page.
+    struct LightmapUvVertex
+    {
         static void init();
         static bgfx::VertexLayout ms_layout;
     };
@@ -270,6 +285,10 @@ private:
         std::vector<bgfx::TextureHandle> frameTextureHandles;
         std::vector<uint32_t> frameLengthTicks;
         uint32_t animationLengthTicks = 0;
+        // Surface material maps of a single-frame texture (devdocs/SURFACE_MATERIALS_PLAN.md), owned by its
+        // IndoorTextureHandle; invalid when it has none.
+        bgfx::TextureHandle materialNormal = BGFX_INVALID_HANDLE;
+        bgfx::TextureHandle materialDetail = BGFX_INVALID_HANDLE;
         int textureWidth = 0;
         int textureHeight = 0;
         uint32_t vertexCapacity = 0;
@@ -280,6 +299,16 @@ private:
         bool hasBounds = false;
         uint32_t waterColorAbgr = 0;
         LiquidKind liquid = LiquidKind::None;
+        // A batch of lightmapped faces (devdocs/INDOOR_BAKED_LIGHTING.md): its page of the map's baked lighting and
+        // each vertex's coordinate on it (a second vertex stream); -1 and invalid for vertex-lit faces.
+        int32_t lightmapPage = -1;
+        bgfx::VertexBufferHandle lightmapUvBufferHandle = BGFX_INVALID_HANDLE;
+        std::vector<std::array<float, 2>> lightmapUvs;
+        // A translucent face (IndoorMapData::translucentFaces, devdocs/INDOOR_TRANSLUCENT_FACES.md): one face per
+        // batch, drawn back to front after the opaque scene; its plane normal decides a single-sided face's side.
+        bool translucent = false;
+        IndoorFaceTranslucency translucency = {};
+        std::array<float, 3> faceNormal = {0.0f, 0.0f, 0.0f};
         std::vector<TexturedVertex> vertices;
         std::vector<uint32_t> indices;
     };
@@ -288,6 +317,9 @@ private:
     {
         std::string textureName;
         bgfx::TextureHandle textureHandle = BGFX_INVALID_HANDLE;
+        // Its surface material maps, when it has them.
+        bgfx::TextureHandle materialNormal = BGFX_INVALID_HANDLE;
+        bgfx::TextureHandle materialDetail = BGFX_INVALID_HANDLE;
     };
 
     using BillboardTextureHandle = SpriteBillboardTexture;
@@ -392,6 +424,7 @@ private:
         std::span<const TexturedFaceTriangle> triangleTemplate = {},
         std::span<const IndoorLightReachList> sourceReach = {}
     );
+    void destroyBakedLightingResources();
     static TexturedVertex interpolateTexturedVertex(const TexturedVertex &first, const TexturedVertex &second);
     // The vertex's baked light: the receiving room's ambient plus its static lights.
     static void refreshBakedStaticLight(
@@ -515,7 +548,7 @@ private:
     void renderBloodSplats(
         uint16_t viewId,
         const IndoorDrawLightSet &lightSet);
-    const bgfx::TextureHandle *findIndoorTextureHandle(const std::string &textureName) const;
+    const IndoorTextureHandle *findIndoorTextureHandle(const std::string &textureName) const;
     static BillboardTextureLookupKey makeBillboardTextureLookupKey(
         const std::string &textureName,
         int16_t paletteId);
@@ -542,6 +575,9 @@ private:
     bool submitTexturedBatch(const TexturedBatch &batch, uint16_t viewId, const IndoorDrawLightSet &lights,
         const Engine::LightGridTextures *pLightGrid, const bx::Vec3 &eye, float yaw, float pitch, int width,
         int height, bool secretFacesDetected, const std::array<float, 4> &clipPlane, float projectionScale = 1.0f);
+    // The visible translucent batches, back to front, blended over the finished opaque scene.
+    void renderTranslucentFaces(uint16_t viewId, const bx::Vec3 &eye, const std::vector<uint8_t> &visibleSectorMask,
+        int width, int height, bool secretFacesDetected);
     void renderWaterReflections(const bx::Vec3 &forward,
         const IndoorLightingFrameInput &lightingInput, int width, int height, bool billboards);
 
@@ -730,6 +766,34 @@ private:
     bgfx::ProgramHandle m_texturedProgramHandle;
     bgfx::ProgramHandle m_hudTintedProgramHandle;
     bgfx::ProgramHandle m_indoorLitProgramHandle;
+    // Faces whose textures have surface material maps, with the samplers and uniforms of those maps, and the
+    // frame's video settings for them.
+    bgfx::ProgramHandle m_indoorLitMaterialProgramHandle = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle m_surfaceNormalSamplerHandle = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle m_surfaceDetailSamplerHandle = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle m_surfaceMaterialUniformHandle = BGFX_INVALID_HANDLE;
+    bool m_surfaceMaterialsEnabled = false;
+    bool m_surfaceParallaxEnabled = false;
+    bool m_surfaceReflectionsEnabled = false;
+    SurfaceReflectionBinding m_surfaceReflectionBinding;
+    // Baked lighting (IndoorMapData::bakedLighting): its programs, lightmap pages and whether the batches use it
+    // (`[video] lightmaps`; switching it rebuilds the batches once).
+    bgfx::ProgramHandle m_indoorBakedProgramHandle = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_indoorBakedMaterialProgramHandle = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle m_lightmapSamplerHandle = BGFX_INVALID_HANDLE;
+    std::vector<bgfx::TextureHandle> m_lightmapTextureHandles;
+    bool m_bakedLightingActive = false;
+    // Translucent faces (IndoorMapData::translucentFaces): their programs (vertex-lit and baked) and the tint/opacity
+    // uniform, created only for a map that has such faces.
+    bgfx::ProgramHandle m_indoorTranslucentProgramHandle = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_indoorBakedTranslucentProgramHandle = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle m_indoorTranslucencyUniformHandle = BGFX_INVALID_HANDLE;
+    // Scene fog (IndoorMapData::fog, devdocs/INDOOR_FOG.md) and, only for a map that has it, the fog variants of the
+    // face programs: vertex-lit plain, materials, translucent, then baked plain, materials, translucent.
+    IndoorFog m_fog;
+    std::array<bgfx::ProgramHandle, 6> m_indoorFogProgramHandles = {{
+        BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE,
+        BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE}};
     bgfx::ProgramHandle m_billboardProgramHandle;
     bgfx::VertexBufferHandle m_bloodSplatVertexBufferHandle;
     bgfx::TextureHandle m_bloodSplatTextureHandle;

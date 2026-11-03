@@ -23,10 +23,13 @@ add_executable(openyamm-editor
     ${CMAKE_SOURCE_DIR}/game/data/ActorNameResolver.cpp
     ${CMAKE_SOURCE_DIR}/game/SpawnPreview.cpp
     ${CMAKE_SOURCE_DIR}/game/indoor/IndoorGeometryUtils.cpp
+    ${CMAKE_SOURCE_DIR}/game/indoor/IndoorMovers.cpp
     ${CMAKE_SOURCE_DIR}/game/indoor/IndoorMapData.cpp
     ${CMAKE_SOURCE_DIR}/game/indoor/IndoorPortalGraph.cpp
     ${CMAKE_SOURCE_DIR}/game/outdoor/OutdoorMapData.cpp
     ${CMAKE_SOURCE_DIR}/game/outdoor/OutdoorGeometryUtils.cpp
+    ${CMAKE_SOURCE_DIR}/game/content/ContentManifest.cpp
+    ${CMAKE_SOURCE_DIR}/game/content/WorldDecorations.cpp
     ${CMAKE_SOURCE_DIR}/game/events/ScriptedEventProgram.cpp
     ${CMAKE_SOURCE_DIR}/game/maps/IndoorSceneYml.cpp
     ${CMAKE_SOURCE_DIR}/game/maps/MapDeltaData.cpp

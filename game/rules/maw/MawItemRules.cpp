@@ -1902,6 +1902,11 @@ std::string MawItemRules::enchantDescription(
     return ItemEnchantRuntime::buildEnchantDescription(special, pStandardTable, pSpecialTable);
 }
 
+bool MawItemRules::glowsItemRarity() const
+{
+    return true;
+}
+
 std::optional<uint32_t> MawItemRules::nameColor(const InventoryItem &item) const
 {
     switch (MawRarity(item.rulesetFields.lootRarity))
@@ -2022,6 +2027,15 @@ std::vector<ItemInspectLine> MawItemRules::inspectLines(
         if (pArtifact->attackDelayMultiplier < 1)
         {
             lines.push_back({UiText::translate("Swift"), 0x96c8ff});
+        }
+
+        // Who may wear it (artifactWearReq), red when the viewer may not.
+        if (const std::optional<std::string> requirement = ItemRuntime::wearRequirementText(itemDefinition))
+        {
+            const bool barred = pViewer != nullptr
+                && (!ItemRuntime::characterMeetsClassRestriction(*pViewer, itemDefinition)
+                    || !ItemRuntime::characterMeetsRaceRestriction(*pViewer, itemDefinition));
+            lines.push_back({*requirement, barred ? 0xff3232u : 0xffbe5au});
         }
 
         lines.push_back({UiText::translate("Artifact level: ") + std::to_string(int(mawRound(m_rules.state().totalLevel()))), 0x78f0ff});

@@ -132,7 +132,7 @@ struct PreviewQuestKeys
 
 void previewRowEffects(const Mm9RudeRow &row, PreviewQuestKeys &keys)
 {
-    if (row.next < -1)
+    if (!mm9RudeRowAppliesQuestKeys(row))
     {
         return;
     }
@@ -193,7 +193,7 @@ std::string previewSignature(int32_t nodeId, const PreviewQuestKeys &keys, const
 bool rowIsReachable(uint32_t rudeId, size_t targetRowIndex, const Party &party, const Mm9RudeDialogueTable &table)
 {
     const std::vector<Mm9RudeRow> &rows = table.rows(rudeId);
-    if (targetRowIndex >= rows.size() || rows[targetRowIndex].next < -1)
+    if (targetRowIndex >= rows.size() || !mm9RudeRowAppliesQuestKeys(rows[targetRowIndex]))
     {
         return false;
     }

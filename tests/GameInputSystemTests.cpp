@@ -116,6 +116,36 @@ TEST_CASE("game input discards queued taps when input is blocked or a screen sup
         CHECK_FALSE(inputSystem.frame().leftMouseButton.released);
     }
 }
+
+TEST_CASE("game input turns the camera by the mouse's motion events only")
+{
+    // A compositor that cannot warp the pointer (Wayland) later reports where it really is; SDL adds that jump to
+    // its relative mouse state though no motion event carries it. Mouse look takes the motion events alone.
+    GameInputSystem inputSystem;
+    GameSettings settings = {};
+    SDL_Event motion = {};
+    motion.type = SDL_EVENT_MOUSE_MOTION;
+    motion.motion.xrel = 3.0f;
+    motion.motion.yrel = -2.0f;
+    inputSystem.handleSdlEvent(motion);
+    inputSystem.handleSdlEvent(motion);
+
+    inputSystem.updateFromEngineInput(640, 480, 0.0f, settings);
+    CHECK(inputSystem.frame().relativeMouseX == 6.0f);
+    CHECK(inputSystem.frame().relativeMouseY == -4.0f);
+
+    inputSystem.updateFromEngineInput(640, 480, 0.0f, settings);
+    CHECK(inputSystem.frame().relativeMouseX == 0.0f);
+    CHECK(inputSystem.frame().relativeMouseY == 0.0f);
+
+    // Entering or leaving mouse look drops the motion made before it.
+    inputSystem.handleSdlEvent(motion);
+    inputSystem.resetRelativeMouseMotion();
+    inputSystem.updateFromEngineInput(640, 480, 0.0f, settings);
+    CHECK(inputSystem.frame().relativeMouseX == 0.0f);
+    CHECK(inputSystem.frame().relativeMouseY == 0.0f);
+}
+
 #endif
 
 #if defined(__ANDROID__)

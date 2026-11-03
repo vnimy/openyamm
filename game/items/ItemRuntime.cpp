@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <unordered_map>
 
 namespace OpenYAMM::Game
 {
@@ -197,6 +198,52 @@ std::optional<std::string> ItemRuntime::raceRestriction(const ItemDefinition &it
         default:
             return std::nullopt;
     }
+}
+
+std::optional<std::string> ItemRuntime::wearRequirementText(const ItemDefinition &itemDefinition)
+{
+    if (!itemDefinition.allowedClassRoots.empty())
+    {
+        std::string classes;
+
+        for (const std::string &classRoot : itemDefinition.allowedClassRoots)
+        {
+            classes += (classes.empty() ? "" : ", ") + displayClassName(classRoot);
+        }
+
+        return classes + " only";
+    }
+
+    // MAW's artifactWearReq texts for MMMerge's gated artifacts.
+    static const std::unordered_map<std::string, std::string> Texts = {
+        {"Knight", "Knights only"},
+        {"Cleric", "Clerics only"},
+        {"Lich", "Liches only"},
+        {"Necromancer", "Necromancers and Liches only"},
+        {"Minotaur", "Minotaurs only"},
+        {"Vampire", "Vampires only"},
+        {"DarkElf", "Dark Elves only"},
+        {"DarkElfOrElf", "Elves only"},
+        {"Goblin", "Goblins only"},
+        {"Human", "Humans only"},
+        {"Dwarf", "Dwarves only"},
+        {"Male", "Men only"},
+        {"Female", "Women only"},
+    };
+    std::optional<std::string> restriction = classRestriction(itemDefinition);
+
+    if (!restriction)
+    {
+        restriction = raceRestriction(itemDefinition);
+    }
+
+    if (!restriction)
+    {
+        return std::nullopt;
+    }
+
+    const std::unordered_map<std::string, std::string>::const_iterator textIt = Texts.find(*restriction);
+    return textIt != Texts.end() ? textIt->second : *restriction + " only";
 }
 
 bool ItemRuntime::characterMeetsClassRestriction(const Character &character, const ItemDefinition &itemDefinition)

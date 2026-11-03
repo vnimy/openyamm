@@ -49,11 +49,14 @@ packages:
       sprites:           {buckets: 1}
       textures_x4:       {buckets: {desktop: 14, android: 1}}
       textures_x2:       {buckets: {desktop: 1, android: 6}}
+      surface_materials_x4: {buckets: {desktop: 20, android: 1}}
   mm7:
     domains:
       textures_x4:       {buckets: {desktop: 9, android: 1}}
       textures_x2:       {buckets: {desktop: 1, android: 3}}
+      surface_materials_x4: {buckets: {desktop: 14, android: 1}}
   mm8:
     domains:
       textures_x4:       {buckets: {desktop: 9, android: 1}}
       textures_x2:       {buckets: {desktop: 1, android: 3}}
+      surface_materials_x4: {buckets: {desktop: 14, android: 1}}

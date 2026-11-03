@@ -2,6 +2,8 @@
 #include "game/rules/GameRules.h"
 #include "game/render/CinematicGrading.h"
 #include "game/indoor/IndoorRenderer.h"
+#include "game/indoor/IndoorBakedLighting.h"
+#include "game/indoor/IndoorTranslucentFaces.h"
 #include "game/render/WaterGeometry.h"
 #include "game/render/ViewFrustum.h"
 #include "game/render/WaterBillboardReflection.h"
@@ -29,6 +31,7 @@
 #include "game/gameplay/GameplayScreenRuntime.h"
 #include "game/render/QuestMarkerGeometry.h"
 #include "game/render/SkyRenderer.h"
+#include "game/render/SurfaceTextureGradients.h"
 #include "game/render/TextureFiltering.h"
 #include "game/scene/IndoorSceneRuntime.h"
 #include "game/SpriteObjectDefs.h"
@@ -74,6 +77,11 @@ constexpr float IndoorDecorationExposure = 1.8f;
 // walls, tinted by the nearby lights) replaced a flat white cube, under which glossy props (iron torches) read as
 // white glints at more than 0.1.
 constexpr float IndoorDecorationReflection = 0.3f;
+// Surface materials of BLV faces (devdocs/SURFACE_MATERIALS_PLAN.md): the distance at which their parallax has faded
+// out, and the strengths of their highlights and room reflection.
+constexpr float IndoorSurfaceParallaxDistance = 1600.0f;
+constexpr float IndoorSurfaceHighlightStrength = 1.0f;
+constexpr float IndoorSurfaceReflectionStrength = 1.0f;
 // Far end of the clustered light grid's depth slices; lights fade out over its last 15 %.
 constexpr float IndoorLightGridFarDistance = 4096.0f;
 // Distance from the camera within which lights give decoration models their specular highlights (map units).
@@ -83,7 +91,6 @@ constexpr float IndoorCameraNearClipDistance = 1.0f;
 constexpr float IndoorCameraFarClipDistance = 50000.0f;
 constexpr float IndoorSkyProjectionPitchOffsetRadians = 3.14159265358979323846f / 64.0f;
 constexpr float IndoorSkyProjectionFarClipDistance = 50000.0f;
-constexpr uint8_t IndoorBakedStaticLightAlpha = 224;
 constexpr int IndoorBakedStaticLightSubdivisionMaxDepth = 16;
 constexpr float IndoorBillboardStaticLightingSampleIntervalSeconds = 0.05f;
 constexpr uint64_t IndoorBillboardDrawState =
@@ -1225,6 +1232,65 @@ std::optional<MechanismFaceTextureState> findMechanismFaceTextureState(
     return std::nullopt;
 }
 
+// Whether a door-moved face draws its stored texels instead of the original engines' geometric door mapping
+// (indoorMoverFaceKeepsStoredTexels): every vertex moves with the door, so the texels move with the face, and its
+// texels in the BLV's vertex pose are not that mapping. Faces that stretch keep the geometric mapping; many MM6-MM8
+// frames store stale texels.
+bool mechanismFaceKeepsStoredTexels(
+    const IndoorMapData &indoorMapData,
+    const IndoorFace &face,
+    const MapDeltaDoor &door
+)
+{
+    if (face.textureUs.size() < face.vertexIndices.size() || face.textureVs.size() < face.vertexIndices.size())
+    {
+        return false;
+    }
+
+    // A rotating mover (devdocs/INDOOR_ROTATING_MOVERS_AND_LADDERS.md) always turns its stored texels with it.
+    if (const IndoorMoverDefinition *pMover = findIndoorMoverDefinition(indoorMapData, door.doorId);
+        pMover != nullptr && pMover->rotation)
+    {
+        return true;
+    }
+
+    for (uint16_t vertexIndex : face.vertexIndices)
+    {
+        if (vertexIndex >= indoorMapData.vertices.size()
+            || std::find(door.vertexIds.begin(), door.vertexIds.end(), vertexIndex) == door.vertexIds.end())
+        {
+            return false;
+        }
+    }
+
+    const bx::Vec3 normal = computeFaceNormal(indoorMapData.vertices, face);
+    bx::Vec3 axisU = {0.0f, 0.0f, 0.0f};
+    bx::Vec3 axisV = {0.0f, 0.0f, 0.0f};
+
+    if (vecDot(normal, normal) <= 0.0001f || !calculateFaceTextureAxes(face, vecNormalize(normal), axisU, axisV))
+    {
+        return false;
+    }
+
+    std::vector<IndoorProjectedFacePoint> geometryTexels;
+    std::vector<IndoorProjectedFacePoint> storedTexels;
+    geometryTexels.reserve(face.vertexIndices.size());
+    storedTexels.reserve(face.vertexIndices.size());
+
+    for (size_t faceVertexIndex = 0; faceVertexIndex < face.vertexIndices.size(); ++faceVertexIndex)
+    {
+        const IndoorVertex &vertex = indoorMapData.vertices[face.vertexIndices[faceVertexIndex]];
+        const bx::Vec3 point = {float(vertex.x), float(vertex.y), float(vertex.z)};
+        geometryTexels.push_back({vecDot(point, axisU), vecDot(point, axisV)});
+        storedTexels.push_back({
+            float(face.textureDeltaU + face.textureUs[faceVertexIndex]),
+            float(face.textureDeltaV + face.textureVs[faceVertexIndex])
+        });
+    }
+
+    return indoorMoverFaceKeepsStoredTexels(geometryTexels, storedTexels);
+}
+
 float orient2d(
     const ProjectedFacePoint &a,
     const ProjectedFacePoint &b,
@@ -1916,88 +1982,6 @@ uint32_t encodeBakedLightAbgr(const std::array<float, 3> &rgb)
     return makeAbgr(encode(rgb[0]), encode(rgb[1]), encode(rgb[2]));
 }
 
-float bakedDecorationLightRadius(
-    const DecorationBillboardSet &billboardSet,
-    const DecorationEntry &decoration)
-{
-    float radius = 0.0f;
-
-    if (decoration.lightRadius > 0)
-    {
-        radius = static_cast<float>(decoration.lightRadius);
-    }
-
-    const SpriteFrameEntry *pFrame = billboardSet.spriteFrameTable.getFrame(decoration.spriteId, 0);
-
-    if (pFrame != nullptr && pFrame->glowRadius > 0)
-    {
-        radius = std::max(radius, static_cast<float>(pFrame->glowRadius));
-    }
-
-    return radius;
-}
-
-std::optional<BakedStaticLightSource> bakedStaticLightSourceForDecoration(
-    const DecorationBillboardSet &billboardSet,
-    const DecorationBillboard &billboard,
-    const EventRuntimeState *pEventRuntimeState,
-    bool includeInactiveSources)
-{
-    const DecorationEntry *decoration = billboardSet.decorationTable.get(billboard.decorationId);
-    if (decoration == nullptr || billboard.litByMapLight) return std::nullopt;
-    decoration = runtimeDecorationEntry(
-        billboardSet.decorationTable, *decoration, billboard.spriteOverrideKey(),
-        includeInactiveSources ? nullptr : pEventRuntimeState);
-    if (decoration == nullptr) return std::nullopt;
-
-    float radius = bakedDecorationLightRadius(billboardSet, *decoration);
-    if (includeInactiveSources)
-    {
-        // Subdivide for both toggle states once, so lighting changes only refresh vertex colours.
-        if (const DecorationEntry *counterpart = toggleableDecorationCounterpart(billboardSet.decorationTable, *decoration))
-        {
-            const float alternateRadius = bakedDecorationLightRadius(billboardSet, *counterpart);
-            if (alternateRadius > radius)
-            {
-                radius = alternateRadius;
-                decoration = counterpart;
-            }
-        }
-    }
-    if (radius <= 0.0f) return std::nullopt;
-
-    BakedStaticLightSource source = {};
-    source.position = {
-        static_cast<float>(billboard.x), static_cast<float>(billboard.y),
-        static_cast<float>(billboard.z) + static_cast<float>(std::max<uint16_t>(billboard.height, 1)) * 0.5f
-    };
-    source.radius = radius;
-    source.alpha = 208.0f / 255.0f;
-    if (decoration->lightRed != 0 || decoration->lightGreen != 0 || decoration->lightBlue != 0)
-    {
-        source.red = decoration->lightRed;
-        source.green = decoration->lightGreen;
-        source.blue = decoration->lightBlue;
-    }
-    return source;
-}
-
-BakedStaticLightSource bakedStaticLightSourceForIndoorLight(const IndoorLight &light)
-{
-    BakedStaticLightSource source = {};
-    source.position = {
-        static_cast<float>(light.x),
-        static_cast<float>(light.y),
-        static_cast<float>(light.z)
-    };
-    source.radius = static_cast<float>(light.radius);
-    source.red = light.red;
-    source.green = light.green;
-    source.blue = light.blue;
-    source.alpha = static_cast<float>(IndoorBakedStaticLightAlpha) / 255.0f;
-    return source;
-}
-
 std::vector<uint8_t> bakedStaticLightEnabledStates(
     const IndoorMapData &indoorMapData,
     const EventRuntimeState *pEventRuntimeState,
@@ -2036,54 +2020,6 @@ bool bakedStaticLightAffectsPoint(const BakedStaticLightSource &source, const bx
     const float dy = source.position.y - point.y;
     const float dz = source.position.z - point.z;
     return dx * dx + dy * dy + dz * dz <= source.radius * source.radius;
-}
-
-std::vector<BakedStaticLightSource> buildBakedStaticLightSources(
-    const IndoorMapData &indoorMapData,
-    const EventRuntimeState *pEventRuntimeState,
-    const DecorationBillboardSet *pDecorationBillboardSet,
-    bool includeInactiveSources)
-{
-    std::vector<BakedStaticLightSource> sources;
-    sources.reserve(indoorMapData.lights.size()
-        + (pDecorationBillboardSet != nullptr ? pDecorationBillboardSet->billboards.size() : 0));
-
-    for (size_t lightId = 0; lightId < indoorMapData.lights.size(); ++lightId)
-    {
-        const IndoorLight &light = indoorMapData.lights[lightId];
-
-        if (light.radius <= 0
-            || (pDecorationBillboardSet != nullptr && pDecorationBillboardSet->mapLightReplaced(lightId))
-            || (!includeInactiveSources
-                && !IndoorLightingRuntime::isBlvLightEnabledByState(
-                    static_cast<uint32_t>(light.attributes),
-                    pEventRuntimeState,
-                    lightId)))
-        {
-            continue;
-        }
-
-        sources.push_back(bakedStaticLightSourceForIndoorLight(light));
-        sources.back().sourceId = uint32_t(lightId);
-    }
-
-    if (pDecorationBillboardSet == nullptr)
-    {
-        return sources;
-    }
-
-    for (size_t index = 0; index < pDecorationBillboardSet->billboards.size(); ++index)
-    {
-        if (auto source = bakedStaticLightSourceForDecoration(
-                *pDecorationBillboardSet, pDecorationBillboardSet->billboards[index], pEventRuntimeState,
-                includeInactiveSources))
-        {
-            source->sourceId = uint32_t(indoorMapData.lights.size() + index);
-            sources.push_back(*source);
-        }
-    }
-
-    return sources;
 }
 
 void accumulateBakedLightContribution(
@@ -2371,7 +2307,19 @@ IndoorRenderer::TexturedVertex IndoorRenderer::interpolateTexturedVertex(
     result.flowVPerSecond = (first.flowVPerSecond + second.flowVPerSecond) * 0.5f;
     result.lavaFlow = (first.lavaFlow + second.lavaFlow) * 0.5f;
     result.fluidFlow = (first.fluidFlow + second.fluidFlow) * 0.5f;
+    result.gradientU = first.gradientU;
+    result.gradientV = first.gradientV;
     return result;
+}
+
+void IndoorRenderer::setBillboardFog()
+{
+    const std::array<float, 4> color = indoorFogColorUniform(m_fog);
+    const std::array<float, 4> densities = indoorFogDensitiesUniform(m_fog);
+    const std::array<float, 4> distances = indoorFogDistancesUniform(m_fog);
+    setBillboardFogColor(color.data());
+    bgfx::setUniform(m_billboardFogDensitiesUniformHandle, densities.data());
+    bgfx::setUniform(m_billboardFogDistancesUniformHandle, distances.data());
 }
 
 void IndoorRenderer::setBillboardFogColor(const float *pFogColor)
@@ -2510,6 +2458,7 @@ void IndoorRenderer::appendBakedStaticLightSubdividedTriangle(
 bgfx::VertexLayout IndoorRenderer::TerrainVertex::ms_layout;
 bgfx::VertexLayout IndoorRenderer::TexturedVertex::ms_layout;
 bgfx::VertexLayout IndoorRenderer::LitBillboardVertex::ms_layout;
+bgfx::VertexLayout IndoorRenderer::LightmapUvVertex::ms_layout;
 
 std::array<float, 3> IndoorRenderer::cachedBillboardStaticDetailLighting(
     const IndoorLightingFrame &lightingFrame,
@@ -2795,6 +2744,7 @@ bool IndoorRenderer::initialize(
 
     TerrainVertex::init();
     TexturedVertex::init();
+    LightmapUvVertex::init();
     LitBillboardVertex::init();
 
     const std::vector<TerrainVertex> entityMarkerVertices = buildEntityMarkerVertices(indoorMapData);
@@ -2991,6 +2941,76 @@ bool IndoorRenderer::initialize(
     m_texturedProgramHandle = loadProgram("vs_shadowmaps_texture", "fs_shadowmaps_texture");
     m_hudTintedProgramHandle = loadProgram("vs_shadowmaps_texture", "fs_menu_tint");
     m_indoorLitProgramHandle = loadProgram("vs_indoor_textured_lit", "fs_indoor_textured_lit");
+    // Surface materials (devdocs/SURFACE_MATERIALS_PLAN.md), only for a map loaded with their maps.
+    const bool surfaceMaterials = indoorTextureSet && hasSurfaceMaterialMaps(indoorTextureSet->textures);
+    if (surfaceMaterials)
+    {
+        m_indoorLitMaterialProgramHandle =
+            loadProgram("vs_indoor_textured_lit", "fs_indoor_textured_lit_materials");
+    }
+    // Baked lighting (devdocs/INDOOR_BAKED_LIGHTING.md), only for a map that has it: its lightmap pages, decoded once.
+    if (indoorMapData.bakedLighting)
+    {
+        m_indoorBakedProgramHandle = loadProgram("vs_indoor_textured_baked", "fs_indoor_textured_baked");
+        if (surfaceMaterials)
+        {
+            m_indoorBakedMaterialProgramHandle =
+                loadProgram("vs_indoor_textured_baked", "fs_indoor_textured_baked_materials");
+        }
+        m_lightmapSamplerHandle = bgfx::createUniform("s_texLightmap", bgfx::UniformType::Sampler);
+        bool pagesCreated = true;
+        for (const IndoorBakedLightingPage &page : indoorMapData.bakedLighting->pages)
+        {
+            const std::vector<uint32_t> pixels = page.decodePixels();
+            const bgfx::TextureHandle handle = createBgraTexture2D(uint16_t(page.width), uint16_t(page.height),
+                reinterpret_cast<const uint8_t *>(pixels.data()), uint32_t(pixels.size() * sizeof(uint32_t)),
+                TextureFilterProfile::Lightmap, BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
+            pagesCreated = pagesCreated && bgfx::isValid(handle);
+            m_lightmapTextureHandles.push_back(handle);
+        }
+        if (!pagesCreated || !bgfx::isValid(m_indoorBakedProgramHandle)
+            || (surfaceMaterials && !bgfx::isValid(m_indoorBakedMaterialProgramHandle))
+            || !bgfx::isValid(m_lightmapSamplerHandle))
+        {
+            std::cerr << "IndoorRenderer: baked lighting unavailable, drawing the map vertex-lit\n";
+            destroyBakedLightingResources();
+        }
+    }
+    m_bakedLightingActive = !m_lightmapTextureHandles.empty();
+    // Translucent faces (devdocs/INDOOR_TRANSLUCENT_FACES.md), only for a map that has them.
+    if (!indoorMapData.translucentFaces.empty())
+    {
+        m_indoorTranslucentProgramHandle = loadProgram("vs_indoor_textured_lit", "fs_indoor_textured_translucent");
+        if (indoorMapData.bakedLighting)
+        {
+            m_indoorBakedTranslucentProgramHandle =
+                loadProgram("vs_indoor_textured_baked", "fs_indoor_textured_baked_translucent");
+        }
+        m_indoorTranslucencyUniformHandle = bgfx::createUniform("u_indoorTranslucency", bgfx::UniformType::Vec4);
+    }
+    // Scene fog (devdocs/INDOOR_FOG.md), only for a map that has it: the face programs' fog variants.
+    m_fog = indoorMapData.fog;
+    if (m_fog.enabled)
+    {
+        m_indoorFogProgramHandles[0] = loadProgram("vs_indoor_textured_lit", "fs_indoor_textured_lit_fog");
+        if (surfaceMaterials)
+        {
+            m_indoorFogProgramHandles[1] =
+                loadProgram("vs_indoor_textured_lit", "fs_indoor_textured_lit_materials_fog");
+        }
+        m_indoorFogProgramHandles[2] = loadProgram("vs_indoor_textured_lit", "fs_indoor_textured_translucent_fog");
+        if (indoorMapData.bakedLighting)
+        {
+            m_indoorFogProgramHandles[3] = loadProgram("vs_indoor_textured_baked", "fs_indoor_textured_baked_fog");
+            if (surfaceMaterials)
+            {
+                m_indoorFogProgramHandles[4] =
+                    loadProgram("vs_indoor_textured_baked", "fs_indoor_textured_baked_materials_fog");
+            }
+            m_indoorFogProgramHandles[5] =
+                loadProgram("vs_indoor_textured_baked", "fs_indoor_textured_baked_translucent_fog");
+        }
+    }
     m_billboardProgramHandle = loadProgram("vs_outdoor_billboard_lit", "fs_outdoor_billboard_lit");
     if (!m_spriteAtlasCache.hasProgram())
     {
@@ -3031,6 +3051,13 @@ bool IndoorRenderer::initialize(
     m_indoorLightColorsUniformHandle =
         bgfx::createUniform("u_indoorLightColors", bgfx::UniformType::Vec4, MaxIndoorShaderLights);
     m_indoorLightParamsUniformHandle = bgfx::createUniform("u_indoorLightParams", bgfx::UniformType::Vec4);
+    m_surfaceNormalSamplerHandle = bgfx::createUniform("s_surfaceNormal", bgfx::UniformType::Sampler);
+    m_surfaceDetailSamplerHandle = bgfx::createUniform("s_surfaceDetail", bgfx::UniformType::Sampler);
+    m_surfaceMaterialUniformHandle = bgfx::createUniform("u_surfaceMaterial", bgfx::UniformType::Vec4);
+    if (!m_surfaceReflectionBinding.create())
+    {
+        std::cerr << "IndoorRenderer: failed to create the surface reflection binding\n";
+    }
     m_indoorFaceGridUniformHandle = bgfx::createUniform("u_indoorFaceGrid", bgfx::UniformType::Vec4);
     const bool lightGridCreated = m_lightGridBinding.create();
     m_worldClipPlaneUniform = bgfx::createUniform("u_worldClipPlane", bgfx::UniformType::Vec4);
@@ -3081,6 +3108,10 @@ bool IndoorRenderer::initialize(
         || !bgfx::isValid(m_indoorLightPositionsUniformHandle)
         || !bgfx::isValid(m_indoorLightColorsUniformHandle)
         || !bgfx::isValid(m_indoorLightParamsUniformHandle)
+        || (surfaceMaterials && !bgfx::isValid(m_indoorLitMaterialProgramHandle))
+        || !bgfx::isValid(m_surfaceNormalSamplerHandle)
+        || !bgfx::isValid(m_surfaceDetailSamplerHandle)
+        || !bgfx::isValid(m_surfaceMaterialUniformHandle)
         || !bgfx::isValid(m_indoorFaceGridUniformHandle)
         || !lightGridCreated
         || !bgfx::isValid(m_secretPulseParamsUniformHandle)
@@ -3867,6 +3898,15 @@ void IndoorRenderer::render(
         }
     }
 
+    // Baked lighting follows `[video] lightmaps`: switching it rebuilds the batches once, lightmapped or vertex-lit.
+    const bool bakedLightingWanted =
+        settings.lightmaps && m_pIndoorMapData != nullptr && !m_lightmapTextureHandles.empty();
+    if (bakedLightingWanted != m_bakedLightingActive)
+    {
+        m_bakedLightingActive = bakedLightingWanted;
+        m_texturedBatchGeometryRevision = std::numeric_limits<uint64_t>::max();
+    }
+
     // A surface change an event made outside the simulation (evt.SetTexture or a face hidden from a click or the
     // console) shows at once, not when a timer or a moving door next rebuilds the batches.
     if (bgfx::getRendererType() != bgfx::RendererType::Noop
@@ -4022,7 +4062,22 @@ void IndoorRenderer::render(
     lightingInput.warmTorchLight = settings.warmTorchLight;
     lightingInput.fxClusterThreshold =
         settings.lightGrid == LightGridQuality::Low ? FxLightClusterThresholdLow : FxLightClusterThresholdHigh;
-    const IndoorLightingFrame lightingFrame = m_indoorLightingRuntime.buildFrame(lightingInput);
+    IndoorLightingFrame lightingFrame = m_indoorLightingRuntime.buildFrame(lightingInput);
+    // With baked lighting, actors, decorations and items (still lit by the light grid) take the bake's room light as
+    // their ambient, so they match the lightmapped walls around them.
+    if (m_bakedLightingActive)
+    {
+        for (size_t sectorId = 0; sectorId < lightingFrame.sectorAmbient.size(); ++sectorId)
+        {
+            if (const std::optional<float> ambient = m_pIndoorMapData->bakedLighting->actorAmbient(sectorId))
+            {
+                lightingFrame.sectorAmbient[sectorId] = *ambient;
+            }
+        }
+    }
+    m_surfaceMaterialsEnabled = settings.surfaceMaterials;
+    m_surfaceParallaxEnabled = settings.surfaceParallax;
+    m_surfaceReflectionsEnabled = settings.surfaceReflections;
     if (pLightingStats != nullptr)
     {
         const uint32_t dynamicLightInputCount =
@@ -4211,7 +4266,7 @@ void IndoorRenderer::render(
 
             ++visibleTexturedBatchCount;
 
-            if (enhancedWater && batch.waterColorAbgr != 0)
+            if ((enhancedWater && batch.waterColorAbgr != 0) || batch.translucent)
             {
                 continue;
             }
@@ -4315,6 +4370,12 @@ void IndoorRenderer::render(
     modelLighting.pLightGrid = &m_lightGrid;
     modelLighting.keyDirection = Engine::spriteKeyLightDirection({viewForward.x, viewForward.y, viewForward.z});
     modelLighting.keyFraction = IndoorModelKeyFraction;
+    if (m_fog.enabled)
+    {
+        modelLighting.fogColor = indoorFogColorUniform(m_fog);
+        modelLighting.fogDensities = indoorFogDensitiesUniform(m_fog);
+        modelLighting.fogDistances = indoorFogDistancesUniform(m_fog);
+    }
     if (m_pSceneRuntime != nullptr && runtimeMapDeltaData())
     {
         // Like actor sprites, actor models draw only in the sectors the portals reveal.
@@ -4412,6 +4473,15 @@ void IndoorRenderer::render(
     if (collectRenderDiagnostics)
     {
         m_indoorPerformanceDiagnostics.renderParticleNanoseconds += SDL_GetTicksNS() - modelBeginTickCount;
+    }
+
+    // Translucent faces (window glass) blend over the solid scene, before the spells, particles and effects.
+    if (m_pIndoorMapData != nullptr && !m_pIndoorMapData->translucentFaces.empty())
+    {
+        const bool secretFacesDetected = m_map.has_value() && m_pSceneRuntime != nullptr
+            && GameMechanics::partyDetectsSecretFaces(m_pSceneRuntime->partyRuntime().party(), m_map.value());
+        renderTranslucentFaces(transparentView, eye, renderVisibleSectorMask, viewWidth, viewHeight,
+            secretFacesDetected);
     }
 
     // Spell billboards blend with the completed solid scene, including creatures and models.
@@ -6634,6 +6704,15 @@ void IndoorRenderer::shutdown()
         m_indoorLightPositionsUniformHandle = BGFX_INVALID_HANDLE;
         m_indoorLightColorsUniformHandle = BGFX_INVALID_HANDLE;
         m_indoorLightParamsUniformHandle = BGFX_INVALID_HANDLE;
+        m_indoorLitMaterialProgramHandle = BGFX_INVALID_HANDLE;
+        m_indoorBakedProgramHandle = BGFX_INVALID_HANDLE;
+        m_indoorBakedMaterialProgramHandle = BGFX_INVALID_HANDLE;
+        m_lightmapSamplerHandle = BGFX_INVALID_HANDLE;
+        m_lightmapTextureHandles.clear();
+        m_surfaceNormalSamplerHandle = BGFX_INVALID_HANDLE;
+        m_surfaceDetailSamplerHandle = BGFX_INVALID_HANDLE;
+        m_surfaceMaterialUniformHandle = BGFX_INVALID_HANDLE;
+        m_surfaceReflectionBinding.destroy(false);
         m_indoorFaceGridUniformHandle = BGFX_INVALID_HANDLE;
         m_secretPulseParamsUniformHandle = BGFX_INVALID_HANDLE;
         m_indoorSkyParamsUniformHandle = BGFX_INVALID_HANDLE;
@@ -6775,6 +6854,43 @@ void IndoorRenderer::shutdown()
         bgfx::destroy(m_indoorLightParamsUniformHandle);
         m_indoorLightParamsUniformHandle = BGFX_INVALID_HANDLE;
     }
+
+    if (bgfx::isValid(m_indoorLitMaterialProgramHandle))
+    {
+        bgfx::destroy(m_indoorLitMaterialProgramHandle);
+        m_indoorLitMaterialProgramHandle = BGFX_INVALID_HANDLE;
+    }
+
+    destroyBakedLightingResources();
+
+    for (bgfx::ProgramHandle &handle : m_indoorFogProgramHandles)
+    {
+        if (bgfx::isValid(handle))
+        {
+            bgfx::destroy(handle);
+            handle = BGFX_INVALID_HANDLE;
+        }
+    }
+
+    for (bgfx::ProgramHandle *pHandle : {&m_indoorTranslucentProgramHandle, &m_indoorBakedTranslucentProgramHandle})
+    {
+        if (bgfx::isValid(*pHandle))
+        {
+            bgfx::destroy(*pHandle);
+            *pHandle = BGFX_INVALID_HANDLE;
+        }
+    }
+
+    for (bgfx::UniformHandle *pHandle : {&m_surfaceNormalSamplerHandle, &m_surfaceDetailSamplerHandle,
+        &m_surfaceMaterialUniformHandle, &m_indoorTranslucencyUniformHandle})
+    {
+        if (bgfx::isValid(*pHandle))
+        {
+            bgfx::destroy(*pHandle);
+            *pHandle = BGFX_INVALID_HANDLE;
+        }
+    }
+    m_surfaceReflectionBinding.destroy();
 
     if (bgfx::isValid(m_indoorFaceGridUniformHandle))
     {
@@ -6948,6 +7064,13 @@ void IndoorRenderer::TerrainVertex::init()
         .end();
 }
 
+void IndoorRenderer::LightmapUvVertex::init()
+{
+    ms_layout.begin()
+        .add(bgfx::Attrib::TexCoord4, 2, bgfx::AttribType::Float)
+        .end();
+}
+
 void IndoorRenderer::TexturedVertex::init()
 {
     ms_layout.begin()
@@ -6957,6 +7080,8 @@ void IndoorRenderer::TexturedVertex::init()
         .add(bgfx::Attrib::TexCoord2, 1, bgfx::AttribType::Float)
         .add(bgfx::Attrib::TexCoord3, 4, bgfx::AttribType::Float)
         .add(bgfx::Attrib::Color0, 4, bgfx::AttribType::Uint8, true)
+        .add(bgfx::Attrib::Tangent, 3, bgfx::AttribType::Float)
+        .add(bgfx::Attrib::Bitangent, 3, bgfx::AttribType::Float)
         .end();
 }
 
@@ -7413,6 +7538,12 @@ void IndoorRenderer::renderBloodSplats(
         | BGFX_STATE_WRITE_A
         | BGFX_STATE_DEPTH_TEST_LEQUAL
         | BGFX_STATE_BLEND_ALPHA | BGFX_STATE_MSAA);
+    if (m_fog.enabled)
+    {
+        setFaceFog();
+        bgfx::submit(viewId, m_indoorFogProgramHandles[0]);
+        return;
+    }
     bgfx::submit(viewId, m_indoorLitProgramHandle);
 }
 
@@ -7793,9 +7924,6 @@ void IndoorRenderer::renderDecorationBillboards(
                 pLightingStats);
         const float clearOverrideColor[4] = {0.0f, 0.0f, 0.0f, 0.0f};
         const float clearOutlineParams[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-        const float fogColor[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-        const float fogDensities[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-        const float fogDistances[4] = {4096.0f, 4096.0f, 4096.0f, 0.0f};
 
         if (drawItem.hovered)
         {
@@ -7907,9 +8035,7 @@ void IndoorRenderer::renderDecorationBillboards(
                 bgfx::setUniform(m_billboardAmbientUniformHandle, ambient.data());
                 bgfx::setUniform(m_billboardOverrideColorUniformHandle, overrideColor);
                 bgfx::setUniform(m_billboardOutlineParamsUniformHandle, outlineParams);
-                setBillboardFogColor(fogColor);
-                bgfx::setUniform(m_billboardFogDensitiesUniformHandle, fogDensities);
-                bgfx::setUniform(m_billboardFogDistancesUniformHandle, fogDistances);
+                setBillboardFog();
                 bgfx::setState(
                     IndoorBillboardDrawState);
                 bgfx::submit(viewId, m_billboardProgramHandle);
@@ -8003,9 +8129,7 @@ void IndoorRenderer::renderDecorationBillboards(
         bgfx::setUniform(m_billboardAmbientUniformHandle, ambient.data());
         bgfx::setUniform(m_billboardOverrideColorUniformHandle, clearOverrideColor);
         bgfx::setUniform(m_billboardOutlineParamsUniformHandle, clearOutlineParams);
-        setBillboardFogColor(fogColor);
-        bgfx::setUniform(m_billboardFogDensitiesUniformHandle, fogDensities);
-        bgfx::setUniform(m_billboardFogDistancesUniformHandle, fogDistances);
+        setBillboardFog();
         bgfx::setState(
             IndoorBillboardDrawState
         );
@@ -8454,9 +8578,6 @@ void IndoorRenderer::renderActorPreviewBillboards(
                 pLightingStats);
         const float clearOverrideColor[4] = {0.0f, 0.0f, 0.0f, 0.0f};
         const float clearOutlineParams[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-        const float fogColor[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-        const float fogDensities[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-        const float fogDistances[4] = {4096.0f, 4096.0f, 4096.0f, 0.0f};
 
         if (drawItem.hovered)
         {
@@ -8566,9 +8687,7 @@ void IndoorRenderer::renderActorPreviewBillboards(
                 bgfx::setUniform(m_billboardAmbientUniformHandle, ambient.data());
                 bgfx::setUniform(m_billboardOverrideColorUniformHandle, overrideColor);
                 bgfx::setUniform(m_billboardOutlineParamsUniformHandle, outlineParams);
-                setBillboardFogColor(fogColor);
-                bgfx::setUniform(m_billboardFogDensitiesUniformHandle, fogDensities);
-                bgfx::setUniform(m_billboardFogDistancesUniformHandle, fogDistances);
+                setBillboardFog();
                 // Test world depth without letting soft outline pixels block the coplanar body draw.
                 bgfx::setState(texture.atlas
                     ? IndoorBillboardDrawState & ~BGFX_STATE_WRITE_Z : IndoorBillboardDrawState);
@@ -8652,9 +8771,7 @@ void IndoorRenderer::renderActorPreviewBillboards(
         bgfx::setUniform(m_billboardAmbientUniformHandle, ambient.data());
         bgfx::setUniform(m_billboardOverrideColorUniformHandle, clearOverrideColor);
         bgfx::setUniform(m_billboardOutlineParamsUniformHandle, clearOutlineParams);
-        setBillboardFogColor(fogColor);
-        bgfx::setUniform(m_billboardFogDensitiesUniformHandle, fogDensities);
-        bgfx::setUniform(m_billboardFogDistancesUniformHandle, fogDistances);
+        setBillboardFog();
         bgfx::setState(
             IndoorBillboardDrawState
         );
@@ -9443,9 +9560,6 @@ void IndoorRenderer::renderSpriteObjectBillboards(
     const float litAmbient[4] = {1.0f, 1.0f, 1.0f, 0.0f};
     const float clearOverrideColor[4] = {0.0f, 0.0f, 0.0f, 0.0f};
     const float clearOutlineParams[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-    const float fogColor[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-    const float fogDensities[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-    const float fogDistances[4] = {4096.0f, 4096.0f, 4096.0f, 0.0f};
 
     const auto flushLitBillboardBatch =
         [&]()
@@ -9488,9 +9602,7 @@ void IndoorRenderer::renderSpriteObjectBillboards(
                 bgfx::setUniform(m_billboardAmbientUniformHandle, litAmbient);
                 bgfx::setUniform(m_billboardOverrideColorUniformHandle, clearOverrideColor);
                 bgfx::setUniform(m_billboardOutlineParamsUniformHandle, clearOutlineParams);
-                setBillboardFogColor(fogColor);
-                bgfx::setUniform(m_billboardFogDensitiesUniformHandle, fogDensities);
-                bgfx::setUniform(m_billboardFogDistancesUniformHandle, fogDistances);
+                setBillboardFog();
                 bgfx::setState(litBillboardBatch.drawState | BGFX_STATE_MSAA);
                 bgfx::submit(viewId, m_billboardProgramHandle);
 
@@ -9626,9 +9738,6 @@ void IndoorRenderer::renderSpriteObjectBillboards(
                     HoveredActorOutlineThicknessPixels,
                     1.0f
                 };
-                const float fogColor[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-                const float fogDensities[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-                const float fogDistances[4] = {4096.0f, 4096.0f, 4096.0f, 0.0f};
                 float outlineModelMatrix[16] = {};
                 std::memcpy(outlineModelMatrix, billboardModelMatrix, sizeof(outlineModelMatrix));
                 bgfx::setTransform(outlineModelMatrix);
@@ -9646,9 +9755,7 @@ void IndoorRenderer::renderSpriteObjectBillboards(
                 bgfx::setUniform(m_billboardAmbientUniformHandle, ambient);
                 bgfx::setUniform(m_billboardOverrideColorUniformHandle, overrideColor);
                 bgfx::setUniform(m_billboardOutlineParamsUniformHandle, outlineParams);
-                setBillboardFogColor(fogColor);
-                bgfx::setUniform(m_billboardFogDensitiesUniformHandle, fogDensities);
-                bgfx::setUniform(m_billboardFogDistancesUniformHandle, fogDistances);
+                setBillboardFog();
                 bgfx::setState(
                     IndoorBillboardDrawState);
                 bgfx::submit(viewId, m_billboardProgramHandle);
@@ -9773,9 +9880,7 @@ void IndoorRenderer::renderSpriteObjectBillboards(
         bgfx::setUniform(m_billboardAmbientUniformHandle, ambient.data());
         bgfx::setUniform(m_billboardOverrideColorUniformHandle, clearOverrideColor);
         bgfx::setUniform(m_billboardOutlineParamsUniformHandle, clearOutlineParams);
-        setBillboardFogColor(fogColor);
-        bgfx::setUniform(m_billboardFogDensitiesUniformHandle, fogDensities);
-        bgfx::setUniform(m_billboardFogDistancesUniformHandle, fogDistances);
+        setBillboardFog();
         bgfx::setState(drawState | BGFX_STATE_MSAA);
         bgfx::submit(viewId, m_billboardProgramHandle);
 
@@ -9940,7 +10045,8 @@ void IndoorRenderer::renderContextActionGeometryHighlight(
     bgfx::submit(viewId, m_programHandle);
 }
 
-const bgfx::TextureHandle *IndoorRenderer::findIndoorTextureHandle(const std::string &textureName) const
+const IndoorRenderer::IndoorTextureHandle *IndoorRenderer::findIndoorTextureHandle(
+    const std::string &textureName) const
 {
     const std::string normalizedTextureName = toLowerCopy(textureName);
 
@@ -9948,7 +10054,7 @@ const bgfx::TextureHandle *IndoorRenderer::findIndoorTextureHandle(const std::st
     {
         if (textureHandle.textureName == normalizedTextureName && bgfx::isValid(textureHandle.textureHandle))
         {
-            return &textureHandle.textureHandle;
+            return &textureHandle;
         }
     }
 
@@ -10298,6 +10404,7 @@ bool IndoorRenderer::updateWaterGeometry()
     }
     else if (!geometry.empty() && m_pAssetFileSystem != nullptr)
     {
+        m_waterRenderer.setIndoorFog(m_fog);
         success = m_waterRenderer.initialize(*m_pAssetFileSystem, std::move(geometry), {}, true);
         m_waterResourcesInitialized = success;
     }
@@ -10345,7 +10452,8 @@ void IndoorRenderer::renderWaterReflections(const bx::Vec3 &forward,
         const std::array<float, 4> clip = {0.0f, 0.0f, 1.0f, -reflection.height};
         for (const TexturedBatch &batch : m_texturedBatches)
         {
-            if (batch.waterColorAbgr != 0
+            // Water reflections leave out the translucent faces (they would need their own sorted pass).
+            if (batch.waterColorAbgr != 0 || batch.translucent
                 || !indoorGeometrySectorsVisible(visibility.visibleSectorMask, batch.sectorId, batch.backSectorId)
                 || (batch.hasBounds && (batch.boundsMax.z < reflection.height
                     || !frustum.intersectsBounds(batch.boundsMin, batch.boundsMax))))
@@ -10431,6 +10539,14 @@ bool IndoorRenderer::submitTexturedBatch(const TexturedBatch &batch, uint16_t vi
     bgfx::setTransform(modelMatrix);
     bgfx::setUniform(m_worldClipPlaneUniform, clipPlane.data());
     bgfx::setVertexBuffer(0, batch.vertexBufferHandle, 0, batch.vertexCount);
+    const bool lightmapped = batch.lightmapPage >= 0 && bgfx::isValid(batch.lightmapUvBufferHandle)
+        && size_t(batch.lightmapPage) < m_lightmapTextureHandles.size();
+    if (lightmapped)
+    {
+        bgfx::setVertexBuffer(1, batch.lightmapUvBufferHandle, 0, batch.vertexCount);
+        bindTexture(1, m_lightmapSamplerHandle, m_lightmapTextureHandles[size_t(batch.lightmapPage)],
+            TextureFilterProfile::Lightmap, BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
+    }
     if (bgfx::isValid(batch.indexBufferHandle))
     {
         bgfx::setIndexBuffer(batch.indexBufferHandle, 0, batch.indexCount);
@@ -10486,14 +10602,121 @@ bool IndoorRenderer::submitTexturedBatch(const TexturedBatch &batch, uint16_t vi
         IndoorSkyProjectionPitchOffsetRadians
     };
     bgfx::setUniform(m_indoorSkyProjectionParamsUniformHandle, indoorSkyProjectionParams.data());
+    if (m_fog.enabled)
+    {
+        setFaceFog();
+    }
+    if (batch.translucent)
+    {
+        // Depth tested against the opaque scene, not written: the faces behind it stay visible through it.
+        const bgfx::ProgramHandle program = m_fog.enabled
+            ? m_indoorFogProgramHandles[lightmapped ? 5 : 2]
+            : lightmapped ? m_indoorBakedTranslucentProgramHandle : m_indoorTranslucentProgramHandle;
+        if (!bgfx::isValid(program) || !bgfx::isValid(m_indoorTranslucencyUniformHandle))
+        {
+            bgfx::discard();
+            return false;
+        }
+        const std::array<float, 4> translucency = {batch.translucency.tint[0], batch.translucency.tint[1],
+            batch.translucency.tint[2], batch.translucency.opacity};
+        bgfx::setUniform(m_indoorTranslucencyUniformHandle, translucency.data());
+        bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A | BGFX_STATE_DEPTH_TEST_LEQUAL
+            | BGFX_STATE_BLEND_ALPHA | BGFX_STATE_MSAA);
+        bgfx::submit(viewId, program);
+        return true;
+    }
+
     bgfx::setState(
         BGFX_STATE_WRITE_RGB
         | BGFX_STATE_WRITE_A
         | BGFX_STATE_WRITE_Z
         | BGFX_STATE_DEPTH_TEST_LEQUAL | BGFX_STATE_MSAA);
 
-    bgfx::submit(viewId, m_indoorLitProgramHandle);
+    if (m_surfaceMaterialsEnabled && bgfx::isValid(batch.materialNormal))
+    {
+        bindTexture(7, m_surfaceNormalSamplerHandle, batch.materialNormal, TextureFilterProfile::BModel);
+        bindTexture(8, m_surfaceDetailSamplerHandle, batch.materialDetail, TextureFilterProfile::BModel);
+        // Glass is lit from outside at any hour; parallax only in the main view (reflections are small and blurred).
+        const float parallax = m_surfaceParallaxEnabled && viewId == MainViewId ? IndoorSurfaceParallaxDistance : 0.0f;
+        const std::array<float, 4> material = {
+            parallax, 1.0f, IndoorSurfaceHighlightStrength, IndoorSurfaceReflectionStrength};
+        bgfx::setUniform(m_surfaceMaterialUniformHandle, material.data());
+        // Screen-space reflections trace the previous main view, so only main-view draws use them.
+        m_surfaceReflectionBinding.bind(viewId == MainViewId && m_surfaceReflectionsEnabled
+            && m_pPostProcessing != nullptr ? m_pPostProcessing->reflectionHistory() : nullptr);
+        bgfx::submit(viewId, m_fog.enabled ? m_indoorFogProgramHandles[lightmapped ? 4 : 1]
+            : lightmapped ? m_indoorBakedMaterialProgramHandle : m_indoorLitMaterialProgramHandle);
+        return true;
+    }
+    bgfx::submit(viewId, m_fog.enabled ? m_indoorFogProgramHandles[lightmapped ? 3 : 0]
+        : lightmapped ? m_indoorBakedProgramHandle : m_indoorLitProgramHandle);
     return true;
+}
+
+void IndoorRenderer::setFaceFog()
+{
+    const std::array<float, 4> color = indoorFogColorUniform(m_fog);
+    const std::array<float, 4> distances = indoorFogDistancesUniform(m_fog);
+    bgfx::setUniform(m_billboardFogColorUniformHandle, color.data());
+    bgfx::setUniform(m_billboardFogDistancesUniformHandle, distances.data());
+}
+
+void IndoorRenderer::renderTranslucentFaces(uint16_t viewId, const bx::Vec3 &eye,
+    const std::vector<uint8_t> &visibleSectorMask, int width, int height, bool secretFacesDetected)
+{
+    std::vector<IndoorTranslucentDraw> draws;
+    const std::array<float, 3> eyePoint = {eye.x, eye.y, eye.z};
+    for (size_t batchIndex = 0; batchIndex < m_texturedBatches.size(); ++batchIndex)
+    {
+        const TexturedBatch &batch = m_texturedBatches[batchIndex];
+        if (!batch.translucent || batch.vertices.empty() || !batch.hasBounds
+            || !indoorGeometrySectorsVisible(visibleSectorMask, batch.sectorId, batch.backSectorId))
+        {
+            continue;
+        }
+        const TexturedVertex &corner = batch.vertices.front();
+        if (!indoorTranslucentFaceVisibleFrom(batch.translucency, batch.faceNormal, {corner.x, corner.y, corner.z},
+                eyePoint))
+        {
+            continue;
+        }
+        const bx::Vec3 centre = bx::mul(bx::add(batch.boundsMin, batch.boundsMax), 0.5f);
+        const bx::Vec3 offset = bx::sub(centre, eye);
+        draws.push_back({batchIndex, bx::dot(offset, offset)});
+    }
+    sortIndoorTranslucentDrawsBackToFront(draws);
+    const IndoorDrawLightSet faceAmbient = {};
+    for (const IndoorTranslucentDraw &draw : draws)
+    {
+        submitTexturedBatch(m_texturedBatches[draw.batchIndex], viewId, faceAmbient, &m_lightGrid, eye,
+            m_cameraYawRadians, m_cameraPitchRadians, width, height, secretFacesDetected, {0.0f, 0.0f, 0.0f, 0.0f});
+    }
+}
+
+void IndoorRenderer::destroyBakedLightingResources()
+{
+    for (bgfx::TextureHandle handle : m_lightmapTextureHandles)
+    {
+        if (bgfx::isValid(handle))
+        {
+            bgfx::destroy(handle);
+        }
+    }
+    m_lightmapTextureHandles.clear();
+    for (bgfx::ProgramHandle *pHandle : {&m_indoorBakedProgramHandle, &m_indoorBakedMaterialProgramHandle})
+    {
+        if (bgfx::isValid(*pHandle))
+        {
+            bgfx::destroy(*pHandle);
+            *pHandle = BGFX_INVALID_HANDLE;
+        }
+    }
+    if (bgfx::isValid(m_lightmapSamplerHandle))
+    {
+        bgfx::destroy(m_lightmapSamplerHandle);
+        m_lightmapSamplerHandle = BGFX_INVALID_HANDLE;
+    }
+    m_bakedLightingActive = false;
 }
 
 void IndoorRenderer::ensureIndoorSwapTexture(const std::string &textureName)
@@ -10595,18 +10818,27 @@ bool IndoorRenderer::rebuildAllTexturedBatches(uint64_t &texturedBuildNanosecond
         }
     }
 
+    const std::vector<BakedStaticLightSource> noStaticLightSources;
     std::unordered_map<std::string, const OutdoorBitmapTexture *> texturesByName;
     for (const OutdoorBitmapTexture &texture : m_indoorTextureSet->textures)
     {
         texturesByName.emplace(texture.textureName, &texture);
     }
 
+    // The rotating movers' faces carry their stored pose's lightmap through the swing (empty without such movers).
+    const std::vector<std::optional<IndoorRigidMotion>> rotatingFaceMotions = buildIndoorRotatingFaceMotions(
+        *m_pIndoorMapData,
+        runtimeMapDeltaData() ? &*runtimeMapDeltaData() : nullptr,
+        eventRuntimeState ? &eventRuntimeState.value() : nullptr);
+
     for (size_t faceIndex = 0; faceIndex < m_pIndoorMapData->faces.size(); ++faceIndex)
     {
         const IndoorFace &face = m_pIndoorMapData->faces[faceIndex];
         const std::string textureName = resolveFaceTextureName(faceIndex, face, eventRuntimeState);
+        // A translucent face (devdocs/INDOOR_TRANSLUCENT_FACES.md) may be a portal; a map without any skips the lookup.
+        const IndoorFaceTranslucency *pTranslucency = findIndoorFaceTranslucency(*m_pIndoorMapData, faceIndex);
 
-        if (face.isPortal || textureName.empty() || face.vertexIndices.size() < 3)
+        if ((face.isPortal && pTranslucency == nullptr) || textureName.empty() || face.vertexIndices.size() < 3)
         {
             continue;
         }
@@ -10633,7 +10865,19 @@ bool IndoorRenderer::rebuildAllTexturedBatches(uint64_t &texturedBuildNanosecond
             liquid = faceLiquidKind(attributes, materialTexture->second->liquid);
             waterColorAbgr = liquid != LiquidKind::None ? materialTexture->second->waterColorAbgr : 0;
         }
-        const std::string batchKey = normalizedTextureName
+        // A lightmapped face batches with the faces of its page; every other face (and every face of a map without
+        // baked lighting) takes page -1, as before. A door-moved face is lightmapped only when the bake has it (in the
+        // BLV's stored pose) and it moves rigidly: its lightmap UVs are offset back to that pose.
+        const bool mechanismFace = faceIndex < mechanismFaceMask.size() && mechanismFaceMask[faceIndex] != 0;
+        const IndoorBakedFaceLightmap faceLightmap = IndoorBakedLighting::faceLightmap(
+            m_pIndoorMapData->bakedLighting.get(), m_bakedLightingActive, faceIndex, face, mechanismFace,
+            m_renderVertices, m_pIndoorMapData->vertices,
+            faceIndex < rotatingFaceMotions.size() && rotatingFaceMotions[faceIndex]
+                ? &*rotatingFaceMotions[faceIndex] : nullptr);
+        const int32_t lightmapPage = faceLightmap.page;
+        // A translucent face is a batch of its own, sorted with the others each frame.
+        const std::string batchKey = (pTranslucency != nullptr ? "T" + std::to_string(faceIndex) : std::string())
+            + "#" + std::to_string(lightmapPage) + "#" + normalizedTextureName
             + "#" + std::to_string(sectorId)
             + "#" + std::to_string(backSectorId)
             + "#" + std::to_string(waterColorAbgr);
@@ -10649,13 +10893,26 @@ bool IndoorRenderer::rebuildAllTexturedBatches(uint64_t &texturedBuildNanosecond
             batch.backSectorId = backSectorId;
             batch.waterColorAbgr = waterColorAbgr;
             batch.liquid = liquid;
+            batch.lightmapPage = lightmapPage;
+            if (pTranslucency != nullptr)
+            {
+                batch.translucent = true;
+                batch.translucency = *pTranslucency;
+                IndoorFaceGeometryData geometry = {};
+                if (buildIndoorFaceGeometry(*m_pIndoorMapData, m_renderVertices, faceIndex, geometry))
+                {
+                    batch.faceNormal = {geometry.normal.x, geometry.normal.y, geometry.normal.z};
+                }
+            }
 
             for (TexturedBatch &previousBatch : previousBatches)
             {
                 if (previousBatch.textureName == normalizedTextureName
                     && previousBatch.sectorId == sectorId
                     && previousBatch.backSectorId == backSectorId
-                    && previousBatch.waterColorAbgr == waterColorAbgr)
+                    && previousBatch.waterColorAbgr == waterColorAbgr
+                    && previousBatch.lightmapPage == lightmapPage
+                    && previousBatch.translucent == batch.translucent)
                 {
                     batch.vertexBufferHandle = previousBatch.vertexBufferHandle;
                     batch.vertexCapacity = previousBatch.vertexCapacity;
@@ -10683,12 +10940,18 @@ bool IndoorRenderer::rebuildAllTexturedBatches(uint64_t &texturedBuildNanosecond
 
             for (const SurfaceAnimationFrame &frame : animation.frames)
             {
-                const bgfx::TextureHandle *pTextureHandle = findIndoorTextureHandle(frame.textureName);
+                const IndoorTextureHandle *pTextureHandle = findIndoorTextureHandle(frame.textureName);
+                const bool singleFrame = animation.frames.size() == 1;
 
                 if (pTextureHandle != nullptr)
                 {
-                    batch.frameTextureHandles.push_back(*pTextureHandle);
+                    batch.frameTextureHandles.push_back(pTextureHandle->textureHandle);
                     batch.frameLengthTicks.push_back(frame.frameLengthTicks);
+                    if (singleFrame)
+                    {
+                        batch.materialNormal = pTextureHandle->materialNormal;
+                        batch.materialDetail = pTextureHandle->materialDetail;
+                    }
                     continue;
                 }
 
@@ -10724,6 +10987,18 @@ bool IndoorRenderer::rebuildAllTexturedBatches(uint64_t &texturedBuildNanosecond
                 IndoorTextureHandle textureHandleEntry = {};
                 textureHandleEntry.textureName = toLowerCopy(frame.textureName);
                 textureHandleEntry.textureHandle = textureHandle;
+                if (pFrameTexture->materialNormal != nullptr)
+                {
+                    textureHandleEntry.materialNormal =
+                        createCookedTexture2D(*pFrameTexture->materialNormal, TextureFilterProfile::BModel);
+                    textureHandleEntry.materialDetail =
+                        createCookedTexture2D(*pFrameTexture->materialDetail, TextureFilterProfile::BModel);
+                }
+                if (singleFrame)
+                {
+                    batch.materialNormal = textureHandleEntry.materialNormal;
+                    batch.materialDetail = textureHandleEntry.materialDetail;
+                }
                 m_indoorTextureHandles.push_back(std::move(textureHandleEntry));
                 batch.frameTextureHandles.push_back(textureHandle);
                 batch.frameLengthTicks.push_back(frame.frameLengthTicks);
@@ -10757,8 +11032,7 @@ bool IndoorRenderer::rebuildAllTexturedBatches(uint64_t &texturedBuildNanosecond
         TexturedBatch &batch = m_texturedBatches[batchIndex];
         batch.textureWidth = pTexture->width;
         batch.textureHeight = pTexture->height;
-        const bool useBaseSubdivisionGeometry =
-            faceIndex < mechanismFaceMask.size() && mechanismFaceMask[faceIndex] != 0;
+        const bool useBaseSubdivisionGeometry = mechanismFace;
 
         const uint64_t faceBuildBeginTickCount = SDL_GetTicksNS();
         TexturedFaceMesh faceMesh = buildFaceTexturedMesh(
@@ -10770,8 +11044,9 @@ bool IndoorRenderer::rebuildAllTexturedBatches(uint64_t &texturedBuildNanosecond
             eventRuntimeState,
             m_bakedStaticColoredLights,
             m_indoorDecorationBillboardSet ? &m_indoorDecorationBillboardSet.value() : nullptr,
-            &bakedStaticLightSources,
-            &bakedStaticLightSubdivisionSources,
+            // A lightmapped face takes no static vertex light (nor its subdivision): its lightmap has it.
+            lightmapPage >= 0 ? &noStaticLightSources : &bakedStaticLightSources,
+            lightmapPage >= 0 ? &noStaticLightSources : &bakedStaticLightSubdivisionSources,
             useBaseSubdivisionGeometry,
             {},
             {},
@@ -10793,6 +11068,14 @@ bool IndoorRenderer::rebuildAllTexturedBatches(uint64_t &texturedBuildNanosecond
             batch.indices.push_back(vertexOffset + index);
         }
         batch.vertices.insert(batch.vertices.end(), faceMesh.vertices.begin(), faceMesh.vertices.end());
+        if (batch.lightmapPage >= 0)
+        {
+            const IndoorBakedLightingFace &bakedFace = m_pIndoorMapData->bakedLighting->faces[faceIndex];
+            for (const TexturedVertex &vertex : faceMesh.vertices)
+            {
+                batch.lightmapUvs.push_back(faceLightmap.uvAt(bakedFace, vertex.x, vertex.y, vertex.z));
+            }
+        }
         if (useBaseSubdivisionGeometry)
         {
             m_faceSubdivisionTriangles[faceIndex] = std::move(faceMesh.triangles);
@@ -10817,6 +11100,17 @@ bool IndoorRenderer::rebuildAllTexturedBatches(uint64_t &texturedBuildNanosecond
                 TexturedVertex::ms_layout))
         {
             return false;
+        }
+        if (batch.lightmapPage >= 0)
+        {
+            batch.lightmapUvBufferHandle = bgfx::createVertexBuffer(
+                bgfx::copy(batch.lightmapUvs.data(), uint32_t(batch.lightmapUvs.size() * sizeof(batch.lightmapUvs[0]))),
+                LightmapUvVertex::ms_layout);
+            std::vector<std::array<float, 2>>().swap(batch.lightmapUvs);
+            if (!bgfx::isValid(batch.lightmapUvBufferHandle))
+            {
+                return false;
+            }
         }
         // Unique references are already in triangle-list order. Index only batches that actually share vertices.
         if (batch.vertexCount < batch.indexCount)
@@ -10848,6 +11142,10 @@ bool IndoorRenderer::rebuildAllTexturedBatches(uint64_t &texturedBuildNanosecond
         if (bgfx::isValid(previousBatch.vertexBufferHandle))
         {
             bgfx::destroy(previousBatch.vertexBufferHandle);
+        }
+        if (bgfx::isValid(previousBatch.lightmapUvBufferHandle))
+        {
+            bgfx::destroy(previousBatch.lightmapUvBufferHandle);
         }
         if (bgfx::isValid(previousBatch.indexBufferHandle))
         {
@@ -10995,6 +11293,11 @@ bool IndoorRenderer::refreshBakedStaticLighting(
     };
     for (TexturedBatch &batch : m_texturedBatches)
     {
+        // A lightmapped batch's static light is its lightmap, which no event changes.
+        if (batch.lightmapPage >= 0)
+        {
+            continue;
+        }
         const float ambient = batch.sectorId >= 0 && size_t(batch.sectorId) < sectorAmbientLevels.size()
             ? IndoorLightingRuntime::ambientFromMinAmbientLightLevel(sectorAmbientLevels[size_t(batch.sectorId)])
             : IndoorLightingRuntime::ambientFromMinAmbientLightLevel(0);
@@ -11164,6 +11467,8 @@ bool IndoorRenderer::updateMechanismFaceVertices(
             eventRuntimeState ? &eventRuntimeState.value() : nullptr,
             m_indoorDecorationBillboardSet ? &m_indoorDecorationBillboardSet.value() : nullptr,
             false);
+    // A lightmapped mover face takes no static vertex light: its lightmap (stored-pose UVs) moves with it.
+    const std::vector<BakedStaticLightSource> noStaticLightSources;
     std::vector<uint8_t> dirtyBatchBounds(m_texturedBatches.size(), 0);
     size_t updatedFaceCount = 0;
 
@@ -11270,7 +11575,7 @@ bool IndoorRenderer::updateMechanismFaceVertices(
             eventRuntimeState,
             m_bakedStaticColoredLights,
             m_indoorDecorationBillboardSet ? &m_indoorDecorationBillboardSet.value() : nullptr,
-            &bakedStaticLightSources,
+            batch.lightmapPage >= 0 ? &noStaticLightSources : &bakedStaticLightSources,
             nullptr,
             true,
             std::span<const TexturedVertex>(batch.vertices).subspan(vertexOffset, vertexCount),
@@ -11293,6 +11598,16 @@ bool IndoorRenderer::updateMechanismFaceVertices(
 
         std::copy(faceMesh.vertices.begin(), faceMesh.vertices.end(), batch.vertices.begin() + vertexOffset);
         dirtyBatchBounds[static_cast<size_t>(batchIndex)] = 1;
+        if (batch.translucent)
+        {
+            // A pane on a rotating mover turns: its one-sided test follows the face.
+            const bx::Vec3 normal = computeFaceNormal(m_renderVertices, m_pIndoorMapData->faces[faceIndex]);
+            if (vecDot(normal, normal) > 0.0001f)
+            {
+                const bx::Vec3 unitNormal = vecNormalize(normal);
+                batch.faceNormal = {unitNormal.x, unitNormal.y, unitNormal.z};
+            }
+        }
         if (batch.waterColorAbgr != 0)
         {
             m_waterGeometryDirty = true;
@@ -11378,6 +11693,10 @@ void IndoorRenderer::destroyDerivedGeometryResources()
         {
             bgfx::destroy(batch.vertexBufferHandle);
         }
+        if (bgfx::isValid(batch.lightmapUvBufferHandle))
+        {
+            bgfx::destroy(batch.lightmapUvBufferHandle);
+        }
         if (bgfx::isValid(batch.indexBufferHandle))
         {
             bgfx::destroy(batch.indexBufferHandle);
@@ -11399,9 +11718,13 @@ void IndoorRenderer::destroyIndoorTextureHandles()
 {
     for (IndoorTextureHandle &textureHandle : m_indoorTextureHandles)
     {
-        if (bgfx::isValid(textureHandle.textureHandle))
+        for (bgfx::TextureHandle handle :
+            {textureHandle.textureHandle, textureHandle.materialNormal, textureHandle.materialDetail})
         {
-            bgfx::destroy(textureHandle.textureHandle);
+            if (bgfx::isValid(handle))
+            {
+                bgfx::destroy(handle);
+            }
         }
     }
 
@@ -11697,39 +12020,12 @@ bool IndoorRenderer::updateMechanismRenderVerticesForDoorIds(const std::vector<u
 
         const RuntimeMechanismState &mechanism =
             mechanismIterator != pEventRuntimeState->mechanisms.end() ? mechanismIterator->second : baseMechanism;
-
-        const size_t movableVertexCount = std::min(
-            door.vertexIds.size(),
-            std::min(door.xOffsets.size(), std::min(door.yOffsets.size(), door.zOffsets.size()))
-        );
-
-        if (movableVertexCount == 0)
-        {
-            continue;
-        }
-
-        const float distance = mechanism.currentDistance;
-        const float directionX = static_cast<float>(door.directionX) / 65536.0f;
-        const float directionY = static_cast<float>(door.directionY) / 65536.0f;
-        const float directionZ = static_cast<float>(door.directionZ) / 65536.0f;
-
-        for (size_t vertexOffsetIndex = 0; vertexOffsetIndex < movableVertexCount; ++vertexOffsetIndex)
-        {
-            const uint16_t vertexId = door.vertexIds[vertexOffsetIndex];
-
-            if (vertexId >= m_renderVertices.size())
-            {
-                continue;
-            }
-
-            IndoorVertex &vertex = m_renderVertices[vertexId];
-            vertex.x = static_cast<int>(std::lround(
-                static_cast<float>(door.xOffsets[vertexOffsetIndex]) + directionX * distance));
-            vertex.y = static_cast<int>(std::lround(
-                static_cast<float>(door.yOffsets[vertexOffsetIndex]) + directionY * distance));
-            vertex.z = static_cast<int>(std::lround(
-                static_cast<float>(door.zOffsets[vertexOffsetIndex]) + directionZ * distance));
-        }
+        applyIndoorMechanismDoorToVertices(
+            door,
+            findIndoorMoverDefinition(*m_pIndoorMapData, door.doorId),
+            mechanism.currentDistance,
+            mechanism.rotationDirection,
+            m_renderVertices);
     }
 
     return true;
@@ -11971,7 +12267,9 @@ IndoorRenderer::TexturedFaceMesh IndoorRenderer::buildFaceTexturedMesh(
 
     const std::optional<MechanismFaceTextureState> mechanismFaceTextureState =
         findMechanismFaceTextureState(faceIndex, indoorMapDeltaData, eventRuntimeState);
-    const bool useGeometryTextureCoordinates = mechanismFaceTextureState.has_value();
+    const bool useGeometryTextureCoordinates =
+        mechanismFaceTextureState
+        && !mechanismFaceKeepsStoredTexels(indoorMapData, face, *mechanismFaceTextureState->pDoor);
     std::vector<float> geometryUs;
     std::vector<float> geometryVs;
     float geometryDeltaU = 0.0f;
@@ -12169,6 +12467,20 @@ IndoorRenderer::TexturedFaceMesh IndoorRenderer::buildFaceTexturedMesh(
         {
             continue;
         }
+        std::array<float, 3> gradientU = {};
+        std::array<float, 3> gradientV = {};
+        surfaceTextureGradients(
+            {bx::Vec3{triangleVertices[0].x, triangleVertices[0].y, triangleVertices[0].z},
+                bx::Vec3{triangleVertices[1].x, triangleVertices[1].y, triangleVertices[1].z},
+                bx::Vec3{triangleVertices[2].x, triangleVertices[2].y, triangleVertices[2].z}},
+            {{{triangleVertices[0].u, triangleVertices[0].v}, {triangleVertices[1].u, triangleVertices[1].v},
+                {triangleVertices[2].u, triangleVertices[2].v}}},
+            gradientU, gradientV);
+        for (TexturedVertex &triangleVertex : triangleVertices)
+        {
+            triangleVertex.gradientU = gradientU;
+            triangleVertex.gradientV = gradientV;
+        }
 
         std::array<bx::Vec3, 3> subdivisionPositions = {
             bx::Vec3{0.0f, 0.0f, 0.0f}, bx::Vec3{0.0f, 0.0f, 0.0f}, bx::Vec3{0.0f, 0.0f, 0.0f}
@@ -12216,6 +12528,8 @@ IndoorRenderer::TexturedFaceMesh IndoorRenderer::buildFaceTexturedMesh(
                 vertex.flowVPerSecond = a.flowVPerSecond;
                 vertex.lavaFlow = a.lavaFlow;
                 vertex.fluidFlow = a.fluidFlow;
+                vertex.gradientU = a.gradientU;
+                vertex.gradientV = a.gradientV;
                 refreshBakedStaticLight(*pBakedStaticLightSources, coloredLights, faceAmbient, vertex);
                 mesh.vertices.push_back(vertex);
             }
@@ -13883,6 +14197,9 @@ void IndoorRenderer::updateCameraFromInput(
         }
         partyRuntime.setDecorationColliders(worldRuntime.decorationMovementColliders());
         partyRuntime.setSpriteObjectColliders(worldRuntime.spriteObjectMovementColliders());
+        partyRuntime.setLadderVerticalInput(!allowWorldInput
+            ? 0
+            : int(input.action(KeyboardAction::FlyUp).held) - int(input.action(KeyboardAction::FlyDown).held));
         const bool runningMovement =
             running
             && allowWorldInput

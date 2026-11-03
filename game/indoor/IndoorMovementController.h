@@ -158,6 +158,10 @@ public:
         float eyeZ,
         const IndoorBodyDimensions &body
     ) const;
+    const IndoorMapData *indoorMapData() const
+    {
+        return m_pIndoorMapData;
+    }
     IndoorMoveState resolveMove(
         const IndoorMoveState &state,
         const IndoorBodyDimensions &body,

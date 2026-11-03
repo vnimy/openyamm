@@ -5383,7 +5383,9 @@ bool Party::tryEquipItemOnMember(
         || !ItemRuntime::characterMeetsClassRestriction(*pMember, *pItemDefinition)
         || !ItemRuntime::characterMeetsRaceRestriction(*pMember, *pItemDefinition))
     {
-        m_lastStatus = "cannot equip";
+        m_lastStatus = pItemDefinition != nullptr
+            ? ItemRuntime::wearRequirementText(*pItemDefinition).value_or("cannot equip")
+            : "cannot equip";
         return false;
     }
 

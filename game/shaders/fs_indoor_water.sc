@@ -8,6 +8,11 @@ $input v_worldPosition, v_worldNormal, v_texcoord0, v_texcoord1, v_color0
 uniform vec4 u_indoorLightPositions[12];
 uniform vec4 u_indoorLightColors[12];
 uniform vec4 u_indoorLightParams;
+#if INDOOR_FOG
+// A map with scene fog (devdocs/INDOOR_FOG.md). rgb: fog colour; x, y: near and far distance.
+uniform vec4 u_fogColor;
+uniform vec4 u_fogDistances;
+#endif
 
 void main()
 {
@@ -116,6 +121,10 @@ void main()
     }
 #if WATER_MOVEMENT_RIPPLES
     color += vec3(0.85, 0.92, 1.0) * movementSheen;
+#endif
+#if INDOOR_FOG
+    color = mix(color, u_fogColor.rgb, clamp((length(v_worldPosition - u_cameraPosition.xyz) - u_fogDistances.x)
+        / max(u_fogDistances.y - u_fogDistances.x, 1.0), 0.0, 1.0));
 #endif
     gl_FragColor = vec4(color, 1.0);
 }

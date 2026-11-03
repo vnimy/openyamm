@@ -1210,6 +1210,13 @@ EvtVariable canonicalMm8Variable(uint32_t rawVariableId, uint32_t index)
             static_cast<uint32_t>(EvtVariable::Counter1) + rawVariableId - 0x00F7u);
     }
 
+    // MM8 stores History1-29 at 0x116-0x132, two above MM7's range.
+    if (rawVariableId >= 0x0116u && rawVariableId <= 0x0132u)
+    {
+        return static_cast<EvtVariable>(
+            static_cast<uint32_t>(EvtVariable::HistoryBegin) + rawVariableId - 0x0116u);
+    }
+
     switch (rawVariableId)
     {
         case 0x00E9u: return EvtVariable::PlayerBits;
@@ -2737,6 +2744,48 @@ std::optional<std::string> resolveSummonItemComment(
     return comment;
 }
 
+// MM8's SummonItem payload over 1000 is a random item of treasure level payload / 1000 and of the kind of item
+// payload % 1000 (MMExtension's evt.SummonObject); a plain payload is the item itself. MM6/MM7 payloads are objects.
+constexpr uint32_t Mm8RandomSummonItemPayloadBase = 1000;
+
+bool formatSummonCall(
+    const LegacyLuaInstruction &instruction,
+    const LegacyLuaExportLookups &lookups,
+    std::string &expression,
+    std::optional<std::string> &comment)
+{
+    if (instruction.arguments.size() < 7)
+    {
+        return false;
+    }
+
+    const uint32_t payload = instruction.arguments[0];
+    const std::string placement = std::to_string(static_cast<int32_t>(instruction.arguments[1])) + ", "
+        + std::to_string(static_cast<int32_t>(instruction.arguments[2])) + ", "
+        + std::to_string(static_cast<int32_t>(instruction.arguments[3])) + ", "
+        + std::to_string(static_cast<int32_t>(instruction.arguments[4])) + ", "
+        + std::to_string(instruction.arguments[5]) + ", "
+        + (instruction.arguments[6] != 0 ? "true" : "false") + ")";
+
+    if (instruction.operation == LegacyLuaOperation::SummonItem && payload > Mm8RandomSummonItemPayloadBase)
+    {
+        const uint32_t treasureLevel = payload / Mm8RandomSummonItemPayloadBase;
+        const uint32_t kindItemId = payload % Mm8RandomSummonItemPayloadBase;
+        expression = "evt.SummonRandomItem(" + std::to_string(treasureLevel) + ", " + std::to_string(kindItemId)
+            + ", " + placement;
+        const std::optional<std::string> kindName = lookupText(lookups.itemNames, kindItemId);
+        comment = kindName
+            ? std::optional<std::string>("random item of the " + *kindName + "'s kind")
+            : std::nullopt;
+        return true;
+    }
+
+    expression = (instruction.operation == LegacyLuaOperation::SummonItem ? "evt.SummonItem(" : "evt.SummonObject(")
+        + std::to_string(payload) + ", " + placement;
+    comment = resolveSummonItemComment(payload, lookups, instruction.operation == LegacyLuaOperation::SummonItem);
+    return true;
+}
+
 bool formatGiveItemCall(
     const LegacyLuaInstruction &instruction,
     const LegacyLuaExportLookups &lookups,
@@ -3800,29 +3849,18 @@ bool emitReadableActionInstruction(
 
         case LegacyLuaOperation::SummonItem:
         case LegacyLuaOperation::SummonObject:
-            if (instruction.arguments.size() >= 7)
+        {
+            std::string expression;
+            std::optional<std::string> comment;
+
+            if (formatSummonCall(instruction, lookups, expression, comment))
             {
-                const std::string functionName = instruction.operation == LegacyLuaOperation::SummonItem
-                    ? "evt.SummonItem("
-                    : "evt.SummonObject(";
-                emitIndentedLineWithComment(
-                    stream,
-                    functionName + std::to_string(instruction.arguments[0]) + ", "
-                    + std::to_string(static_cast<int32_t>(instruction.arguments[1])) + ", "
-                    + std::to_string(static_cast<int32_t>(instruction.arguments[2])) + ", "
-                    + std::to_string(static_cast<int32_t>(instruction.arguments[3])) + ", "
-                    + std::to_string(static_cast<int32_t>(instruction.arguments[4])) + ", "
-                    + std::to_string(instruction.arguments[5]) + ", "
-                    + (instruction.arguments[6] != 0 ? std::string("true") : std::string("false")) + ")",
-                    resolveSummonItemComment(
-                        instruction.arguments[0],
-                        lookups,
-                        instruction.operation == LegacyLuaOperation::SummonItem),
-                    indentLevel);
+                emitIndentedLineWithComment(stream, expression, comment, indentLevel);
                 return true;
             }
 
             return false;
+        }
 
         case LegacyLuaOperation::SummonMonsters:
             if (instruction.arguments.size() >= 8)
@@ -8674,27 +8712,16 @@ void emitNormalInstruction(
 
         case LegacyLuaOperation::SummonItem:
         case LegacyLuaOperation::SummonObject:
-            if (instruction.arguments.size() >= 7)
+        {
+            std::string expression;
+            std::optional<std::string> comment;
+
+            if (formatSummonCall(instruction, lookups, expression, comment))
             {
-                const std::string functionName = instruction.operation == LegacyLuaOperation::SummonItem
-                    ? "evt.SummonItem("
-                    : "evt.SummonObject(";
-                emitIndentedLineWithComment(
-                    stream,
-                    functionName + std::to_string(instruction.arguments[0]) + ", "
-                    + std::to_string(static_cast<int32_t>(instruction.arguments[1])) + ", "
-                    + std::to_string(static_cast<int32_t>(instruction.arguments[2])) + ", "
-                    + std::to_string(static_cast<int32_t>(instruction.arguments[3])) + ", "
-                    + std::to_string(static_cast<int32_t>(instruction.arguments[4])) + ", "
-                    + std::to_string(instruction.arguments[5]) + ", "
-                    + (instruction.arguments[6] != 0 ? "true" : "false") + ")",
-                    resolveSummonItemComment(
-                        instruction.arguments[0],
-                        lookups,
-                        instruction.operation == LegacyLuaOperation::SummonItem),
-                    2);
+                emitIndentedLineWithComment(stream, expression, comment, 2);
             }
             break;
+        }
 
         case LegacyLuaOperation::GiveItem:
         {

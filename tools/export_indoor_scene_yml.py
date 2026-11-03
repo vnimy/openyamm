@@ -63,7 +63,6 @@ DLV_FORMATS: dict[str, dict[str, object]] = {
             "npc_id": 0x20,
             "attributes": 0x24,
             "hp": 0x28,
-            "hostility_type": 0x3D,
             "monster_info_id": 0x5C,
             "monster_id": 0x86,
             "radius": 0x88,
@@ -90,7 +89,6 @@ DLV_FORMATS: dict[str, dict[str, object]] = {
             "npc_id": 0x20,
             "attributes": 0x24,
             "hp": 0x28,
-            "hostility_type": 0x2C,
             "monster_info_id": 0x6A,
             "monster_id": 0x7C,
             "radius": 0x90,
@@ -284,10 +282,8 @@ def parse_actor_vector(
             "npc_id": reader.read_i16(actor_offset + actor_offsets["npc_id"], f"actor {actor_index} npc id"),
             "attributes": reader.read_u32(actor_offset + actor_offsets["attributes"], f"actor {actor_index} attributes"),
             "hp": reader.read_i16(actor_offset + actor_offsets["hp"], f"actor {actor_index} hp"),
-            "hostility_type": reader.read_u8(
-                actor_offset + actor_offsets["hostility_type"],
-                f"actor {actor_index} hostility type"
-            ),
+            # Not authored: the raw field (0x3D) is a snapshot of the monster table's Hst, and 0x2C is a live pointer.
+            "hostility_type": 0,
             "monster_info_id": reader.read_i16(
                 actor_offset + actor_offsets["monster_info_id"],
                 f"actor {actor_index} monster info id"

@@ -10,7 +10,7 @@ ReplaceMapEvent(197, "Merchant Guildhouse", function()
         evt.ForPlayer(Players.All)
         AddValue(Experience, 10000)
         SetAward(Award(5)) -- Found a witness to the cataclysm in the Ironsand Desert.
-        AddValue(History(8), 0)
+        AddValue(History(6), 0)
         evt.ForPlayer(Players.Current)
         ClearQBit(QBit(25)) -- Find a witness to the lake of fire's formation.
         SetQBit(QBit(13)) -- Form an alliance among the major factions of Jadame.

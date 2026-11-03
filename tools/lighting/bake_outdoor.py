@@ -21,30 +21,11 @@ from mathutils import Matrix, Vector
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from bake_geometry import face_basis, pack_lightmap_charts, rle_bgra
+from bake_geometry import face_basis, fnv, pack_lightmap_charts, rgbm, rle_bgra
 from bake_assets import bake_texture_paths, dependency_file, source_roots, texture_logical_scale
 
 sys.path.insert(0, str(ROOT / 'util'))
 from map_export import parse_odm_file
-
-
-def fnv(data):
-    h = 14695981039346656037
-    for b in data:
-        h = ((h ^ b) * 1099511628211) & 0xffffffffffffffff
-    return h
-
-
-def rgbm(pixels):
-    rgb = np.maximum(pixels[:, :, :3], 0)
-    if not np.isfinite(rgb).all() or float(rgb.max()) > 4:
-        raise ValueError('Lighting exceeds RGBM4 range or contains nonfinite samples')
-    m = np.maximum(np.ceil(rgb.max(axis=2) * 255 / 4), 1)
-    rgba = np.empty(pixels.shape, dtype=np.uint8)
-    rgba[:, :, :3] = np.rint(np.clip(rgb / (m[:, :, None] * 4 / 255), 0, 1) * 255)
-    rgba[:, :, 3] = m.astype(np.uint8)
-    # Blender bottom-up data is kept: runtime lighting UVs use the same coordinates.
-    return rgba[:, :, [2, 1, 0, 3]].tobytes()
 
 
 # The glTF importer turns glTF's Y-up space into Blender's Z-up one: Blender = GLTF_TO_BLENDER @ glTF.

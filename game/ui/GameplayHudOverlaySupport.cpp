@@ -1423,8 +1423,14 @@ void GameplayHudOverlaySupport::renderItemRarityGlow(
     float height,
     float scale)
 {
+    const ItemRules &rules = gameRulesFor(context.partyReadOnly()).items;
     const std::string &mode = context.settingsSnapshot().rarityGlow;
     const GameplayInputFrame *pInput = context.currentGameplayInputFrame();
+
+    if (!rules.glowsItemRarity())
+    {
+        return;
+    }
 
     if (mode != "always"
         && !(mode == "hold" && pInput != nullptr && pInput->action(KeyboardAction::ShowItemRarity).held))
@@ -1435,7 +1441,7 @@ void GameplayHudOverlaySupport::renderItemRarityGlow(
     // A drop the loot filter left where it fell is outlined grey instead (RulesetLootFilter::leaveOnGround).
     std::optional<uint32_t> color = item.rulesetFields.lootFiltered != 0
         ? std::optional<uint32_t>(0x8c8c8cu)
-        : gameRulesFor(context.partyReadOnly()).items.nameColor(item);
+        : rules.nameColor(item);
 
     // Artifacts, relics and special items (the item table's material: Cycle of Life) without a colour of the rules
     // glow teal.

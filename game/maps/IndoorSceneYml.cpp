@@ -12,6 +12,7 @@
 #include <cmath>
 #include <cstring>
 #include <exception>
+#include <limits>
 #include <sstream>
 #include <vector>
 
@@ -609,6 +610,335 @@ void mergeIndoorSceneFaceAttributeOverride(
         pTargetOverride->cogTriggerType = sourceOverride.cogTriggerType;
     }
 }
+
+// `translucent_faces`: a sequence of {faces: [ids], opacity, tint: [r, g, b], two_sided}; opacity, tint and
+// two_sided are optional (1, white, false).
+bool parseFloatTriple(const YAML::Node &node, std::array<float, 3> &value, std::string &errorMessage)
+{
+    return parsePositionNode(node, value[0], value[1], value[2], errorMessage);
+}
+
+// A door's `mover` block: rotation {pivot, axis, open_degrees, open_away}, easing, bodies, carry, auto_close_seconds.
+bool parseIndoorMoverNode(
+    const YAML::Node &node,
+    uint32_t doorId,
+    IndoorMoverDefinition &mover,
+    std::string &errorMessage)
+{
+    if (!node.IsMap())
+    {
+        errorMessage = "door mover must be a map";
+        return false;
+    }
+
+    mover.doorId = doorId;
+    std::string easing = "linear";
+    std::string bodies = "ignore";
+
+    if (!readScalarNode(node, "easing", easing, errorMessage, false)
+        || !readScalarNode(node, "bodies", bodies, errorMessage, false)
+        || !readScalarNode(node, "carry", mover.carry, errorMessage, false)
+        || !readScalarNode(node, "auto_close_seconds", mover.autoCloseSeconds, errorMessage, false))
+    {
+        return false;
+    }
+
+    if (easing == "linear")
+    {
+        mover.easing = IndoorMoverEasing::Linear;
+    }
+    else if (easing == "sine")
+    {
+        mover.easing = IndoorMoverEasing::Sine;
+    }
+    else
+    {
+        errorMessage = "door mover easing must be linear or sine: " + easing;
+        return false;
+    }
+
+    if (bodies == "ignore")
+    {
+        mover.bodies = IndoorMoverBodyRule::Ignore;
+    }
+    else if (bodies == "hold")
+    {
+        mover.bodies = IndoorMoverBodyRule::Hold;
+    }
+    else if (bodies == "reverse")
+    {
+        mover.bodies = IndoorMoverBodyRule::Reverse;
+    }
+    else if (bodies == "push")
+    {
+        mover.bodies = IndoorMoverBodyRule::Push;
+    }
+    else
+    {
+        errorMessage = "door mover bodies must be ignore, hold, reverse or push: " + bodies;
+        return false;
+    }
+
+    if (!std::isfinite(mover.autoCloseSeconds) || mover.autoCloseSeconds < 0.0f)
+    {
+        errorMessage = "door mover auto_close_seconds must be zero or positive";
+        return false;
+    }
+
+    if (const YAML::Node rotationNode = node["rotation"]; rotationNode)
+    {
+        if (!rotationNode.IsMap())
+        {
+            errorMessage = "door mover rotation must be a map";
+            return false;
+        }
+
+        IndoorMoverRotation rotation = {};
+
+        if (!parseFloatTriple(rotationNode["pivot"], rotation.pivot, errorMessage)
+            || !parseFloatTriple(rotationNode["axis"], rotation.axis, errorMessage)
+            || !readScalarNode(rotationNode, "open_degrees", rotation.openDegrees, errorMessage)
+            || !readScalarNode(rotationNode, "open_away", rotation.openAway, errorMessage, false))
+        {
+            return false;
+        }
+
+        mover.rotation = rotation;
+    }
+
+    return true;
+}
+
+// Scene `ladders`: a sequence of {id, bottom, top, facing_degrees, width, reach, top_exit}.
+bool parseIndoorLaddersNode(const YAML::Node &node, std::vector<IndoorLadder> &ladders, std::string &errorMessage)
+{
+    if (!node.IsSequence())
+    {
+        errorMessage = "ladders must be a sequence";
+        return false;
+    }
+
+    for (const YAML::Node &ladderNode : node)
+    {
+        IndoorLadder ladder = {};
+
+        if (!ladderNode.IsMap()
+            || !readScalarNode(ladderNode, "id", ladder.id, errorMessage)
+            || !parseFloatTriple(ladderNode["bottom"], ladder.bottom, errorMessage)
+            || !parseFloatTriple(ladderNode["top"], ladder.top, errorMessage)
+            || !readScalarNode(ladderNode, "facing_degrees", ladder.facingDegrees, errorMessage)
+            || !readScalarNode(ladderNode, "width", ladder.width, errorMessage, false)
+            || !readScalarNode(ladderNode, "reach", ladder.reach, errorMessage, false)
+            || !parseFloatTriple(ladderNode["top_exit"], ladder.topExit, errorMessage))
+        {
+            errorMessage = errorMessage.empty() ? "ladder entry must be a map" : "ladder: " + errorMessage;
+            return false;
+        }
+
+        if (ladder.top[2] <= ladder.bottom[2] || ladder.width <= 0.0f || ladder.reach <= 0.0f)
+        {
+            errorMessage = "ladder " + ladder.id + " needs top above bottom and a positive width and reach";
+            return false;
+        }
+
+        ladders.push_back(std::move(ladder));
+    }
+
+    return true;
+}
+
+bool parseTranslucentFacesNode(
+    const YAML::Node &node,
+    std::vector<IndoorSceneTranslucentFaces> &entries,
+    std::string &errorMessage)
+{
+    if (!node.IsSequence())
+    {
+        errorMessage = "translucent_faces must be a sequence";
+        return false;
+    }
+
+    for (const YAML::Node &entryNode : node)
+    {
+        if (!entryNode.IsMap())
+        {
+            errorMessage = "translucent_faces entry must be a map";
+            return false;
+        }
+
+        IndoorSceneTranslucentFaces entry = {};
+        const YAML::Node facesNode = entryNode["faces"];
+        const YAML::Node tintNode = entryNode["tint"];
+
+        if (!facesNode || !facesNode.IsSequence() || facesNode.size() == 0)
+        {
+            errorMessage = "translucent_faces entry needs a non-empty faces sequence";
+            return false;
+        }
+
+        if (tintNode && (!tintNode.IsSequence() || tintNode.size() != 3))
+        {
+            errorMessage = "translucent_faces tint must be three numbers";
+            return false;
+        }
+
+        try
+        {
+            for (const YAML::Node &faceNode : facesNode)
+            {
+                entry.faceIds.push_back(faceNode.as<uint16_t>());
+            }
+
+            for (size_t channel = 0; tintNode && channel < 3; ++channel)
+            {
+                entry.translucency.tint[channel] = tintNode[channel].as<float>();
+            }
+        }
+        catch (const std::exception &exception)
+        {
+            errorMessage = std::string("could not parse translucent_faces entry: ") + exception.what();
+            return false;
+        }
+
+        if (!readScalarNode(entryNode, "opacity", entry.translucency.opacity, errorMessage, false)
+            || !readScalarNode(entryNode, "two_sided", entry.translucency.twoSided, errorMessage, false))
+        {
+            return false;
+        }
+
+        entries.push_back(std::move(entry));
+    }
+
+    return true;
+}
+}
+
+// `fog`: {color_rgb: [r, g, b], near_distance, far_distance} in native units (devdocs/INDOOR_FOG.md).
+bool parseFogNode(const YAML::Node &node, IndoorFog &fog, std::string &errorMessage)
+{
+    const YAML::Node colorNode = node.IsMap() ? node["color_rgb"] : YAML::Node();
+
+    if (!colorNode || !colorNode.IsSequence() || colorNode.size() != 3 || !node["near_distance"]
+        || !node["far_distance"])
+    {
+        errorMessage = "fog must be a map of color_rgb (three numbers), near_distance and far_distance";
+        return false;
+    }
+
+    IndoorFog parsed = {};
+
+    try
+    {
+        for (size_t channel = 0; channel < 3; ++channel)
+        {
+            const float value = colorNode[channel].as<float>();
+
+            if (!(value >= 0.0f && value <= 255.0f))
+            {
+                errorMessage = "fog color_rgb must be within 0..255";
+                return false;
+            }
+
+            parsed.color[channel] = value / 255.0f;
+        }
+
+        parsed.nearDistance = node["near_distance"].as<float>();
+        parsed.farDistance = node["far_distance"].as<float>();
+    }
+    catch (const std::exception &exception)
+    {
+        errorMessage = std::string("could not parse fog: ") + exception.what();
+        return false;
+    }
+
+    if (!(parsed.nearDistance >= 0.0f && parsed.nearDistance < parsed.farDistance))
+    {
+        errorMessage = "fog requires 0 <= near_distance < far_distance";
+        return false;
+    }
+
+    parsed.enabled = true;
+    fog = parsed;
+    return true;
+}
+
+bool parseIndoorSceneFog(const std::string &yamlText, IndoorFog &fog, std::string &errorMessage)
+{
+    try
+    {
+        return parseFogNode(YAML::Load(yamlText), fog, errorMessage);
+    }
+    catch (const std::exception &exception)
+    {
+        errorMessage = std::string("could not parse fog: ") + exception.what();
+        return false;
+    }
+}
+
+bool parseIndoorSceneTranslucentFaces(
+    const std::string &yamlText,
+    std::vector<IndoorSceneTranslucentFaces> &entries,
+    std::string &errorMessage)
+{
+    try
+    {
+        return parseTranslucentFacesNode(YAML::Load(yamlText), entries, errorMessage);
+    }
+    catch (const std::exception &exception)
+    {
+        errorMessage = std::string("could not parse translucent_faces: ") + exception.what();
+        return false;
+    }
+}
+
+bool buildIndoorTranslucentFaces(
+    const std::vector<IndoorSceneTranslucentFaces> &entries,
+    size_t faceCount,
+    std::vector<IndoorTranslucentFace> &faces,
+    std::string &errorMessage)
+{
+    faces.clear();
+
+    for (const IndoorSceneTranslucentFaces &entry : entries)
+    {
+        const IndoorFaceTranslucency &translucency = entry.translucency;
+
+        if (!(translucency.opacity >= 0.0f && translucency.opacity <= 1.0f)
+            || !std::all_of(translucency.tint.begin(), translucency.tint.end(),
+                [](float value) { return std::isfinite(value) && value >= 0.0f; }))
+        {
+            errorMessage = "translucent_faces opacity must be within 0..1 and tint non-negative";
+            return false;
+        }
+
+        for (uint16_t faceIndex : entry.faceIds)
+        {
+            if (faceIndex >= faceCount)
+            {
+                errorMessage = "translucent_faces face " + std::to_string(faceIndex) + " is out of range";
+                return false;
+            }
+
+            faces.push_back({faceIndex, translucency});
+        }
+    }
+
+    std::sort(faces.begin(), faces.end(),
+        [](const IndoorTranslucentFace &left, const IndoorTranslucentFace &right)
+        {
+            return left.faceIndex < right.faceIndex;
+        });
+
+    for (size_t index = 1; index < faces.size(); ++index)
+    {
+        if (faces[index].faceIndex == faces[index - 1].faceIndex)
+        {
+            errorMessage = "translucent_faces lists face " + std::to_string(faces[index].faceIndex) + " twice";
+            return false;
+        }
+    }
+
+    return true;
 }
 
 const IndoorSceneFaceAttributeOverride *findIndoorSceneFaceOverride(const IndoorSceneData &sceneData, size_t faceIndex)
@@ -973,6 +1303,24 @@ std::optional<IndoorSceneData> IndoorSceneYmlLoader::loadFromText(
 
             sceneData.partyStartPoints.push_back(std::move(partyStartPoint));
         }
+    }
+
+    if (const YAML::Node translucentFacesNode = rootNode["translucent_faces"];
+        translucentFacesNode
+        && !parseTranslucentFacesNode(translucentFacesNode, sceneData.translucentFaces, errorMessage))
+    {
+        return std::nullopt;
+    }
+
+    if (const YAML::Node fogNode = rootNode["fog"]; fogNode && !parseFogNode(fogNode, sceneData.fog, errorMessage))
+    {
+        return std::nullopt;
+    }
+
+    if (const YAML::Node laddersNode = rootNode["ladders"];
+        laddersNode && !parseIndoorLaddersNode(laddersNode, sceneData.ladders, errorMessage))
+    {
+        return std::nullopt;
     }
 
     const YAML::Node initialStateNode = rootNode["initial_state"];
@@ -1342,6 +1690,18 @@ std::optional<IndoorSceneData> IndoorSceneYmlLoader::loadFromText(
             return std::nullopt;
         }
 
+        if (const YAML::Node moverNode = doorNode["mover"]; moverNode)
+        {
+            IndoorMoverDefinition mover = {};
+
+            if (!parseIndoorMoverNode(moverNode, sceneDoor.door.doorId, mover, errorMessage))
+            {
+                return std::nullopt;
+            }
+
+            sceneDoor.mover = mover;
+        }
+
         sceneDoor.door.slotIndex = sceneDoor.doorIndex;
         sceneDoor.door.numVertices = sceneDoor.door.vertexIds.size();
         sceneDoor.door.numFaces = sceneDoor.door.faceIds.size();
@@ -1578,6 +1938,127 @@ bool IndoorSceneYmlLoader::applyOverlayFromText(
         }
     }
 
+    // An overlay's translucent faces add to the base scene's.
+    if (const YAML::Node translucentFacesNode = rootNode["translucent_faces"];
+        translucentFacesNode
+        && !parseTranslucentFacesNode(translucentFacesNode, sceneData.translucentFaces, errorMessage))
+    {
+        return false;
+    }
+
+    // An overlay's fog replaces the base scene's.
+    if (const YAML::Node fogNode = rootNode["fog"]; fogNode && !parseFogNode(fogNode, sceneData.fog, errorMessage))
+    {
+        return false;
+    }
+
+    return true;
+}
+
+bool buildIndoorMoverDefinitions(
+    const std::vector<IndoorSceneDoor> &doors,
+    const IndoorMapData &indoorMapData,
+    std::vector<IndoorMoverDefinition> &movers,
+    std::string &errorMessage)
+{
+    movers.clear();
+    std::vector<uint32_t> vertexDoor;
+
+    for (const IndoorSceneDoor &sceneDoor : doors)
+    {
+        if (!sceneDoor.mover)
+        {
+            continue;
+        }
+
+        const MapDeltaDoor &door = sceneDoor.door;
+        const IndoorMoverDefinition &mover = *sceneDoor.mover;
+        const std::string name = "door " + std::to_string(door.doorId) + " mover: ";
+
+        if (!mover.rotation)
+        {
+            if (mover.easing != IndoorMoverEasing::Linear)
+            {
+                errorMessage = name + "easing needs a rotation";
+                return false;
+            }
+
+            movers.push_back(mover);
+            continue;
+        }
+
+        const IndoorMoverRotation &rotation = *mover.rotation;
+        const float axisLength = std::sqrt(rotation.axis[0] * rotation.axis[0] + rotation.axis[1] * rotation.axis[1]
+            + rotation.axis[2] * rotation.axis[2]);
+        const float degrees = std::fabs(rotation.openDegrees);
+
+        if (std::fabs(axisLength - 1.0f) > 1.0e-3f || !(degrees > 0.0f && degrees <= 360.0f))
+        {
+            errorMessage = name + "the axis must be a unit vector and open_degrees within (0, 360]";
+            return false;
+        }
+
+        if (door.directionX != 0 || door.directionY != 0 || door.directionZ != 0
+            || door.moveLength != static_cast<uint32_t>(std::lround(degrees * 10.0f)))
+        {
+            errorMessage = name + "a rotating door has direction zero and move_length = open_degrees x 10";
+            return false;
+        }
+
+        if (vertexDoor.empty())
+        {
+            vertexDoor.assign(indoorMapData.vertices.size(), 0);
+            for (const IndoorSceneDoor &otherDoor : doors)
+            {
+                for (uint16_t vertexId : otherDoor.door.vertexIds)
+                {
+                    if (vertexId < vertexDoor.size())
+                    {
+                        const uint32_t owner = vertexDoor[vertexId];
+                        vertexDoor[vertexId] = owner == 0 || owner == otherDoor.door.doorId
+                            ? otherDoor.door.doorId
+                            : std::numeric_limits<uint32_t>::max();
+                    }
+                }
+            }
+        }
+
+        for (uint16_t faceId : door.faceIds)
+        {
+            if (faceId >= indoorMapData.faces.size() || indoorMapData.faces[faceId].isPortal)
+            {
+                errorMessage = name + "moves a portal or a missing face";
+                return false;
+            }
+
+            for (uint16_t vertexId : indoorMapData.faces[faceId].vertexIndices)
+            {
+                if (vertexId >= vertexDoor.size() || vertexDoor[vertexId] != door.doorId)
+                {
+                    errorMessage = name + "is not rigid: a face has a vertex it does not move or another door moves";
+                    return false;
+                }
+            }
+        }
+
+        movers.push_back(mover);
+    }
+
+    std::sort(movers.begin(), movers.end(),
+        [](const IndoorMoverDefinition &left, const IndoorMoverDefinition &right)
+        {
+            return left.doorId < right.doorId;
+        });
+
+    for (size_t index = 1; index < movers.size(); ++index)
+    {
+        if (movers[index].doorId == movers[index - 1].doorId)
+        {
+            errorMessage = "door " + std::to_string(movers[index].doorId) + " has two mover blocks";
+            return false;
+        }
+    }
+
     return true;
 }
 
@@ -1666,6 +2147,21 @@ bool buildIndoorMapStateFromScene(
 
         applyIndoorSceneFaceOverride(faceOverride, indoorMapData.faces[faceOverride.faceIndex]);
     }
+
+    if (!buildIndoorTranslucentFaces(
+            sceneData.translucentFaces, indoorMapData.faces.size(), indoorMapData.translucentFaces, errorMessage))
+    {
+        return false;
+    }
+
+    if (!buildIndoorMoverDefinitions(
+            sceneData.initialState.doors, indoorMapData, indoorMapData.moverDefinitions, errorMessage))
+    {
+        return false;
+    }
+
+    indoorMapData.ladders = sceneData.ladders;
+    indoorMapData.fog = sceneData.fog;
 
     mapDeltaData.decorationFlags.assign(indoorMapData.entities.size(), 0);
 

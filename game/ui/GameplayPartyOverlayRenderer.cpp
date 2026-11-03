@@ -9754,7 +9754,14 @@ void GameplayPartyOverlayRenderer::renderCharacterOverlay(
         {
             if (!context.isAdventurersInnCharacterSourceActive())
             {
-                GameplayUiSkin::renderButton(context, pLayout->id, width, height);
+#if defined(__ANDROID__) || defined(OPENYAMM_IOS)
+                // Touch drops the held item from here (GameplayCharacterPointerTargetType::InventoryDropButton).
+                const std::string dropLabel = "Drop";
+                const std::string *pLabel = context.heldInventoryItem().active ? &dropLabel : nullptr;
+#else
+                const std::string *pLabel = nullptr;
+#endif
+                GameplayUiSkin::renderButton(context, pLayout->id, width, height, false, true, pLabel);
             }
 
             continue;

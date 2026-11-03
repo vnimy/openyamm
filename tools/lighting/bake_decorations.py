@@ -96,9 +96,17 @@ def export_cards(profile, output, assets=None):
     for entity in entities:
         entity.update(overrides.get(entity['index'], {}))
     override_keys = {e['event_id_primary'] or e['index'] for e in entities}
-    table = use(assets / 'engine/data_tables/decoration_data.txt')
-    with table.open() as stream:
-        rows = [r for r in csv.reader(stream, delimiter='\t') if r and r[0].isdigit()]
+    # The engine's decoration table, then the world's own rows (world.yml tableContributions: table decorations), as
+    # the game merges them (game/content/WorldDecorations.cpp).
+    tables = [assets / 'engine/data_tables/decoration_data.txt']
+    manifest_path = world / 'world.yml'
+    if manifest_path.exists():
+        contributions = (yaml.safe_load(manifest_path.read_text()) or {}).get('tableContributions') or []
+        tables += [world / c['path'] for c in contributions if c.get('table') == 'decorations']
+    rows = []
+    for table in tables:
+        with use(table).open() as stream:
+            rows += [r for r in csv.reader(stream, delimiter='\t') if r and r[0].isdigit()]
     by_name = {r[1].lower(): r for r in rows}
     by_id = {int(r[0]) - 1: r for r in rows}
     aliases = {alias.strip().lower(): r for r in rows if len(r) > 14
@@ -106,6 +114,9 @@ def export_cards(profile, output, assets=None):
     sprite_paths = texture_paths(assets, profile['world'], 'sprites')
     frames_path = use(assets / 'engine/rendering/sprite_frame_data_common.yml')
     groups = {s['sprite_id']: s for s in yaml.safe_load(frames_path.read_text())['sprites']}
+    world_frames = world / 'rendering/sprite_frame_data_world_decorations.yml'
+    if world_frames.exists():
+        groups.update({s['sprite_id']: s for s in yaml.safe_load(use(world_frames).read_text())['sprites']})
     groups_by_name = {s['sprite_name'].lower(): s for s in groups.values()}
     changes = collections.defaultdict(set)
     scripts = [world / 'events/maps' / (source.stem + '.lua')]

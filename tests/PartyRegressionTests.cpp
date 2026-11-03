@@ -473,6 +473,37 @@ TEST_CASE("legacy saves move history entries from every map state into the party
     CHECK(saveData.outdoorWorldStates.at("mm7:7out02.odm").eventRuntimeState->historyEventTimesByContinent.empty());
 }
 
+TEST_CASE("older saves move history pages recorded two pages late to their own pages")
+{
+    OpenYAMM::Game::GameSaveData saveData = {};
+    // Castle Harmondale rebuilt (page 5 recorded as 7), the Emerald Island pages 1 and 2 (recorded as 3 and 4) beside
+    // the forward page 1, and an MM8 page.
+    saveData.party.historyEventTimesByContinent[2u] = {{1u, 1}, {3u, 500}, {4u, 500}, {7u, 900}};
+    saveData.party.historyEventTimesByContinent[1u] = {{8u, 50}};
+    saveData.outdoorWorld.eventRuntimeState.emplace();
+    saveData.outdoorWorld.eventRuntimeState->historyEventTimesByContinent[2u] = {{2u, 2}, {8u, 1200}};
+
+    OpenYAMM::Game::GameSaveData currentSave = saveData;
+
+    OpenYAMM::Game::migrateLegacyHistoryNumbering(saveData, 140);
+
+    const auto &history = saveData.party.historyEventTimesByContinent;
+    CHECK_EQ(history.at(2u).size(), 3u);
+    CHECK_EQ(history.at(2u).at(1u), 1);
+    CHECK_EQ(history.at(2u).at(2u), 500);
+    CHECK_EQ(history.at(2u).at(5u), 900);
+    CHECK_EQ(history.at(1u).size(), 1u);
+    CHECK_EQ(history.at(1u).at(6u), 50);
+    const auto &mapHistory = saveData.outdoorWorld.eventRuntimeState->historyEventTimesByContinent.at(2u);
+    CHECK_EQ(mapHistory.at(2u), 2);
+    CHECK_EQ(mapHistory.at(6u), 1200);
+    CHECK_EQ(mapHistory.size(), 2u);
+
+    // A current save is already numbered by the tables.
+    OpenYAMM::Game::migrateLegacyHistoryNumbering(currentSave, 141);
+    CHECK_EQ(currentSave.party.historyEventTimesByContinent.at(2u).at(7u), 900);
+}
+
 TEST_CASE("legacy saves move journal map notes from every map state into the party")
 {
     OpenYAMM::Game::EventRuntimeState::RuntimeMapNote newSorpigalBow = {1, 2, 3, "OutE3.odm", "Bow - Expert", true};

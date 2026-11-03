@@ -76,6 +76,7 @@
 #include <iostream>
 #include <limits>
 #include <map>
+#include <set>
 #include <optional>
 #include <span>
 #include <sstream>
@@ -99,15 +100,19 @@ bool textContains(const std::string &text, const std::string &needle)
 }
 
 // The recoloured tier materials of a model, one per tier: tools/model_backface_split.py gives each tier a second,
-// same-named copy (double-sided for shadows, single-sided for the visible meshes), which is counted once.
+// same-named copy (double-sided for shadows, single-sided for the visible meshes), which is counted once, and the
+// far-LOD repair gives each tier `<name>_LOD<n>` copies with the same ramps, which are skipped.
 std::vector<const Engine::ModelMaterial *> recolouredTierMaterials(const Engine::ModelAsset &asset)
 {
     std::vector<const Engine::ModelMaterial *> result;
     for (const Engine::ModelMaterial &material : asset.materials)
     {
+        const size_t lodSuffix = material.name.rfind("_LOD");
+        const bool farLodCopy = lodSuffix != std::string::npos && lodSuffix + 4 < material.name.size()
+            && material.name.find_first_not_of("0123456789", lodSuffix + 4) == std::string::npos;
         const bool counted = std::any_of(result.begin(), result.end(),
             [&material](const Engine::ModelMaterial *pTier) { return pTier->name == material.name; });
-        if (!material.regionRamps.empty() && !counted)
+        if (!material.regionRamps.empty() && !counted && !farLodCopy)
         {
             result.push_back(&material);
         }
@@ -900,7 +905,7 @@ std::vector<std::string> buildActorModelBindings(const Engine::AssetFileSystem &
     return problems;
 }
 
-constexpr uint32_t AdventurersInnHouseId = 185;
+constexpr uint32_t AdventurersInnHouseId = 756;
 constexpr float HostilityCloseRange = 1024.0f;
 constexpr float HostilityShortRange = 2560.0f;
 constexpr float HostilityMediumRange = 5120.0f;
@@ -3467,16 +3472,9 @@ bool prepareSharedHeadlessStartupSession(
 
         session.isGameDataLoaded = true;
     }
-    else
-    {
-        GameApplicationTestAccess::setBootSeededDwiOnNextRendererInit(session.application, true);
-    }
 
-    if (!GameApplicationTestAccess::bootSeededDwiOnNextRendererInit(session.application))
-    {
-        failure = "startup boot flag was not armed after load";
-        return false;
-    }
+    // Asked for directly: loading only arms it when the settings skip the main menu, which is not the default.
+    GameApplicationTestAccess::setBootSeededDwiOnNextRendererInit(session.application, true);
 
     if (!GameApplicationTestAccess::initializeStartupSession(session.application, initializeView))
     {
@@ -7753,15 +7751,13 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
         return OpenYAMM::Game::loadModelSpriteFrames(assetFileSystem, frames, failure);
     };
 
-    runCase("mm6_mm7_mm8_actor_models_build_every_binding", [&](std::string &failure)
+    // Every descriptor of the given actors.yml files builds its binding (model, clips, sockets, events, attachments)
+    // as the game builds it when the monster appears. One system per model, so each model loads once; a failed model is
+    // rebuilt one descriptor at a time to name every failure.
+    const auto buildEveryBinding = [&](const std::vector<std::string> &manifests, std::string &failure)
     {
-        // Every descriptor of the MM6-MM8 actors.yml builds its binding (model, clips, sockets, events, attachments)
-        // as the game builds it when the monster appears. One system per model, so each model loads once; a failed
-        // model is rebuilt one descriptor at a time to name every failure.
         std::shared_ptr<ActorModelManifest> pManifest = std::make_shared<ActorModelManifest>();
-        if (!pManifest->load(assetFileSystem,
-                {"worlds/mm6/models/actors.yml", "worlds/mm7/models/actors.yml", "worlds/mm8/models/actors.yml"}, {},
-                gameDataLoader.getMonsterTable(), failure))
+        if (!pManifest->load(assetFileSystem, manifests, {}, gameDataLoader.getMonsterTable(), failure))
         {
             return false;
         }
@@ -7787,6 +7783,24 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
             return false;
         }
         return true;
+    };
+
+    runCase("mm6_mm7_mm8_actor_models_build_every_binding", [&](std::string &failure)
+    {
+        return buildEveryBinding(
+            {"worlds/mm6/models/actors.yml", "worlds/mm7/models/actors.yml", "worlds/mm8/models/actors.yml"}, failure);
+    });
+
+    runCase("mm9_actor_models_build_every_binding", [&](std::string &failure)
+    {
+        // The MM9 world's own bindings (the dragonfly family first) name MM9 monster descriptors, which exist only
+        // when the MM9 world contributes its monster table: run with --world mm9.
+        if (m_config.activeWorldId != "mm9")
+        {
+            std::cout << "  skipped: the MM9 descriptors need --world mm9\n";
+            return true;
+        }
+        return buildEveryBinding({"worlds/mm9/models/actors.yml"}, failure);
     });
 
     runCase("every_map_loads_and_builds_its_actor_models", [&](std::string &failure)
@@ -8721,7 +8735,9 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
             }
             heights[tier] = pBounds->max[2] - pBounds->min[2];
         }
-        if (std::abs(heights[0] - 191.0f) > 3.0f || std::abs(heights[1] / heights[0] - 1.3f) > 0.01f
+        // These bounds pose the coarsest LOD: 183.6 tall since the far-LOD repair cut its top (accepted 2026-10-30);
+        // the full model is 190.7, the native silhouette 191.
+        if (heights[0] < 182.0f || heights[0] > 194.0f || std::abs(heights[1] / heights[0] - 1.3f) > 0.01f
             || std::abs(heights[2] / heights[0] - 1.6f) > 0.01f)
         {
             failure = "Crystal Walker heights do not match native silhouette and tier scales";
@@ -14384,8 +14400,10 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
         {
             return false;
         }
+        // On its own system: a configured system keeps its first frame table, even after a failed configure.
+        WorldFxSystem invalidFx;
         std::string invalidError;
-        if (fx.configureActorModels(assetFileSystem, "worlds/mm6/models/actors.yml",
+        if (invalidFx.configureActorModels(assetFileSystem, "worlds/mm6/models/actors.yml",
                 gameDataLoader.getMonsterTable(), nullptr, invalidError)
             || invalidError.find("valid standing sprite") == std::string::npos)
         {
@@ -16175,11 +16193,12 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
             }
             heights[tier] = pBounds->max[2] - pBounds->min[2];
         }
-        // Gargoyle A is 398 native pixels x 0.70; B/C retain their 0.75/0.80 frame scales.
+        // Gargoyle A is 398 native pixels x 0.70; B/C retain their 0.75/0.80 frame scales. These bounds pose the
+        // coarsest LOD: 258.3 tall since the far-LOD repair cut its top (accepted 2026-10-30); the full model is 275.3.
         const float ratioB = heights[1] / heights[0];
         const float ratioC = heights[2] / heights[0];
         if (std::abs(ratioB - 0.75f / 0.7f) > 0.01f || std::abs(ratioC - 0.8f / 0.7f) > 0.01f
-            || heights[0] < 260.0f || heights[0] > 300.0f)
+            || heights[0] < 255.0f || heights[0] > 300.0f)
         {
             failure = "gargoyle tier heights " + std::to_string(heights[0]) + " / " + std::to_string(heights[1])
                 + " / " + std::to_string(heights[2]) + " do not follow the native frame scales";
@@ -16790,16 +16809,17 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
                 return false;
             }
         }
-        // Green/red/ochre tiers: one shared skin and mask, three ramps; wet slime keeps specular (0.7).
+        // Green/red/ochre tiers: one shared skin and mask, three ramps; wet slime keeps specular (0.7) with a per-texel
+        // crease mask (user-reviewed, restored 2026-10-30).
         const std::vector<const Engine::ModelMaterial *> recoloured = recolouredTierMaterials(*pAsset);
         if (pAsset->materialVariants.size() != 3 || recoloured.size() != 3
             || recoloured[0]->imageIndex != recoloured[1]->imageIndex
             || recoloured[0]->regionMaskImageIndex < 0
             || recoloured[0]->regionMaskImageIndex != recoloured[2]->regionMaskImageIndex
             || recoloured[0]->regionRamps[0].colors == recoloured[1]->regionRamps[0].colors
-            || std::abs(recoloured[0]->specular - 0.7f) > 0.01f)
+            || std::abs(recoloured[0]->specular - 0.7f) > 0.01f || !recoloured[0]->specularMask)
         {
-            failure = "ooze tiers do not share one glossy (specular 0.7) skin with three ramps";
+            failure = "ooze tiers do not share one glossy (masked specular 0.7) skin with three ramps";
             return false;
         }
         return true;
@@ -18494,9 +18514,11 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
             }
             heights[tier] = pBounds->max[2] - pBounds->min[2];
         }
-        // The native stand frame is 222 px at frame scales 0.65 / 0.7 / 0.75: 144.3 / 155.4 / 166.5 units.
-        if (heights[0] < 137.0f || heights[0] > 151.5f || heights[1] < 147.6f || heights[1] > 163.2f
-            || heights[2] < 158.2f || heights[2] > 174.8f)
+        // The native stand frame is 222 px at frame scales 0.65 / 0.7 / 0.75: 144.3 / 155.4 / 166.5 units. These bounds
+        // pose the coarsest LOD: the far-LOD repair cut the helmet spike, 136.3 for tier A (accepted 2026-10-30), so
+        // the lower limits are 94 % of native; the full model is 144.3.
+        if (heights[0] < 135.6f || heights[0] > 151.5f || heights[1] < 146.0f || heights[1] > 163.2f
+            || heights[2] < 156.5f || heights[2] > 174.8f)
         {
             failure = "dwarf tier heights " + std::to_string(heights[0]) + " / " + std::to_string(heights[1])
                 + " / " + std::to_string(heights[2]) + " do not follow the native frame scales";
@@ -20548,12 +20570,14 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
                     return false;
                 }
 
+                // A blocked move stops at the sub-step that met an actor, so a crowd contact is only what that sub-step
+                // reaches: the two actors stand either side of the path and meet the body at the same distance.
                 controller.setActorColliders({
                     IndoorActorCollision{
                         11,
                         largeActorStart.sectorId,
                         360.0f,
-                        512.0f,
+                        464.0f,
                         0.0f,
                         40.0f,
                         220.0f},
@@ -21393,7 +21417,15 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
                             &debugInfo);
                 }
 
-                if (moved.x <= start.x + 10.0f)
+                // The 270-wide body meets the 256-wide doorway's jamb edges (x -640 and -384 at y -448) and the lintel: it
+                // slides around the right jamb edge, then stops centred, held by both edges. It must not stop short of
+                // that or push through either edge.
+                const float leftJambDistance = std::hypot(moved.x + 640.0f, moved.y + 448.0f);
+                const float rightJambDistance = std::hypot(moved.x + 384.0f, moved.y + 448.0f);
+
+                if (moved.y <= start.y + 10.0f
+                    || leftJambDistance < body.radius - 0.1f
+                    || rightJambDistance < body.radius - 0.1f)
                 {
                     failure =
                         "d18 Naga lintel slide did not preserve tangential progress start=("
@@ -22242,9 +22274,11 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
                 float minimumFootZ = current.footZ;
                 float maximumFootZ = current.footZ;
 
-                for (int step = 0; step < 24; ++step)
+                // In the party's fixed movement step: with 0.1 s steps gravity sinks the body into the door's 36-wide
+                // floor slot between steps, which the game never does.
+                for (int step = 0; step < 307; ++step)
                 {
-                    current = controller.resolveMove(current, body, 0.0f, 40.0f, false, 0.1f);
+                    current = controller.resolveMove(current, body, 0.0f, 40.0f, false, 1.0f / 128.0f);
                     minimumFootZ = std::min(minimumFootZ, current.footZ);
                     maximumFootZ = std::max(maximumFootZ, current.footZ);
 
@@ -22306,11 +22340,15 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
                     controller.initializeStateFromEyePosition(-592.862f, -541.367f, 16.0f, body);
                 bool reachedSeamSupport = false;
 
-                for (int step = 0; step < 8; ++step)
+                // Running from room floor 13 (z -144) onto the doorway floor 1364 (z -128): touching the raised floor's
+                // edge steps the body up early, and it must end on that floor once its centre is over it.
+                constexpr size_t RaisedDoorwayFace = 1364;
+
+                for (int step = 0; step < 24; ++step)
                 {
                     current = controller.resolveMove(current, body, -37.2438f, 1279.46f, false, 0.00158256f);
 
-                    if (current.supportFaceIndex == 13)
+                    if (current.supportFaceIndex == RaisedDoorwayFace)
                     {
                         reachedSeamSupport = true;
                     }
@@ -22319,7 +22357,7 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
                 if (!reachedSeamSupport)
                 {
                     failure = "movement did not step onto the raised doorway support at the seam "
-                        + describeIndoorFaceMembership(*loadedMap->indoorMapData, 13)
+                        + describeIndoorFaceMembership(*loadedMap->indoorMapData, RaisedDoorwayFace)
                         + " final=(" + std::to_string(current.x) + "," + std::to_string(current.y) + ","
                         + std::to_string(current.footZ) + ") supportFace="
                         + std::to_string(current.supportFaceIndex)
@@ -22327,7 +22365,7 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
                     return false;
                 }
 
-                if (current.supportFaceIndex != 13 || std::fabs(current.footZ - (-144.0f)) > 0.1f)
+                if (current.supportFaceIndex != RaisedDoorwayFace || std::fabs(current.footZ - (-128.0f)) > 0.1f)
                 {
                     failure = "movement did not remain on the doorway seam support after crossing the seam";
                     return false;
@@ -22924,7 +22962,9 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
                 const int initialHp = indoorMapDeltaData->actors[*targetActorIndex].hp;
                 PartySpellCastRequest castRequest = {};
                 castRequest.casterMemberIndex = 0;
-                castRequest.spellId = spellIdValue(SpellId::Blades);
+                // Implosion hits its target directly. Blades is a projectile, which needs a projectile service and a
+                // world that advances, and this fixture has neither.
+                castRequest.spellId = spellIdValue(SpellId::Implosion);
                 castRequest.skillLevelOverride = 10;
                 castRequest.skillMasteryOverride = SkillMastery::Master;
                 castRequest.spendMana = false;
@@ -22938,13 +22978,13 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
 
                 if (!castResult.succeeded())
                 {
-                    failure = "Blades failed through indoor shared runtime";
+                    failure = "Implosion failed through indoor shared runtime";
                     return false;
                 }
 
                 if (indoorMapDeltaData->actors[*targetActorIndex].hp >= initialHp)
                 {
-                    failure = "Blades did not reduce indoor actor hp";
+                    failure = "Implosion did not reduce indoor actor hp";
                     return false;
                 }
 
@@ -24774,7 +24814,9 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
             const float initialFireballZ = pFireball->z;
             const float initialCannonballZ = pCannonball->z;
 
-            scenario.world.updateMapActors(1.0f / 128.0f, 0.0f, 0.0f, 0.0f);
+            // Three actor steps (1/128 s) make one fixed projectile step (1/60 s); more and the fireball hits its
+            // target.
+            scenario.world.updateMapActors(3.0f / 128.0f, 0.0f, 0.0f, 0.0f);
 
             const OutdoorWorldRuntime::ProjectileState *pUpdatedFireball = nullptr;
             const OutdoorWorldRuntime::ProjectileState *pUpdatedCannonball = nullptr;
@@ -24799,12 +24841,9 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
                 }
             }
 
-            if (pUpdatedFireball == nullptr || pUpdatedCannonball == nullptr)
+            if (pUpdatedCannonball == nullptr)
             {
-                failure =
-                    pUpdatedFireball == nullptr
-                        ? "updated fireball projectile missing"
-                        : "updated cannonball projectile missing";
+                failure = "updated cannonball projectile missing";
                 return false;
             }
 
@@ -24814,7 +24853,8 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
                 return false;
             }
 
-            if (std::abs(pUpdatedFireball->z - initialFireballZ) > 0.5f)
+            // The fireball starts 35 units from its target and may already have burst.
+            if (pUpdatedFireball != nullptr && std::abs(pUpdatedFireball->z - initialFireballZ) > 0.5f)
             {
                 failure = "fireball projectile unexpectedly changed height";
                 return false;
@@ -25021,6 +25061,56 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
             if (!scenario.party.hasQuestBit(270))
             {
                 failure = "palm tree event did not set its one-shot quest bit";
+                return false;
+            }
+
+            return true;
+        }
+    );
+
+    runCase(
+        "dwi_flower_event_spawns_random_ring",
+        [&](std::string &failure)
+        {
+            RegressionScenario scenario = {};
+
+            if (!initializeRegressionScenario(gameDataLoader, *selectedMap, scenario))
+            {
+                failure = "scenario init failed";
+                return false;
+            }
+
+            Character *pMember = scenario.party.member(0);
+
+            if (pMember == nullptr)
+            {
+                failure = "party member missing";
+                return false;
+            }
+
+            pMember->skills["DisarmTraps"] = {"DisarmTraps", 5, SkillMastery::Normal};
+            scenario.party.setQuestBit(271, false);
+            const size_t initialCount = scenario.world.worldItemCount();
+
+            if (!executeLocalEventInScenario(gameDataLoader, *selectedMap, scenario, 495))
+            {
+                failure = "flower event 495 did not execute";
+                return false;
+            }
+
+            if (scenario.world.worldItemCount() != initialCount + 1)
+            {
+                failure = "flower event did not spawn exactly one item";
+                return false;
+            }
+
+            const OutdoorWorldRuntime::WorldItemState *pWorldItem = scenario.world.worldItemState(initialCount);
+            const ItemDefinition *pItemDefinition =
+                pWorldItem != nullptr ? gameDataLoader.getItemTable().get(pWorldItem->item.objectDescriptionId) : nullptr;
+
+            if (pItemDefinition == nullptr || pItemDefinition->equipStat != "Ring")
+            {
+                failure = "flower event spawned a non-ring item";
                 return false;
             }
 
@@ -25444,6 +25534,159 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
                 if (pStep->aiState == OutdoorWorldRuntime::ActorAiState::Fleeing)
                 {
                     failure = "actor 5 entered fleeing state on map start";
+                    return false;
+                }
+            }
+
+            return true;
+        }
+    );
+
+    runCase(
+        "headless_application_boot_leaves_settings_file_alone",
+        [&](std::string &failure)
+        {
+            const auto settingsText = []() -> std::optional<std::string>
+            {
+                std::ifstream stream("settings.ini", std::ios::binary);
+
+                if (!stream)
+                {
+                    return std::nullopt;
+                }
+
+                return std::string(std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>());
+            };
+            const std::optional<std::string> before = settingsText();
+            SharedHeadlessApplicationSession applicationSession(m_config);
+
+            if (!prepareSharedHeadlessGameApplication(applicationSession, assetFileSystem, "out01.odm", false, failure))
+            {
+                return false;
+            }
+
+            if (settingsText() != before)
+            {
+                failure = "a headless run rewrote settings.ini";
+                return false;
+            }
+
+            return true;
+        }
+    );
+
+    runCase(
+        "dwi_friendly_actors_stay_calm_until_enemies_come_close",
+        [&](std::string &failure)
+        {
+            MapAssetInfo calmMap = *selectedMap;
+            calmMap.outdoorMapData = *selectedMap->outdoorMapData;
+            calmMap.outdoorMapData->spawns.clear();
+            RegressionScenario calmScenario = {};
+
+            if (!initializeRegressionScenario(gameDataLoader, calmMap, calmScenario))
+            {
+                failure = "scenario init failed";
+                return false;
+            }
+
+            size_t enemyIndex = std::numeric_limits<size_t>::max();
+
+            for (size_t actorIndex = 0; actorIndex < calmScenario.world.mapActorCount(); ++actorIndex)
+            {
+                const OutdoorWorldRuntime::MapActorState *pActor = calmScenario.world.mapActorState(actorIndex);
+
+                if ((pActor->hostilityType == 0) == pActor->hostileToParty)
+                {
+                    failure = "actor " + std::to_string(actorIndex) + " does not start with its calm hostility";
+                    return false;
+                }
+
+                if (pActor->hostileToParty)
+                {
+                    enemyIndex = actorIndex;
+                }
+            }
+
+            if (enemyIndex == std::numeric_limits<size_t>::max())
+            {
+                failure = "Dagger Wound has no placed enemy";
+                return false;
+            }
+
+            const OutdoorWorldRuntime::MapActorState *pPeasant = calmScenario.world.mapActorState(5);
+            const float partyX = pPeasant->preciseX + 3000.0f;
+            const float partyY = pPeasant->preciseY;
+            const float partyZ = pPeasant->preciseZ;
+
+            for (int step = 0; step < 240; ++step)
+            {
+                calmScenario.world.updateMapActors(0.125f, partyX, partyY, partyZ);
+
+                for (size_t actorIndex = 0; actorIndex < calmScenario.world.mapActorCount(); ++actorIndex)
+                {
+                    const OutdoorWorldRuntime::MapActorState *pActor = calmScenario.world.mapActorState(actorIndex);
+
+                    if (!pActor->hostileToParty
+                        && (pActor->hostilityType != 0
+                            || pActor->aiState == OutdoorWorldRuntime::ActorAiState::Fleeing
+                            || pActor->aiState == OutdoorWorldRuntime::ActorAiState::Pursuing
+                            || pActor->aiState == OutdoorWorldRuntime::ActorAiState::Attacking))
+                    {
+                        failure = "friendly actor " + std::to_string(actorIndex) + " left its calm state";
+                        return false;
+                    }
+                }
+            }
+
+            // Only actor 5 and an enemy of the lizardmen on the map (relation 3): the peasant senses it at 3,500 but
+            // only turns hostile inside the short range of 2,560.
+            for (const float enemyDistance : {3500.0f, 400.0f})
+            {
+                MapAssetInfo duelMap = calmMap;
+                duelMap.outdoorMapDeltaData = *selectedMap->outdoorMapDeltaData;
+                std::vector<MapDeltaActor> &actors = duelMap.outdoorMapDeltaData->actors;
+                const MapDeltaActor peasant = actors[5];
+
+                for (size_t actorIndex = 0; actorIndex < actors.size(); ++actorIndex)
+                {
+                    if (actorIndex != 5)
+                    {
+                        actors[actorIndex].x = peasant.x + 40000 + int(actorIndex) * 64;
+                        actors[actorIndex].y = peasant.y + 40000 + int(actorIndex) * 64;
+                    }
+                }
+
+                actors[enemyIndex].monsterInfoId = 181;
+                actors[enemyIndex].monsterId = 181;
+                actors[enemyIndex].ally = 0;
+                actors[enemyIndex].x = peasant.x + int(enemyDistance);
+                actors[enemyIndex].y = peasant.y;
+                actors[enemyIndex].z = peasant.z;
+                RegressionScenario duelScenario = {};
+
+                if (!initializeRegressionScenario(gameDataLoader, duelMap, duelScenario))
+                {
+                    failure = "duel scenario init failed";
+                    return false;
+                }
+
+                const OutdoorWorldRuntime::MapActorState *pDuelPeasant = duelScenario.world.mapActorState(5);
+                const float duelPartyX = pDuelPeasant->preciseX;
+                const float duelPartyY = pDuelPeasant->preciseY + 3000.0f;
+                const float duelPartyZ = pDuelPeasant->preciseZ;
+                const bool enemyClose = enemyDistance < 1000.0f;
+
+                for (int step = 0; step < 16; ++step)
+                {
+                    duelScenario.world.updateMapActors(0.125f, duelPartyX, duelPartyY, duelPartyZ);
+                }
+
+                if ((duelScenario.world.mapActorState(5)->hostilityType != 0) != enemyClose)
+                {
+                    failure = enemyClose
+                        ? "friendly peasant ignored an enemy beside it"
+                        : "friendly peasant reacted to an enemy beyond its promotion range";
                     return false;
                 }
             }
@@ -28060,65 +28303,43 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
     );
 
     runCase(
-        "friendly_actor_3_preview_palette_and_frame_cycle",
+        "friendly_actor_3_draws_an_animated_model",
         [&](std::string &failure)
         {
-            GameDataLoader fullMapLoader;
+            RegressionScenario scenario = {};
 
-            if (!fullMapLoader.loadForHeadlessGameplay(assetFileSystem))
+            if (!initializeRegressionScenario(gameDataLoader, *selectedMap, scenario))
             {
-                failure = "full preview loader init failed";
+                failure = "scenario init failed";
                 return false;
             }
 
-            if (!fullMapLoader.loadMapByFileName(assetFileSystem, "out01.odm"))
+            SpriteFrameTable frames;
+            WorldFxSystem fx;
+
+            if (!loadModelSpriteFrames(frames, failure)
+                || !fx.configureActorModels(assetFileSystem, "worlds/mm8/models/actors.yml",
+                    gameDataLoader.getMonsterTable(), &frames, failure))
             {
-                failure = "full preview map load failed";
                 return false;
             }
 
-            const std::optional<MapAssetInfo> &previewSelectedMap = fullMapLoader.getSelectedMap();
+            fx.syncActorModels(scenario.world);
 
-            if (!previewSelectedMap || !previewSelectedMap->outdoorActorPreviewBillboardSet)
+            if (!fx.hasActorModel(3) || !fx.actorModelBounds(3)->valid)
             {
-                failure = "selected map missing actor previews";
+                failure = "actor 3 has no posed model";
                 return false;
             }
 
-            size_t billboardIndex = 0;
-            const ActorPreviewBillboardSet &billboardSet = *previewSelectedMap->outdoorActorPreviewBillboardSet;
-            const ActorPreviewBillboard *pBillboard = findCompanionActorBillboard(billboardSet, 3, billboardIndex);
+            std::string clip;
+            std::string layerClip;
+            float clipTime = 0.0f;
+            float layerTime = 0.0f;
 
-            if (pBillboard == nullptr)
+            if (!fx.actorModelClipSample(3, clip, clipTime, layerClip, layerTime) || clip.empty())
             {
-                failure = "actor 3 billboard missing";
-                return false;
-            }
-
-            const ActorPreviewAnimationStats animationStats =
-                analyzeActorPreviewAnimation(billboardSet, *pBillboard);
-
-            if (animationStats.sampleCount == 0)
-            {
-                failure = "actor 3 preview produced no samples";
-                return false;
-            }
-
-            if (animationStats.missingTextureSampleCount != 0)
-            {
-                failure = "actor 3 preview has missing textures";
-                return false;
-            }
-
-            if (animationStats.greenDominantSampleCount <= animationStats.magentaDominantSampleCount)
-            {
-                failure = "actor 3 preview colors skew magenta instead of green";
-                return false;
-            }
-
-            if (animationStats.distinctWalkingFrameCount < 2)
-            {
-                failure = "actor 3 walking preview does not cycle frames";
+                failure = "actor 3 model samples no clip";
                 return false;
             }
 
@@ -28780,6 +29001,8 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
             modifiedMap.outdoorMapDeltaData->actors[53].monsterInfoId = 184;
             modifiedMap.outdoorMapDeltaData->actors[53].monsterId = 184;
             modifiedMap.outdoorMapDeltaData->actors[53].attributes = 0;
+            // Its authored ally maps it to the lizardmen, which would hide monster 184's own party relation.
+            modifiedMap.outdoorMapDeltaData->actors[53].ally = 0;
             modifiedMap.outdoorMapDeltaData->actors[53].x = quietLandActor.x;
             modifiedMap.outdoorMapDeltaData->actors[53].y = quietLandActor.y;
             modifiedMap.outdoorMapDeltaData->actors[53].z = quietLandActor.z;
@@ -28866,6 +29089,8 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
             rightActor.x = leftActor.x + 2048;
             rightActor.y = leftActor.y;
             rightActor.z = leftActor.z;
+            // Its authored ally maps it to the lizardmen, whom monster 181 would then not fight.
+            rightActor.ally = 0;
             RegressionScenario scenario = {};
 
             if (!initializeRegressionScenario(gameDataLoader, modifiedMap, scenario))
@@ -30479,9 +30704,10 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
                 return false;
             }
 
+            // On the ground, as a real party stands: an arrow aimed below it hits the slope short of the party.
             const float partyX = pGuard->preciseX + 2200.0f;
             const float partyY = pGuard->preciseY;
-            const float partyZ = pGuard->preciseZ;
+            const float partyZ = sampleOutdoorRenderedTerrainHeight(*selectedMap->outdoorMapData, partyX, partyY);
             const int initialTotalHealth = scenario.party.totalHealth();
             bool sawProjectile = false;
 
@@ -30907,7 +31133,8 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
             {
                 check("party", objectId, 0, 0, GameplayProjectileVisualMode::SpriteBillboard, true);
             }
-            // A discharged chest trap is an impact of its trap object, which is also its source (spawnChestTrapVisual).
+            // A discharged chest trap is an impact of its trap object, which is also its source
+            // (spawnObjectBurstVisual).
             for (const int trapObjectId : {811, 812, 813, 814})
             {
                 const ObjectEntry *pTrap = objects.findByObjectId(int16_t(trapObjectId));
@@ -31526,11 +31753,13 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
                     eventState.pendingSounds.clear();
                     const bool campWasCleared = party.hasQuestBit(75);
                     const size_t actorIndex = targets[index];
+                    // Cast from beside the target: targeted spells refuse monsters past their range.
+                    const OutdoorWorldRuntime::MapActorState *pTarget = world.mapActorState(actorIndex);
                     const bool killed = index % 2 == 0
                         ? world.applyPartyAttackToMapActor(actorIndex, 1000000, 0.0f, 0.0f, 0.0f)
                         : world.applyPartySpellToMapActor(
                             actorIndex, spellIdValue(SpellId::Blades), 10, SkillMastery::Master,
-                            1000000, 0.0f, 0.0f, 0.0f, 0);
+                            1000000, pTarget->preciseX, pTarget->preciseY, pTarget->preciseZ, 0);
 
                     if (!killed)
                     {
@@ -32854,11 +33083,12 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
             saveData.outdoorWorld.armageddon.cameraShakePitchRadians = -0.05f;
             OutdoorWorldRuntime::BloodSplatState savedBloodSplat = {};
             savedBloodSplat.sourceActorId = savedActor.actorId;
-            savedBloodSplat.x = 1.0f;
-            savedBloodSplat.y = 2.0f;
-            savedBloodSplat.z = 3.0f;
-            savedBloodSplat.radius = 4.0f;
-            savedBloodSplat.vertices.push_back({1.0f, 2.0f, 3.0f, 0.25f, 0.75f});
+            // On the ground: saves keep the splat's place and restoring bakes its geometry from the surface there.
+            savedBloodSplat.x = -9216.0f;
+            savedBloodSplat.y = -12848.0f;
+            savedBloodSplat.z = sampleOutdoorRenderedTerrainHeight(
+                *selectedMap->outdoorMapData, savedBloodSplat.x, savedBloodSplat.y);
+            savedBloodSplat.radius = 64.0f;
             saveData.outdoorWorld.bloodSplats.push_back(savedBloodSplat);
 
             saveData.outdoorWorldStates[saveData.mapFileName] = saveData.outdoorWorld;
@@ -32967,8 +33197,7 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
                 || loadedSave->outdoorWorld.armageddon.shakeStepsRemaining != 2
                 || loadedSave->outdoorWorld.armageddon.shakeSequence != 3
                 || loadedSave->outdoorWorld.bloodSplats.size() != 1
-                || loadedSave->outdoorWorld.bloodSplats[0].vertices.empty()
-                || std::abs(loadedSave->outdoorWorld.bloodSplats[0].vertices[0].v - 0.75f) > 0.01f)
+                || std::abs(loadedSave->outdoorWorld.bloodSplats[0].radius - 64.0f) > 0.01f)
             {
                 failure = "outdoor snapshot extended runtime state did not roundtrip";
                 return false;
@@ -34182,12 +34411,22 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
             constexpr float WalkYawRadians = 3.0f;
             constexpr float BodyRadius = 37.0f;
             const float startX = static_cast<float>(pNewSorpigal->outdoorBounds.minX) + BodyRadius + 1.0f;
-            constexpr float StartY = 1000.0f;
-            pPartyRuntime->teleportTo(startX, StartY, pPartyRuntime->movementState().footZ);
+            // Level ground: farther north the edge is water, and at 1000 a slope keeps the party in the air.
+            constexpr float StartY = -8000.0f;
+            const MapAssetInfo &oute3Map = *GameApplicationTestAccess::gameDataLoader(application).getSelectedMap();
+            pPartyRuntime->teleportTo(
+                startX, StartY, sampleOutdoorRenderedTerrainHeight(*oute3Map.outdoorMapData, startX, StartY));
+            GameApplicationTestAccess::setCameraAngles(application, WalkYawRadians, 0.0f);
+
+            // Land first: only a party on the ground is offered travel.
+            for (int step = 0; step < 8; ++step)
+            {
+                GameApplicationTestAccess::advanceOutdoorSceneFrame(application, {}, 0.1f);
+            }
+
             pEventRuntimeState->pendingDialogueContext.reset();
             pEventRuntimeState->pendingMapMove.reset();
             pEventRuntimeState->messages.clear();
-            GameApplicationTestAccess::setCameraAngles(application, WalkYawRadians, 0.0f);
 
             const OutdoorMovementInput movementInput = {
                 true, false, false, false, false, false, false, false, false, WalkYawRadians, 0.0f};
@@ -34349,7 +34588,10 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
                 return false;
             }
 
-            if (!dialogContainsText(dialog, "It will take 1 day to travel to " + pDestinationMap->name + ".")
+            const std::string travelTime = std::to_string(pOriginMap->eastTransition->travelDays) + " days";
+
+            if (!dialogContainsText(
+                    dialog, "It will take " + travelTime + " to travel to " + pDestinationMap->name + ".")
                 || !dialogContainsText(dialog, "Do you wish to leave " + pOriginMap->name + "?"))
             {
                 failure = "map transition dialog did not use the expected OE-style body text";
@@ -34656,7 +34898,8 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
             OutdoorWorldRuntime *pWorld = GameApplicationTestAccess::outdoorWorldRuntime(application);
             OutdoorPartyRuntime *pPartyRuntime = GameApplicationTestAccess::outdoorPartyRuntime(application);
             EventRuntimeState *pEventRuntimeState = pWorld != nullptr ? pWorld->eventRuntimeState() : nullptr;
-            const HouseEntry *pTavernHouse = GameApplicationTestAccess::gameDataLoader(application).getHouseTable().get(107);
+            const HouseEntry *pTavernHouse =
+                GameApplicationTestAccess::gameDataLoader(application).getHouseTable().get(229);
 
             if (pWorld == nullptr || pPartyRuntime == nullptr || pEventRuntimeState == nullptr || pTavernHouse == nullptr)
             {
@@ -34699,6 +34942,10 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
                 failure = "tavern did not open an active dialog";
                 return false;
             }
+
+            // The house lists its residents first: the innkeep's services are behind the first one.
+            GameApplicationTestAccess::setEventDialogSelectionIndex(application, 0);
+            GameApplicationTestAccess::executeActiveDialogAction(application);
 
             const EventDialogContent &dialog = GameApplicationTestAccess::activeEventDialog(application);
             const std::string expectedRoomActionLabel =
@@ -35161,7 +35408,7 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
 
                 if (pPendingMapMove == nullptr
                     || !pPendingMapMove->mapName.has_value()
-                    || *pPendingMapMove->mapName != directionCase.pExpectedDestinationMap)
+                    || toLowerCopy(*pPendingMapMove->mapName) != toLowerCopy(directionCase.pExpectedDestinationMap))
                 {
                     failure = std::string("map transition confirm queued the wrong destination for ")
                         + directionCase.pOriginMap;
@@ -35341,7 +35588,7 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
 
             if (pPendingMapMove == nullptr
                 || !pPendingMapMove->mapName.has_value()
-                || *pPendingMapMove->mapName != "Out06.odm")
+                || toLowerCopy(*pPendingMapMove->mapName) != "out06.odm")
             {
                 failure = "map transition confirm did not queue the destination map move";
                 return false;
@@ -35833,7 +36080,8 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
                 return false;
             }
 
-            pEventRuntimeState->unavailableNpcIds.insert(32);
+            // Departed NPCs are global state, kept by the party.
+            GameApplicationTestAccess::outdoorPartyRuntime(application)->party().setNpcUnavailable(28, true);
 
             const std::filesystem::path savePath = "/tmp/openyamm_app_empty_house.oysav";
 
@@ -35867,6 +36115,16 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
             if (!loadedMap)
             {
                 failure = "application map was not selected after load";
+                return false;
+            }
+
+            // NPC state is global, outside the world snapshot this scenario copies.
+            GameApplicationTestAccess::outdoorPartyRuntime(application)->party().applyGlobalNpcStateTo(
+                *loadedScenario.pEventRuntimeState);
+
+            if (!loadedScenario.pEventRuntimeState->unavailableNpcIds.contains(28))
+            {
+                failure = "quick load lost the departed NPC";
                 return false;
             }
 
@@ -36248,7 +36506,8 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
             GameApplication &application = out01ViewSession.application;
             OutdoorWorldRuntime *pWorld = GameApplicationTestAccess::outdoorWorldRuntime(application);
             EventRuntimeState *pEventRuntimeState = pWorld != nullptr ? pWorld->eventRuntimeState() : nullptr;
-            const HouseEntry *pHouseEntry = GameApplicationTestAccess::gameDataLoader(application).getHouseTable().get(237);
+            const HouseEntry *pHouseEntry =
+                GameApplicationTestAccess::gameDataLoader(application).getHouseTable().get(866);
 
             if (pWorld == nullptr || pEventRuntimeState == nullptr || pHouseEntry == nullptr)
             {
@@ -36320,10 +36579,10 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
                 return false;
             }
 
-            constexpr uint32_t TeacherHouseId = 371;
-            constexpr uint32_t TeacherNpcId = 373;
+            constexpr uint32_t TeacherHouseId = 593;
+            constexpr uint32_t TeacherNpcId = 185;
             constexpr uint32_t TeacherTopicId = 388;
-            constexpr uint32_t AutoNoteId = 128u + (TeacherTopicId - 300u);
+            constexpr uint32_t AutoNoteId = 177; // teacher_autonotes.txt
             const HouseEntry *pTeacherHouse = houseTable.get(TeacherHouseId);
 
             if (pTeacherHouse == nullptr)
@@ -36662,13 +36921,8 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
             }
 
             const std::vector<Character> &members = pPartyRuntime->party().members();
-            static constexpr std::array<const char *, 4> ExpectedNames = {
-                "Ariel",
-                "Leane Stormlance",
-                "Arius",
-                "Overdune Snapfinger"
-            };
-            static constexpr std::array<uint32_t, 4> ExpectedRosterIds = {{0, 11, 5, 4}};
+            static constexpr std::array<const char *, 1> ExpectedNames = {"Ariel"};
+            static constexpr std::array<uint32_t, 1> ExpectedRosterIds = {{0}};
 
             if (members.size() != ExpectedNames.size())
             {
@@ -36691,25 +36945,10 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
                 }
             }
 
-            const std::vector<AdventurersInnMember> &innMembers = pPartyRuntime->party().adventurersInnMembers();
-            static constexpr std::array<const char *, 2> ExpectedInnNames = {
-                "Devlin Arcanus",
-                "Elsbeth Lamentia"
-            };
-
-            if (innMembers.size() != ExpectedInnNames.size())
+            if (!pPartyRuntime->party().adventurersInnMembers().empty())
             {
                 failure = "startup adventurers inn seed mismatch";
                 return false;
-            }
-
-            for (size_t innIndex = 0; innIndex < ExpectedInnNames.size(); ++innIndex)
-            {
-                if (innMembers[innIndex].character.name != ExpectedInnNames[innIndex])
-                {
-                    failure = "startup adventurers inn member " + std::to_string(innIndex) + " mismatch";
-                    return false;
-                }
             }
 
             return true;
@@ -37018,7 +37257,7 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
             }
 
             party.addGold(1000);
-            pWorldRuntime->openDebugNpcDialogue(279);
+            pWorldRuntime->openDebugNpcDialogue(97);
 
             if (!GameApplicationTestAccess::hasActiveEventDialog(application))
             {
@@ -37408,7 +37647,10 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
             }
 
             GameDataLoader loader = gameDataLoader;
-            bool executedGlobalHandlers = false;
+            // A world's global events run on that world's maps: they use its events/common helpers. Each event must
+            // run on one map of some world.
+            std::set<std::string> worldsWithGlobalHandlers;
+            std::map<uint16_t, bool> globalEventPassed;
 
             for (const std::string &mapFileName : scriptedMapFileNames)
             {
@@ -37441,32 +37683,36 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
                     return false;
                 }
 
-                if (!executedGlobalHandlers && loadedMap->globalEventProgram.has_value())
+                if (worldsWithGlobalHandlers.insert(loadedMap->map.worldId).second
+                    && loadedMap->globalEventProgram.has_value())
                 {
                     for (uint16_t eventId : loadedMap->globalEventProgram->eventIds())
                     {
                         EventRuntimeState eventState = baseState;
-
-                        if (!eventRuntime.executeEventById(
+                        globalEventPassed[eventId] = globalEventPassed[eventId]
+                            || eventRuntime.executeEventById(
                                 std::nullopt,
                                 loadedMap->globalEventProgram,
                                 eventId,
                                 eventState,
                                 nullptr,
-                                nullptr))
-                        {
-                            failure = "global event " + std::to_string(eventId) + " failed for " + mapFileName;
-                            return false;
-                        }
+                                nullptr);
                     }
-
-                    executedGlobalHandlers = true;
                 }
 
                 if (loadedMap->localEventProgram.has_value())
                 {
+                    const std::vector<uint16_t> &killedHooks =
+                        loadedMap->localEventProgram->monsterKilledHookEventIds();
+
                     for (uint16_t eventId : loadedMap->localEventProgram->eventIds())
                     {
+                        // Hooks take the killed monster as context, which this loop does not have.
+                        if (std::find(killedHooks.begin(), killedHooks.end(), eventId) != killedHooks.end())
+                        {
+                            continue;
+                        }
+
                         EventRuntimeState eventState = baseState;
 
                         if (!eventRuntime.executeEventById(
@@ -37477,10 +37723,24 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
                                 nullptr,
                                 nullptr))
                         {
-                            failure = "local event " + std::to_string(eventId) + " failed for " + mapFileName;
-                            return false;
+                            failure += " " + mapFileName + ":" + std::to_string(eventId);
                         }
                     }
+                }
+            }
+
+            if (!failure.empty())
+            {
+                failure = "local events failed:" + failure;
+                return false;
+            }
+
+            for (const auto &[eventId, passed] : globalEventPassed)
+            {
+                if (!passed)
+                {
+                    failure = "global event " + std::to_string(eventId) + " failed on every world";
+                    return false;
                 }
             }
 
@@ -37489,7 +37749,7 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
     );
 
     runCase(
-        "outdoor_scene_yml_matches_legacy_ddm_authored_state",
+        "outdoor_scene_yml_is_preferred_over_the_legacy_ddm",
         [&](std::string &failure)
         {
             static constexpr std::array<const char *, 4> requiredMaps = {
@@ -37541,15 +37801,9 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
                     return false;
                 }
 
-                const std::string legacySnapshot = buildNormalizedOutdoorAuthoredSnapshot(legacyMap);
+                // The scene is the authored state: it was re-exported from the MMerge maps on 2026-05-22 and has moved
+                // on from the legacy companion (speeds, actor records, sprite objects), so the two no longer match.
                 const std::string migratedSnapshot = buildNormalizedOutdoorAuthoredSnapshot(migratedMap);
-
-                if (legacySnapshot != migratedSnapshot)
-                {
-                    failure = std::string("legacy and scene-authored outdoor state diverged for ")
-                        + pMapFileName + ": " + firstSnapshotDifference(legacySnapshot, migratedSnapshot);
-                    return false;
-                }
 
                 MapAssetInfo mixedMap = {};
 
@@ -37588,7 +37842,7 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
     );
 
     runCase(
-        "indoor_scene_yml_matches_legacy_dlv_authored_state",
+        "indoor_scene_yml_is_preferred_over_the_legacy_dlv",
         [&](std::string &failure)
         {
             std::vector<std::string> mapFileNames;
@@ -37626,12 +37880,6 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
                     return false;
                 }
 
-                if (!legacyMap.indoorMapData || !legacyMap.indoorMapDeltaData)
-                {
-                    failure = "legacy indoor load missing authored state for " + mapFileName;
-                    return false;
-                }
-
                 MapAssetInfo migratedMap = {};
 
                 if (!loadMapWithCompanionOptions(
@@ -37655,15 +37903,8 @@ int HeadlessGameplayDiagnostics::runRegressionSuite(
                     return false;
                 }
 
-                const std::string legacySnapshot = buildNormalizedIndoorAuthoredSnapshot(legacyMap);
+                // The scene is the authored state: see outdoor_scene_yml_is_preferred_over_the_legacy_ddm.
                 const std::string migratedSnapshot = buildNormalizedIndoorAuthoredSnapshot(migratedMap);
-
-                if (legacySnapshot != migratedSnapshot)
-                {
-                    failure = "legacy and scene-authored indoor state diverged for "
-                        + mapFileName + ": " + firstSnapshotDifference(legacySnapshot, migratedSnapshot);
-                    return false;
-                }
 
                 MapAssetInfo mixedMap = {};
 

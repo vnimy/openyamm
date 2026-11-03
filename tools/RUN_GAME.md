@@ -13,6 +13,7 @@ Use `--visible` to show the window: as the first argument for plain runs (`./too
 anywhere after the name for isolated runs. Use it for FPS and performance comparisons: GNOME throttles a minimized
 window irregularly with VSync on (61–179 FPS versus a steady 155–190 visible in the 2026-10-18 check). `run.json`
 records the mode in `window`. `tools/profile_game.sh` ignores the variable and always shows the window.
+Add `--show-fps` to an isolated run to print each per-second FPS sample to the terminal.
 
 ## Isolated, repeatable runs
 

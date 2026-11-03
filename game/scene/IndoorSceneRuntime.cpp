@@ -4,6 +4,7 @@
 #include "game/gameplay/GameplayActorService.h"
 #include "game/gameplay/InteractiveDecorationRules.h"
 #include "game/indoor/IndoorGeometryUtils.h"
+#include "game/indoor/IndoorMovers.h"
 #include "game/gameplay/TravelRuntime.h"
 #include "game/maps/MapAssetLoader.h"
 
@@ -693,11 +694,13 @@ bool IndoorSceneRuntime::advanceMechanisms(float deltaMilliseconds)
         return false;
     }
 
-    if (!hasMovingMechanism(*m_eventRuntimeState))
+    if (!hasMovingMechanism(*m_eventRuntimeState) && !hasPendingMoverWork())
     {
         m_mechanismAccumulatorMilliseconds = 0.0f;
         return false;
     }
+
+    const bool hasMovers = m_pIndoorMapData != nullptr && !m_pIndoorMapData->moverDefinitions.empty();
 
     int mechanismSteps = 0;
     constexpr float MechanismStepMilliseconds = 1000.0f / 120.0f;
@@ -715,9 +718,22 @@ bool IndoorSceneRuntime::advanceMechanisms(float deltaMilliseconds)
             previousMechanismsForGeometry = m_eventRuntimeState->mechanisms;
         }
 
+        if (hasMovers)
+        {
+            chooseMoverOpenAwayDirections();
+        }
+
         const std::unordered_map<uint32_t, RuntimeMechanismState> previousMechanisms =
             m_eventRuntimeState->mechanisms;
         m_eventRuntime.advanceMechanisms(m_mapDeltaData, MechanismStepMilliseconds, *m_eventRuntimeState);
+
+        if (hasMovers)
+        {
+            advanceMoverAutoClose(MechanismStepMilliseconds);
+            applyMoverBodyRules(previousMechanisms);
+            carryPartyOnRotatingMovers(previousMechanisms);
+        }
+
         applyMovingMechanismSupportMovement(
             *m_mapDeltaData,
             previousMechanisms,
@@ -744,6 +760,346 @@ bool IndoorSceneRuntime::advanceMechanisms(float deltaMilliseconds)
     }
 
     return mechanismSteps > 0;
+}
+
+namespace
+{
+const MapDeltaDoor *findSceneDoor(const MapDeltaData &mapDeltaData, uint32_t doorId)
+{
+    for (const MapDeltaDoor &door : mapDeltaData.doors)
+    {
+        if (door.doorId == doorId)
+        {
+            return &door;
+        }
+    }
+
+    return nullptr;
+}
+
+IndoorMoverBody partyMoverBody(const IndoorPartyRuntime &partyRuntime)
+{
+    const IndoorMoveState &state = partyRuntime.movementState();
+    const IndoorBodyDimensions dimensions = {};
+    return IndoorMoverBody{state.x, state.y, state.footZ, dimensions.radius, dimensions.height};
+}
+
+// The door's face polygons in a pose (`vertices` holds the pose for the door's own vertices).
+void moverFacePolygons(
+    const IndoorMapData &indoorMapData,
+    const MapDeltaDoor &door,
+    const std::vector<IndoorVertex> &vertices,
+    std::vector<std::vector<bx::Vec3>> &polygons)
+{
+    polygons.clear();
+
+    for (uint16_t faceId : door.faceIds)
+    {
+        if (faceId >= indoorMapData.faces.size())
+        {
+            continue;
+        }
+
+        std::vector<bx::Vec3> polygon;
+
+        for (uint16_t vertexId : indoorMapData.faces[faceId].vertexIndices)
+        {
+            if (vertexId < vertices.size())
+            {
+                polygon.push_back(indoorVertexToWorld(vertices[vertexId]));
+            }
+        }
+
+        if (polygon.size() >= 3)
+        {
+            polygons.push_back(std::move(polygon));
+        }
+    }
+}
+
+bx::Vec3 polygonCentre(const std::vector<bx::Vec3> &polygon)
+{
+    bx::Vec3 centre = {0.0f, 0.0f, 0.0f};
+
+    for (const bx::Vec3 &point : polygon)
+    {
+        centre = {centre.x + point.x, centre.y + point.y, centre.z + point.z};
+    }
+
+    const float count = static_cast<float>(polygon.size());
+    return {centre.x / count, centre.y / count, centre.z / count};
+}
+}
+
+bool IndoorSceneRuntime::hasPendingMoverWork() const
+{
+    if (m_pIndoorMapData == nullptr || m_pIndoorMapData->moverDefinitions.empty() || !m_eventRuntimeState)
+    {
+        return false;
+    }
+
+    for (const IndoorMoverDefinition &mover : m_pIndoorMapData->moverDefinitions)
+    {
+        if (mover.autoCloseSeconds <= 0.0f)
+        {
+            continue;
+        }
+
+        const auto iterator = m_eventRuntimeState->mechanisms.find(mover.doorId);
+
+        if (iterator != m_eventRuntimeState->mechanisms.end()
+            && iterator->second.state == static_cast<uint16_t>(EvtMechanismState::Open))
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+void IndoorSceneRuntime::chooseMoverOpenAwayDirections()
+{
+    const IndoorMoveState &partyState = m_partyRuntime.movementState();
+    const bx::Vec3 party = {partyState.x, partyState.y, partyState.footZ + 80.0f};
+
+    for (const IndoorMoverDefinition &mover : m_pIndoorMapData->moverDefinitions)
+    {
+        if (!mover.rotation || !mover.rotation->openAway)
+        {
+            continue;
+        }
+
+        const auto iterator = m_eventRuntimeState->mechanisms.find(mover.doorId);
+        const MapDeltaDoor *pDoor = findSceneDoor(*m_mapDeltaData, mover.doorId);
+
+        // A door starting to open from shut takes the side away from the party; it keeps it until shut again.
+        if (iterator == m_eventRuntimeState->mechanisms.end()
+            || pDoor == nullptr
+            || iterator->second.state != static_cast<uint16_t>(EvtMechanismState::Opening)
+            || iterator->second.currentDistance < static_cast<float>(pDoor->moveLength) - 0.5f)
+        {
+            continue;
+        }
+
+        iterator->second.rotationDirection = indoorMoverOpenAwayDirection(*pDoor, mover, party);
+    }
+}
+
+void IndoorSceneRuntime::advanceMoverAutoClose(float stepMilliseconds)
+{
+    for (const IndoorMoverDefinition &mover : m_pIndoorMapData->moverDefinitions)
+    {
+        if (mover.autoCloseSeconds <= 0.0f)
+        {
+            continue;
+        }
+
+        const auto iterator = m_eventRuntimeState->mechanisms.find(mover.doorId);
+
+        if (iterator == m_eventRuntimeState->mechanisms.end()
+            || iterator->second.state != static_cast<uint16_t>(EvtMechanismState::Open)
+            || iterator->second.isMoving)
+        {
+            continue;
+        }
+
+        // The open door's time is its existing (saved) time since it was triggered.
+        RuntimeMechanismState &mechanism = iterator->second;
+        mechanism.timeSinceTriggeredMs += stepMilliseconds;
+
+        if (mechanism.timeSinceTriggeredMs >= mover.autoCloseSeconds * 1000.0f)
+        {
+            EventRuntime::applyMechanismAction(
+                mechanism, findSceneDoor(*m_mapDeltaData, mover.doorId), MechanismAction::Close);
+        }
+    }
+}
+
+void IndoorSceneRuntime::applyMoverBodyRules(
+    const std::unordered_map<uint32_t, RuntimeMechanismState> &previousMechanisms)
+{
+    std::vector<std::vector<bx::Vec3>> polygons;
+    std::vector<std::vector<bx::Vec3>> previousPolygons;
+    std::vector<std::pair<size_t, IndoorMoverBody>> actorBodies;
+
+    for (const IndoorMoverDefinition &mover : m_pIndoorMapData->moverDefinitions)
+    {
+        if (mover.bodies == IndoorMoverBodyRule::Ignore)
+        {
+            continue;
+        }
+
+        const auto currentIterator = m_eventRuntimeState->mechanisms.find(mover.doorId);
+        const auto previousIterator = previousMechanisms.find(mover.doorId);
+        const MapDeltaDoor *pDoor = findSceneDoor(*m_mapDeltaData, mover.doorId);
+
+        if (currentIterator == m_eventRuntimeState->mechanisms.end()
+            || previousIterator == previousMechanisms.end()
+            || pDoor == nullptr
+            || std::abs(currentIterator->second.currentDistance - previousIterator->second.currentDistance) <= 0.0001f)
+        {
+            continue;
+        }
+
+        if (m_moverPoseVertices.size() != m_pIndoorMapData->vertices.size())
+        {
+            m_moverPoseVertices = m_pIndoorMapData->vertices;
+        }
+
+        const MapDeltaDoor &door = *pDoor;
+        RuntimeMechanismState &mechanism = currentIterator->second;
+        const RuntimeMechanismState &previous = previousIterator->second;
+        applyIndoorMechanismDoorToVertices(
+            door, &mover, previous.currentDistance, previous.rotationDirection, m_moverPoseVertices);
+        moverFacePolygons(*m_pIndoorMapData, door, m_moverPoseVertices, previousPolygons);
+        applyIndoorMechanismDoorToVertices(
+            door, &mover, mechanism.currentDistance, mechanism.rotationDirection, m_moverPoseVertices);
+        moverFacePolygons(*m_pIndoorMapData, door, m_moverPoseVertices, polygons);
+
+        bx::Vec3 minimum = {1.0e9f, 1.0e9f, 1.0e9f};
+        bx::Vec3 maximum = {-1.0e9f, -1.0e9f, -1.0e9f};
+
+        for (const std::vector<bx::Vec3> &polygon : polygons)
+        {
+            for (const bx::Vec3 &point : polygon)
+            {
+                minimum = {std::min(minimum.x, point.x), std::min(minimum.y, point.y), std::min(minimum.z, point.z)};
+                maximum = {std::max(maximum.x, point.x), std::max(maximum.y, point.y), std::max(maximum.z, point.z)};
+            }
+        }
+
+        m_worldRuntime.collectMoverActorBodies(minimum, maximum, actorBodies);
+        const IndoorMoverBody party = partyMoverBody(m_partyRuntime);
+        // A face counts only while it moves toward the body: one swinging away from a body leaning on it (or a floor
+        // tipping away from under it) does not stop or push anything.
+        const auto approaches = [&polygons, &previousPolygons](const IndoorMoverBody &body, size_t index)
+        {
+            const float distance = indoorBodyAxisPolygonDistance(body, polygons[index]);
+            return distance < body.radius
+                && distance < indoorBodyAxisPolygonDistance(body, previousPolygons[index]) - 0.001f;
+        };
+        const auto touches = [&polygons, &approaches](const IndoorMoverBody &body)
+        {
+            for (size_t index = 0; index < polygons.size(); ++index)
+            {
+                if (approaches(body, index))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        };
+
+        if (mover.bodies == IndoorMoverBodyRule::Push)
+        {
+            // Each face moving into a body moves the body clear of it, on the side the body was.
+            const auto clearance = [&](const IndoorMoverBody &body) -> bx::Vec3
+            {
+                bx::Vec3 total = {0.0f, 0.0f, 0.0f};
+                IndoorMoverBody moved = body;
+
+                for (size_t index = 0; index < polygons.size(); ++index)
+                {
+                    if (!approaches(moved, index))
+                    {
+                        continue;
+                    }
+
+                    const bx::Vec3 centre = {moved.x, moved.y, moved.footZ + moved.height * 0.5f};
+                    const bx::Vec3 before = polygonCentre(previousPolygons[index]);
+                    const bx::Vec3 step = indoorBodyPolygonClearance(
+                        moved, polygons[index], {centre.x - before.x, centre.y - before.y, centre.z - before.z});
+                    moved.x += step.x;
+                    moved.y += step.y;
+                    moved.footZ += step.z;
+                    total = {total.x + step.x, total.y + step.y, total.z + step.z};
+                }
+
+                return total;
+            };
+            const bx::Vec3 partyPush = clearance(party);
+
+            if (partyPush.x != 0.0f || partyPush.y != 0.0f || partyPush.z != 0.0f)
+            {
+                m_partyRuntime.pushPartyPosition(partyPush.x, partyPush.y, partyPush.z);
+            }
+
+            for (const std::pair<size_t, IndoorMoverBody> &actor : actorBodies)
+            {
+                const bx::Vec3 actorPush = clearance(actor.second);
+
+                if (actorPush.x != 0.0f || actorPush.y != 0.0f || actorPush.z != 0.0f)
+                {
+                    m_worldRuntime.displaceActorByMover(actor.first, actorPush.x, actorPush.y, actorPush.z);
+                }
+            }
+
+            continue;
+        }
+
+        bool blocked = touches(party);
+
+        for (size_t index = 0; !blocked && index < actorBodies.size(); ++index)
+        {
+            blocked = touches(actorBodies[index].second);
+        }
+
+        if (!blocked)
+        {
+            continue;
+        }
+
+        // Hold the step; a closing door with the reverse rule opens again (MM9 ReopenOnContact).
+        const bool wasClosing = previous.state == static_cast<uint16_t>(EvtMechanismState::Closing);
+        mechanism = previous;
+
+        if (wasClosing && mover.bodies == IndoorMoverBodyRule::Reverse)
+        {
+            EventRuntime::applyMechanismAction(mechanism, pDoor, MechanismAction::Open);
+        }
+    }
+}
+
+void IndoorSceneRuntime::carryPartyOnRotatingMovers(
+    const std::unordered_map<uint32_t, RuntimeMechanismState> &previousMechanisms)
+{
+    const IndoorMoveState &state = m_partyRuntime.movementState();
+
+    if (!state.grounded || state.supportFaceIndex == static_cast<size_t>(-1))
+    {
+        return;
+    }
+
+    for (const IndoorMoverDefinition &mover : m_pIndoorMapData->moverDefinitions)
+    {
+        if (!mover.carry || !mover.rotation)
+        {
+            continue;
+        }
+
+        const MapDeltaDoor *pDoor = findSceneDoor(*m_mapDeltaData, mover.doorId);
+        const auto currentIterator = m_eventRuntimeState->mechanisms.find(mover.doorId);
+        const auto previousIterator = previousMechanisms.find(mover.doorId);
+
+        if (pDoor == nullptr
+            || !mechanismDoorContainsFace(*pDoor, state.supportFaceIndex)
+            || currentIterator == m_eventRuntimeState->mechanisms.end()
+            || previousIterator == previousMechanisms.end())
+        {
+            continue;
+        }
+
+        const std::optional<IndoorRigidMotion> before = indoorRotatingMoverMotion(
+            *pDoor, &mover, previousIterator->second.currentDistance, previousIterator->second.rotationDirection);
+        const std::optional<IndoorRigidMotion> after = indoorRotatingMoverMotion(
+            *pDoor, &mover, currentIterator->second.currentDistance, currentIterator->second.rotationDirection);
+        const IndoorRigidMotion step = composeIndoorRigidMotions(*after, before->inverse());
+        const bx::Vec3 foot = {state.x, state.y, state.footZ};
+        const bx::Vec3 moved = step.apply(foot);
+        m_partyRuntime.translatePartyPosition(moved.x - foot.x, moved.y - foot.y, moved.z - foot.z);
+        return;
+    }
 }
 
 void IndoorSceneRuntime::updateMechanismAudio(

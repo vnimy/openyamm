@@ -228,6 +228,28 @@ bool isMetalImpactSound(OpenYAMM::Game::SoundId soundId)
 }
 }
 
+TEST_CASE("audio starts on the silent dummy driver when no playback device opens")
+{
+    // SDL_Quit frees the environment, so it is fetched after each quit.
+    SDL_Quit();
+    REQUIRE(SDL_SetEnvironmentVariable(SDL_GetEnvironment(), "SDL_AUDIODRIVER", "no_such_driver", true));
+
+    OpenYAMM::Engine::AssetFileSystem assetFileSystem;
+    std::string failure;
+    REQUIRE_MESSAGE(initializeRegressionAssetFileSystem(assetFileSystem, failure), failure);
+
+    OpenYAMM::Engine::AudioSystem audioSystem;
+    CHECK(audioSystem.initialize(assetFileSystem));
+    const char *pDriver = SDL_GetCurrentAudioDriver();
+    REQUIRE(pDriver != nullptr);
+    CHECK_EQ(std::string(pDriver), "dummy");
+
+    audioSystem.shutdown();
+    SDL_ResetHint(SDL_HINT_AUDIO_DRIVER);
+    SDL_Quit();
+    CHECK(SDL_SetEnvironmentVariable(SDL_GetEnvironment(), "SDL_AUDIODRIVER", "dummy", true));
+}
+
 TEST_CASE("music streams decode a track the same way every time")
 {
     std::ifstream file(std::filesystem::path(OPENYAMM_SOURCE_DIR) / "assets_dev/worlds/mm7/music/32.mp3",

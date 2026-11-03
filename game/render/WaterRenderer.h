@@ -1,5 +1,6 @@
 #pragma once
 
+#include "game/indoor/IndoorFog.h"
 #include "game/render/LiquidKind.h"
 #include "game/render/WaterMath.h"
 #include "game/fx/WaterRippleRuntime.h"
@@ -74,6 +75,8 @@ public:
 
     bool initialize(const Engine::AssetFileSystem &assets, std::vector<WaterSurfaceGeometry> geometry,
         std::span<const std::vector<uint8_t>> coverageMasks = {}, bool indoor = false);
+    // The map's scene fog (devdocs/INDOOR_FOG.md), before an indoor initialize; a map without it never calls this.
+    void setIndoorFog(const IndoorFog &fog);
     bool updateGeometry(std::vector<WaterSurfaceGeometry> geometry, bool buildings = false);
     void shutdown();
     bool isReady() const;
@@ -126,6 +129,7 @@ private:
     };
 
     bool resizeReflection(size_t index, uint16_t size);
+    void setFogUniforms();
     void prepareRippleResources(const WaterRippleRuntime *pRipples);
     void submitSurface(Surface &surface, uint16_t viewId, float seconds, float rainIntensity,
         const WaterRippleRuntime *pRipples, bool mainView);
@@ -164,6 +168,9 @@ private:
     bgfx::UniformHandle m_skyColor = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle m_reflectionMatrix = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle m_cameraPosition = BGFX_INVALID_HANDLE;
+    IndoorFog m_indoorFog;
+    bgfx::UniformHandle m_fogColor = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle m_fogDistances = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle m_indoorLightPositions = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle m_indoorLightColors = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle m_indoorLightParams = BGFX_INVALID_HANDLE;

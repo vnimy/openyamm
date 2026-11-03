@@ -360,6 +360,11 @@ void GameplayHudOverlayRenderer::renderChestPanel(GameplayScreenRuntime &view, i
                 label = replaceAll(label, "{food}", std::to_string(pParty->food()));
             }
 
+            if (normalizedLayoutId == "chestinventorybutton" && view.inventoryNestedOverlay().active)
+            {
+                label = "Chest";
+            }
+
             view.renderLayoutLabel(*pLayout, *resolved, label);
         }
 

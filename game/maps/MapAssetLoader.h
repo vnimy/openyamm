@@ -57,6 +57,10 @@ struct OutdoorBitmapTexture
     std::vector<uint8_t> pixels;
     // A cooked world surface texture (GPU blocks with its mip chain) replaces pixels; see loadCookedSurfaceTexture.
     std::shared_ptr<const Engine::CookedTexture> cookedTexture;
+    // Its surface material maps (devdocs/SURFACE_MATERIALS_PLAN.md), cooked beside it: the normal map (tangent-space
+    // x and y, glow) and the detail map (occlusion, roughness, metal, height). Both or neither.
+    std::shared_ptr<const Engine::CookedTexture> materialNormal;
+    std::shared_ptr<const Engine::CookedTexture> materialDetail;
     // Explicit source identity for map-local art that overrides a shared sprite name.
     std::string resourceIdentity;
 };
@@ -217,6 +221,9 @@ struct MapCompanionLoadOptions
     bool allowLegacyCompanion = true;
     // The active ruleset's package directory: its maps/<map>_*.scene.yml overlays apply after the world's.
     std::string rulesetRoot;
+    // Whether face textures load their surface material maps (video.surface_materials); off, nothing of them is read
+    // or kept.
+    bool surfaceMaterials = false;
 };
 
 struct MapAssetBitmapPixelsResult
@@ -224,6 +231,8 @@ struct MapAssetBitmapPixelsResult
     int width = 0;
     int height = 0;
     std::vector<uint8_t> pixels;
+    // The tier of the file the pixels were decoded from, which sets their logical size.
+    Engine::AssetScaleTier assetScaleTier = Engine::AssetScaleTier::X1;
 };
 
 struct MapAssetInfo
@@ -279,6 +288,9 @@ void clearMapRenderSourcePixels(MapAssetInfo &mapAssetInfo);
 // further lights: the decoration on a tie, since it follows the torch's state. MM7 map lights have no radius and MM8
 // places none beside its torches, so their lights are unchanged.
 void resolveDuplicateTorchLights(const IndoorMapData &indoorMapData, DecorationBillboardSet &billboardSet);
+// Whether any of a map's face textures carries surface material maps: they load only with video.surface_materials
+// on, and the renderers load the material programs only for such a map.
+bool hasSurfaceMaterialMaps(const std::vector<OutdoorBitmapTexture> &textures);
 // A world surface texture (Data/bitmaps) whose best match in the active scale tier is its cooked file
 // (tools/cook_surface_textures.py): GPU blocks with the runtime's mip chain and the source's statistics, so nothing is
 // decoded, keyed or filtered at load. Empty when the best match is a source image. Throws on a corrupt cooked file

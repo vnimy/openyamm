@@ -658,7 +658,7 @@ function MM7.EnterCastleHarmondaleOutdoor()
 
         SetQBit(QBit(644)) -- Butler only shows up once.
         SetQBit(QBit(587)) -- Clean out Castle Harmondale.
-        AddValue(History(5), 0)
+        AddValue(History(3), 0)
         evt.MoveNPC(397, 240)
         evt.SpeakNPC(397)
         return
@@ -746,7 +746,7 @@ function MM7.UpdateJudgeGreyDeath()
 
     evt.SpeakNPC(430)
     SetQBit(QBit(665))
-    AddValue(History(8), 0)
+    AddValue(History(6), 0)
     evt.MoveNPC(406, 0)
     evt.MoveNPC(407, 0)
     evt.MoveNPC(414, 1169)

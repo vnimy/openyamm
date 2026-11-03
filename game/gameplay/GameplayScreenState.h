@@ -83,6 +83,8 @@ public:
         uint64_t inspectKeyboardActivateNextRepeatTickNanoseconds = 0;
         bool heldInventoryDropLatch = false;
         bool inspectMouseActivateLatch = false;
+        // A Ctrl click held after the steal: the left button is the attack too, and must not attack until released.
+        bool stealClickLatch = false;
         GameplayWorldHit pressedWorldHit;
 
         void clear();

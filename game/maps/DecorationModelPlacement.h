@@ -14,10 +14,11 @@ struct DecorationWallContact
     std::array<float, 2> normal = {};
 };
 
-// A camera-facing card corner (asset space p) in world space, turned about the vertical axis toward the viewer as
-// modelStaticPosition (model_static.sh) turns it toward the camera: its offset across the model and its height stay.
+// A camera-facing card corner (asset space p) in world space, turned toward the viewer about the vertical axis through
+// pivot (asset space: the model origin, or a "card" billboard's own centre) as modelStaticPosition (model_static.sh)
+// turns it toward the camera: its offset across the model and its height stay.
 std::array<float, 3> facingCardCorner(const Engine::ModelMatrix &placement, const std::array<float, 3> &p,
-    const std::array<float, 3> &viewer);
+    const std::array<float, 3> &viewer, const std::array<float, 3> &pivot = {});
 
 // Yaw (radians, for Engine::gltfModelPlacement) that turns a model's front (asset +z) toward a horizontal direction.
 float yawFacing(const std::array<float, 2> &direction);

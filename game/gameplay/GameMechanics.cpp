@@ -3849,6 +3849,49 @@ bool GameMechanics::canCharacterEquipItem(
         && ItemRuntime::characterMeetsRaceRestriction(character, itemDefinition);
 }
 
+std::optional<std::string> GameMechanics::equipRefusalReason(
+    const Character &character,
+    const ItemDefinition &itemDefinition,
+    const CharacterDollTypeEntry *pCharacterDollType)
+{
+    if (itemDefinition.equipStat.empty() || itemDefinition.equipStat == "0"
+        || canCharacterEquipItem(character, itemDefinition, pCharacterDollType)
+        || isRestrictedByDollType(itemDefinition, pCharacterDollType))
+    {
+        return std::nullopt;
+    }
+
+    if (!isWetsuitItem(itemDefinition)
+        && requiresLearnedSkillToEquip(itemDefinition)
+        && !character.hasSkill(itemDefinition.skillGroup))
+    {
+        return "Requires the " + displaySkillName(itemDefinition.skillGroup) + " skill";
+    }
+
+    const int actualMight = static_cast<int>(character.might)
+        + character.permanentBonuses.might + character.magicalBonuses.might;
+    const int actualAccuracy = static_cast<int>(character.accuracy)
+        + character.permanentBonuses.accuracy + character.magicalBonuses.accuracy;
+    const bool lacksMight = itemDefinition.requiredMight > 0 && actualMight < itemDefinition.requiredMight;
+    const bool lacksAccuracy =
+        itemDefinition.requiredAccuracy > 0 && actualAccuracy < itemDefinition.requiredAccuracy;
+
+    if (ItemRuntime::characterMeetsRaceRestriction(character, itemDefinition))
+    {
+        if (lacksMight)
+        {
+            return "Requires " + std::to_string(itemDefinition.requiredMight) + " Might";
+        }
+
+        if (lacksAccuracy)
+        {
+            return "Requires " + std::to_string(itemDefinition.requiredAccuracy) + " Accuracy";
+        }
+    }
+
+    return ItemRuntime::wearRequirementText(itemDefinition);
+}
+
 bool GameMechanics::isEquipmentAllowedWithWetsuit(
     const Character &character,
     const ItemTable *pItemTable,

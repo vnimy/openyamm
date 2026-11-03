@@ -49,12 +49,15 @@ using ImportedObjFaceVertex = ImportedModelFaceVertex;
 using ImportedObjFace = ImportedModelFace;
 using ImportedObjModel = ImportedModel;
 
+// keepFanPolygons: a glTF triangle-fan primitive is one convex polygon face (the indoor import setting
+// triangulate_ngons: false) instead of a fan of triangles.
 bool loadImportedModelsFromFile(
     const std::filesystem::path &path,
     std::vector<ImportedModel> &models,
     std::string &errorMessage,
     bool mergeCoplanarFaces = false,
-    bool flipGltfV = true);
+    bool flipGltfV = true,
+    bool keepFanPolygons = false);
 
 bool loadImportedModelFromFile(
     const std::filesystem::path &path,

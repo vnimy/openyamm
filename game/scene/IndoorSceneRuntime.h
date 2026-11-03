@@ -149,6 +149,12 @@ private:
     void updateMechanismAudio(
         const std::unordered_map<uint32_t, RuntimeMechanismState> &previousMechanisms,
         float deltaMilliseconds);
+    // Rotating movers and MM9 door behaviours (devdocs/INDOOR_ROTATING_MOVERS_AND_LADDERS.md), per mechanism step.
+    bool hasPendingMoverWork() const;
+    void chooseMoverOpenAwayDirections();
+    void advanceMoverAutoClose(float stepMilliseconds);
+    void applyMoverBodyRules(const std::unordered_map<uint32_t, RuntimeMechanismState> &previousMechanisms);
+    void carryPartyOnRotatingMovers(const std::unordered_map<uint32_t, RuntimeMechanismState> &previousMechanisms);
 
     MapStatsEntry m_map;
     std::string m_mapFileName;
@@ -170,6 +176,8 @@ private:
     std::vector<size_t> m_partyFloorFacesForPressurePlateTriggers;
     std::unordered_map<uint32_t, MechanismAudioState> m_mechanismAudioStates;
     float m_mechanismAccumulatorMilliseconds = 0.0f;
+    // The rotating movers' poses per step (only their own vertices are written); empty on maps without movers.
+    std::vector<IndoorVertex> m_moverPoseVertices;
     Mm9PositionedTransitionRuntime m_mm9PositionedTransitionRuntime;
     Mm9TeacherScheduleRuntime m_mm9TeacherScheduleRuntime;
 };

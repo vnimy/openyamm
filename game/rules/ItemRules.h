@@ -151,6 +151,8 @@ public:
     virtual std::optional<std::string> itemDescription(const InventoryItem &item, const Character *pViewer) const;
     // The colour of the item's name in its inspect popup (0xRRGGBB); nothing for the popup's own colour.
     virtual std::optional<uint32_t> nameColor(const InventoryItem &item) const;
+    // Whether items are outlined in their rarity colour (the Item rarity glow setting); Standard has no rarities.
+    virtual bool glowsItemRarity() const;
     // Lines the rules add to the inspect popup below the item's type and stats (MAW: enchantments, level required).
     virtual std::vector<ItemInspectLine> inspectLines(
         const InventoryItem &item,

@@ -711,6 +711,12 @@ bool GameplayScreenRuntime::mobileFlightControlsAvailable() const
 {
     const IGameplayWorldRuntime *pWorldRuntime = worldRuntime();
     const Party *pParty = pWorldRuntime != nullptr ? pWorldRuntime->party() : nullptr;
+
+    if (pWorldRuntime != nullptr && pWorldRuntime->partyClimbingLadder())
+    {
+        return true;
+    }
+
     return pWorldRuntime != nullptr
         && !pWorldRuntime->isIndoorMap()
         && pParty != nullptr

@@ -300,6 +300,7 @@ enum class GameplayChestPointerTargetType
     None,
     TakeAllButton,
     TakeGoldButton,
+    InventoryButton,
     CloseButton
 };
 
@@ -384,6 +385,7 @@ enum class GameplayCharacterPointerTargetType
     DismissButton,
     AlchemyButton,
     InventorySortButton,
+    InventoryDropButton,
     InventoryBagButton,
     // The bag overview: its button, an item in a bag and a free cell under a held item.
     InventoryBagOverviewButton,

@@ -326,7 +326,7 @@ bool Mm9RudeDialogueTable::loadDialogueText(const std::string &sourceName, const
         parseQuestKeyGroup(RequiredKeyColumns, row.requiredRawKeys);
         parseQuestKeyGroup(ForbiddenKeyColumns, row.forbiddenRawKeys);
 
-        if (row.next >= -1)
+        if (mm9RudeRowAppliesQuestKeys(row))
         {
             parseQuestKeyGroup(GrantedKeyColumns, row.grantedRawKeys);
             parseQuestKeyGroup(RemovedKeyColumns, row.removedRawKeys);
@@ -643,12 +643,17 @@ bool mm9RudeRowPassesQuestKeys(
     return true;
 }
 
+bool mm9RudeRowAppliesQuestKeys(const Mm9RudeRow &row)
+{
+    return row.next >= -1 || row.next == -10 || row.next == -11;
+}
+
 void applyMm9RudeRowActions(
     const Mm9RudeRow &row,
     Party &party,
     EventRuntimeState *pEventRuntimeState)
 {
-    if (row.next < -1)
+    if (!mm9RudeRowAppliesQuestKeys(row))
     {
         return;
     }

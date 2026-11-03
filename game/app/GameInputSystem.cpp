@@ -75,6 +75,12 @@ void GameInputSystem::handleSdlEvent(const SDL_Event &event)
         m_pendingMouseButtonEvents[event.button.button - SDL_BUTTON_LEFT].push_back(event.button);
         return;
     }
+
+    if (event.type == SDL_EVENT_MOUSE_MOTION)
+    {
+        m_pendingRelativeMouseX += event.motion.xrel;
+        m_pendingRelativeMouseY += event.motion.yrel;
+    }
 #endif
 
     if (event.type == SDL_EVENT_TEXT_INPUT)
@@ -383,13 +389,14 @@ void GameInputSystem::updateFromEngineInput(
     }
 #endif
 
-    float relativeMouseX = 0.0f;
-    float relativeMouseY = 0.0f;
-    SDL_GetRelativeMouseState(&relativeMouseX, &relativeMouseY);
 #if defined(__ANDROID__) || defined(OPENYAMM_IOS)
     m_frame.relativeMouseX = 0.0f;
     m_frame.relativeMouseY = 0.0f;
 #else
+    const float relativeMouseX = m_pendingRelativeMouseX;
+    const float relativeMouseY = m_pendingRelativeMouseY;
+    m_pendingRelativeMouseX = 0.0f;
+    m_pendingRelativeMouseY = 0.0f;
     const float mouseSensitivityScale = static_cast<float>(std::clamp(settings.mouseSensitivity, 0, 100)) / 100.0f;
     m_frame.relativeMouseX = blockGameplayInput ? 0.0f : relativeMouseX * mouseSensitivityScale;
     m_frame.relativeMouseY = blockGameplayInput ? 0.0f
@@ -973,7 +980,8 @@ GameplayInputFrame &GameInputSystem::frame()
 
 void GameInputSystem::resetRelativeMouseMotion()
 {
-    SDL_GetRelativeMouseState(nullptr, nullptr);
+    m_pendingRelativeMouseX = 0.0f;
+    m_pendingRelativeMouseY = 0.0f;
     m_frame.relativeMouseX = 0.0f;
     m_frame.relativeMouseY = 0.0f;
 }

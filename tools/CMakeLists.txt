@@ -37,6 +37,7 @@ add_library(openyamm_indoor_source STATIC
     ../editor/import/IndoorDerivedGeometry.cpp
     ../editor/import/ObjModelImport.cpp
     ../game/indoor/IndoorGeometryUtils.cpp
+    ../game/indoor/IndoorMovers.cpp
     ../game/indoor/IndoorMapData.cpp
     ../game/indoor/IndoorPortalGraph.cpp
     ../game/maps/MapDeltaData.cpp

@@ -3291,3 +3291,10 @@ TEST_CASE("MAW readiness fixes: utility auras need their full cost free, falls s
     inputs.bonusPercent = 30;
     CHECK_EQ(mawAttackDelay(inputs).delay, int(mawRound(84.5 / 1.3)));
 }
+
+TEST_CASE("Only MAW outlines items in their rarity colour; Standard MMerge has no rarity glow")
+{
+    MawRules rules(RulesetOptions{}, MawMapLevels{});
+    CHECK_FALSE(standardGameRules().items.glowsItemRarity());
+    CHECK(rules.gameRules().items.glowsItemRarity());
+}

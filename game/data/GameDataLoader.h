@@ -85,6 +85,8 @@ public:
     // Actor models (settings `actor_models`): the merged models/actors.yml of every mounted world, or only
     // overrideManifestPath when it is set. Map loads then skip the sprites of the monsters they bind.
     void setActorModels(bool enabled, const std::string &overrideManifestPath);
+    // Whether map loads read the surface material maps of face textures (video.surface_materials).
+    void setSurfaceMaterials(bool enabled) { m_surfaceMaterials = enabled; }
     // Loads the actor model manifest (every mounted world's actors.yml) when actor models are on; a map load does it.
     bool ensureActorModelManifest(const Engine::AssetFileSystem &assetFileSystem);
     // Null while actor models are off or before the first map load.
@@ -277,6 +279,7 @@ private:
     RulesetDefinition m_activeRuleset = standardRulesetDefinition();
     mutable std::set<std::string> m_appliedRulesetContributions;
     bool m_actorModelsEnabled = false;
+    bool m_surfaceMaterials = false;
     std::string m_actorModelManifestOverride;
     std::shared_ptr<const ActorModelManifest> m_pActorModelManifest;
     // The world and asset content m_pActorModelManifest was read for.

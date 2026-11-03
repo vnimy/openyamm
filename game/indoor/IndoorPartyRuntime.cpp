@@ -1,4 +1,5 @@
 #include "game/indoor/IndoorPartyRuntime.h"
+#include "game/indoor/IndoorMovers.h"
 
 #include "game/debug/GameplayDebugTrace.h"
 #include "game/tables/ItemTable.h"
@@ -120,6 +121,8 @@ void IndoorPartyRuntime::initializeEyePosition(float x, float y, float z, bool r
     m_pendingImpulseVelocityX = 0.0f;
     m_pendingImpulseVelocityY = 0.0f;
     m_pendingImpulseVelocityZ = 0.0f;
+    m_jumpCarryVelocityX = 0.0f;
+    m_jumpCarryVelocityY = 0.0f;
     m_dashSeconds = 0.0f;
     m_pendingJumpVelocity.reset();
     m_pendingJumpLift = DefaultJumpLift;
@@ -141,6 +144,8 @@ void IndoorPartyRuntime::teleportEyePosition(float x, float y, float z)
     m_pendingImpulseVelocityX = 0.0f;
     m_pendingImpulseVelocityY = 0.0f;
     m_pendingImpulseVelocityZ = 0.0f;
+    m_jumpCarryVelocityX = 0.0f;
+    m_jumpCarryVelocityY = 0.0f;
     m_dashSeconds = 0.0f;
     m_pendingJumpVelocity.reset();
     m_pendingJumpLift = DefaultJumpLift;
@@ -170,6 +175,18 @@ void IndoorPartyRuntime::translatePartyPosition(float deltaX, float deltaY, floa
     m_movementState.fallDistance = 0.0f;
 }
 
+void IndoorPartyRuntime::pushPartyPosition(float deltaX, float deltaY, float deltaZ)
+{
+    m_movementState.x += deltaX;
+    m_movementState.y += deltaY;
+    m_movementState.footZ += deltaZ;
+    m_movementState.verticalVelocity = std::min(m_movementState.verticalVelocity, 0.0f);
+    m_movementState.grounded = false;
+    m_movementState.supportFaceIndex = static_cast<size_t>(-1);
+    m_movementState.landedThisFrame = false;
+    m_movementState.fallStartZ = std::max(m_movementState.fallStartZ, m_movementState.footZ);
+}
+
 void IndoorPartyRuntime::lift(float height)
 {
     m_movementState.footZ += height;
@@ -178,6 +195,107 @@ void IndoorPartyRuntime::lift(float height)
     m_movementState.landedThisFrame = false;
     m_movementState.fallStartZ = m_movementState.footZ;
     m_movementState.fallDistance = 0.0f;
+}
+
+void IndoorPartyRuntime::setLadderVerticalInput(int verticalInput)
+{
+    m_ladderVerticalInput = verticalInput;
+}
+
+bool IndoorPartyRuntime::climbingLadder() const
+{
+    return m_ladderIndex.has_value();
+}
+
+bool IndoorPartyRuntime::stepOnLadder(
+    float desiredVelocityX,
+    float desiredVelocityY,
+    bool runningMovement,
+    const IndoorBodyDimensions &body,
+    std::vector<size_t> &contactedActorIndices)
+{
+    const IndoorMapData *pMapData = m_movementController.indoorMapData();
+
+    if (pMapData == nullptr || pMapData->ladders.empty())
+    {
+        return false;
+    }
+
+    const IndoorMoverBody moverBody = {
+        m_movementState.x, m_movementState.y, m_movementState.footZ, body.radius, body.height};
+
+    if (!m_ladderIndex && m_movementState.grounded && !m_pendingJumpRequested)
+    {
+        for (size_t index = 0; index < pMapData->ladders.size(); ++index)
+        {
+            if (indoorLadderCanGrab(pMapData->ladders[index], moverBody, desiredVelocityX, desiredVelocityY))
+            {
+                m_ladderIndex = index;
+                break;
+            }
+        }
+    }
+
+    if (!m_ladderIndex)
+    {
+        return false;
+    }
+
+    const IndoorLadder &ladder = pMapData->ladders[*m_ladderIndex];
+    const IndoorLadderClimbStep step = indoorLadderClimbStep(
+        ladder,
+        moverBody,
+        desiredVelocityX,
+        desiredVelocityY,
+        m_ladderVerticalInput,
+        runningMovement,
+        IndoorMovementStepSeconds);
+
+    if (m_pendingJumpRequested || step.detach)
+    {
+        // Letting go is not a fall from any height above here.
+        m_ladderIndex.reset();
+        m_movementState.fallStartZ = m_movementState.footZ;
+        return false;
+    }
+
+    if (step.exitTop)
+    {
+        m_ladderIndex.reset();
+        teleportPartyPosition(ladder.topExit[0], ladder.topExit[1], ladder.topExit[2]);
+        return true;
+    }
+
+    const float footBefore = m_movementState.footZ;
+    IndoorMoveState climbing = m_movementState;
+    climbing.grounded = false;
+    climbing.supportFaceIndex = static_cast<size_t>(-1);
+    climbing.verticalVelocity = step.verticalVelocity;
+    m_movementState = m_movementController.resolveMove(
+        climbing,
+        body,
+        step.velocityX,
+        step.velocityY,
+        false,
+        IndoorMovementStepSeconds,
+        &contactedActorIndices,
+        std::nullopt,
+        true,
+        nullptr,
+        true);
+    m_movementState.verticalVelocity = 0.0f;
+    m_movementState.fallStartZ = m_movementState.footZ;
+
+    // Descending stops on the floor: the party stands there and walks on.
+    const float expectedDrop = -step.verticalVelocity * IndoorMovementStepSeconds;
+
+    if (expectedDrop > 0.0f && footBefore - m_movementState.footZ < expectedDrop * 0.25f)
+    {
+        m_ladderIndex.reset();
+        m_movementState.grounded = true;
+    }
+
+    return true;
 }
 
 void IndoorPartyRuntime::update(
@@ -209,17 +327,16 @@ void IndoorPartyRuntime::update(
         turnBasedMovementStep ? std::max(deltaSeconds, MaxAccumulatedMovementSeconds) : MaxAccumulatedMovementSeconds;
     m_movementAccumulatorSeconds =
         std::min(m_movementAccumulatorSeconds + deltaSeconds, maxAccumulatedMovementSeconds);
-    const float impulseVelocityX = m_pendingImpulseVelocityX;
-    const float impulseVelocityY = m_pendingImpulseVelocityY;
-    const float impulseVelocityZ = m_pendingImpulseVelocityZ;
-    const bool hasPendingImpulse =
-        impulseVelocityX != 0.0f || impulseVelocityY != 0.0f || impulseVelocityZ != 0.0f;
+    const bool hasPendingImpulse = m_pendingImpulseVelocityX != 0.0f || m_pendingImpulseVelocityY != 0.0f
+        || m_pendingImpulseVelocityZ != 0.0f;
     float landingFallDistance = 0.0f;
     std::vector<size_t> contactedActorIndices;
 
     if (hasPendingImpulse)
     {
-        m_movementState.verticalVelocity = std::max(m_movementState.verticalVelocity, impulseVelocityZ);
+        m_movementState.verticalVelocity = std::max(m_movementState.verticalVelocity, m_pendingImpulseVelocityZ);
+        m_jumpCarryVelocityX = m_pendingImpulseVelocityX;
+        m_jumpCarryVelocityY = m_pendingImpulseVelocityY;
         m_pendingImpulseVelocityX = 0.0f;
         m_pendingImpulseVelocityY = 0.0f;
         m_pendingImpulseVelocityZ = 0.0f;
@@ -234,6 +351,18 @@ void IndoorPartyRuntime::update(
     while (m_movementAccumulatorSeconds >= IndoorMovementStepSeconds)
     {
         m_collisionTraceClockSeconds += IndoorMovementStepSeconds;
+
+        if (stepOnLadder(
+                desiredVelocityX * speedMultiplier,
+                desiredVelocityY * speedMultiplier,
+                runningMovement,
+                body,
+                contactedActorIndices))
+        {
+            m_movementAccumulatorSeconds = std::max(0.0f, m_movementAccumulatorSeconds - IndoorMovementStepSeconds);
+            continue;
+        }
+
         const IndoorMoveState previousMovementState = m_movementState;
         const float jumpVelocityThisStep = m_pendingJumpVelocity.value_or(DefaultJumpVelocity);
         const float jumpLiftThisStep = m_pendingJumpLift;
@@ -244,8 +373,8 @@ void IndoorPartyRuntime::update(
         m_movementState = m_movementController.resolveMove(
             m_movementState,
             body,
-            desiredVelocityX * speedMultiplier + impulseVelocityX + (dashing ? m_dashVelocityX : 0.0f),
-            desiredVelocityY * speedMultiplier + impulseVelocityY + (dashing ? m_dashVelocityY : 0.0f),
+            desiredVelocityX * speedMultiplier + m_jumpCarryVelocityX + (dashing ? m_dashVelocityX : 0.0f),
+            desiredVelocityY * speedMultiplier + m_jumpCarryVelocityY + (dashing ? m_dashVelocityY : 0.0f),
             m_pendingJumpRequested,
             IndoorMovementStepSeconds,
             &contactedActorIndices,
@@ -265,6 +394,11 @@ void IndoorPartyRuntime::update(
         if (m_movementState.landedThisFrame)
         {
             landingFallDistance = std::max(landingFallDistance, m_movementState.fallDistance);
+        }
+        if (m_movementState.grounded && m_movementState.verticalVelocity <= 0.0f)
+        {
+            m_jumpCarryVelocityX = 0.0f;
+            m_jumpCarryVelocityY = 0.0f;
         }
         recordSteppedFloorFace(m_steppedFloorFaces, m_movementState);
         if (m_collisionTraceEnabled)
@@ -317,8 +451,8 @@ void IndoorPartyRuntime::update(
                     << " start_velocity_z=" << previousMovementState.verticalVelocity
                     << " end_velocity_z=" << m_movementState.verticalVelocity
                     << " requested_velocity=("
-                    << desiredVelocityX * speedMultiplier + impulseVelocityX
-                    << "," << desiredVelocityY * speedMultiplier + impulseVelocityY << ")"
+                    << desiredVelocityX * speedMultiplier + m_jumpCarryVelocityX
+                    << "," << desiredVelocityY * speedMultiplier + m_jumpCarryVelocityY << ")"
                     << " jump_requested=" << (m_pendingJumpRequested ? "true" : "false")
                     << " debug_block=" << indoorMoveBlockKindName(debugInfo.primaryBlockKind)
                     << " full_succeeded=" << (debugInfo.fullMoveSucceeded ? "true" : "false")
@@ -517,6 +651,8 @@ void IndoorPartyRuntime::restoreSnapshot(const Snapshot &snapshot)
     m_pendingImpulseVelocityX = snapshot.pendingImpulseVelocityX;
     m_pendingImpulseVelocityY = snapshot.pendingImpulseVelocityY;
     m_pendingImpulseVelocityZ = snapshot.pendingImpulseVelocityZ;
+    m_jumpCarryVelocityX = 0.0f;
+    m_jumpCarryVelocityY = 0.0f;
     m_pendingJumpVelocity.reset();
     m_pendingJumpLift = DefaultJumpLift;
     m_burningDamageTimerSeconds = 0.0f;

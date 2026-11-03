@@ -7,10 +7,18 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <span>
+#include <vector>
 
 namespace OpenYAMM::Game
 {
+struct DecorationBillboard;
+struct DecorationBillboardSet;
+struct EventRuntimeState;
+struct IndoorLight;
+struct IndoorMapData;
+
 struct BakedStaticLightSource
 {
     bx::Vec3 position = {0.0f, 0.0f, 0.0f};
@@ -25,8 +33,27 @@ struct BakedStaticLightSource
 };
 
 constexpr float IndoorBakedStaticLightScale = 1.35f;
+// The map lights' strength (alpha) in the static light: 224 / 255.
+constexpr uint8_t IndoorBakedStaticLightAlpha = 224;
 constexpr float IndoorBakedStaticLightSubdivisionMinEdgeLength = 32.0f;
 constexpr float IndoorBakedStaticLightInterpolationTolerance = 0.05f;
+
+// The static light of a light-emitting decoration (its table light, or its sprite's glow), at its middle height; none
+// for a decoration whose map light lights it (resolveDuplicateTorchLights). includeInactiveSources also takes the
+// brighter state of a decoration that toggles.
+std::optional<BakedStaticLightSource> bakedStaticLightSourceForDecoration(
+    const DecorationBillboardSet &billboardSet,
+    const DecorationBillboard &billboard,
+    const EventRuntimeState *pEventRuntimeState,
+    bool includeInactiveSources);
+BakedStaticLightSource bakedStaticLightSourceForIndoorLight(const IndoorLight &light);
+// Every static light of an indoor map: its map lights with a radius, then its light-emitting decorations; only those
+// enabled in pEventRuntimeState unless includeInactiveSources. sourceId is the light's index in that order.
+std::vector<BakedStaticLightSource> buildBakedStaticLightSources(
+    const IndoorMapData &indoorMapData,
+    const EventRuntimeState *pEventRuntimeState,
+    const DecorationBillboardSet *pDecorationBillboardSet,
+    bool includeInactiveSources);
 
 inline float indoorBakedLightPointSegmentDistanceSquared(
     const bx::Vec3 &point,

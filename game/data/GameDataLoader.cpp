@@ -7,6 +7,7 @@
 #include "game/FaceEnums.h"
 #include "game/content/ContentManifest.h"
 #include "game/content/ContentTableComposer.h"
+#include "game/content/WorldDecorations.h"
 #include "game/events/EventRuntime.h"
 #include "game/gameplay/InteractiveDecorationRules.h"
 #include "game/maps/ActorModelManifest.h"
@@ -1115,7 +1116,8 @@ std::optional<std::vector<uint8_t>> loadBitmapPixelsBgra(
     bool applyTransparencyKey,
     std::unordered_map<std::string, std::unordered_map<std::string, std::string>> &directoryAssetPathsByPath,
     std::unordered_map<std::string, std::optional<std::string>> &bitmapPathByKey,
-    std::unordered_map<std::string, std::optional<MapAssetBitmapPixelsResult>> &pixelsByKey
+    std::unordered_map<std::string, std::optional<MapAssetBitmapPixelsResult>> &pixelsByKey,
+    Engine::AssetScaleTier *pLoadedTier = nullptr
 )
 {
     const std::string cacheKey =
@@ -1131,6 +1133,10 @@ std::optional<std::vector<uint8_t>> loadBitmapPixelsBgra(
 
         width = cachedPixelsIt->second->width;
         height = cachedPixelsIt->second->height;
+        if (pLoadedTier != nullptr)
+        {
+            *pLoadedTier = cachedPixelsIt->second->assetScaleTier;
+        }
         return cachedPixelsIt->second->pixels;
     }
 
@@ -1171,7 +1177,12 @@ std::optional<std::vector<uint8_t>> loadBitmapPixelsBgra(
 
     width = image->width;
     height = image->height;
-    pixelsByKey[cacheKey] = MapAssetBitmapPixelsResult{width, height, image->pixels};
+    const Engine::AssetScaleTier loadedTier = Engine::assetScaleTierFromResolvedPath(*bitmapPath);
+    if (pLoadedTier != nullptr)
+    {
+        *pLoadedTier = loadedTier;
+    }
+    pixelsByKey[cacheKey] = MapAssetBitmapPixelsResult{width, height, image->pixels, loadedTier};
     return image->pixels;
 }
 
@@ -1326,9 +1337,6 @@ void appendIndoorScriptTextures(
     std::sort(textureNames.begin(), textureNames.end());
     textureNames.erase(std::unique(textureNames.begin(), textureNames.end()), textureNames.end());
 
-    const Engine::AssetScaleTier textureAssetScaleTier =
-        assetFileSystem.getAssetScaleTier(Engine::AssetScaleCategory::Textures);
-
     for (const std::string &textureName : textureNames)
     {
         bool alreadyPresent = false;
@@ -1356,6 +1364,7 @@ void appendIndoorScriptTextures(
 
         int textureWidth = 0;
         int textureHeight = 0;
+        Engine::AssetScaleTier loadedTier = Engine::AssetScaleTier::X1;
         const std::optional<std::vector<uint8_t>> pixels =
             loadBitmapPixelsBgra(
                 assetFileSystem,
@@ -1366,7 +1375,8 @@ void appendIndoorScriptTextures(
                 false,
                 directoryAssetPathsByPath,
                 bitmapPathByKey,
-                pixelsByKey);
+                pixelsByKey,
+                &loadedTier);
 
         if (!pixels || textureWidth <= 0 || textureHeight <= 0)
         {
@@ -1375,8 +1385,8 @@ void appendIndoorScriptTextures(
 
         OutdoorBitmapTexture texture = {};
         texture.textureName = textureName;
-        texture.width = Engine::scalePhysicalPixelsToLogical(textureWidth, textureAssetScaleTier);
-        texture.height = Engine::scalePhysicalPixelsToLogical(textureHeight, textureAssetScaleTier);
+        texture.width = Engine::scalePhysicalPixelsToLogical(textureWidth, loadedTier);
+        texture.height = Engine::scalePhysicalPixelsToLogical(textureHeight, loadedTier);
         texture.physicalWidth = textureWidth;
         texture.physicalHeight = textureHeight;
         updateBitmapAlphaInfo(texture, *pixels);
@@ -4973,7 +4983,7 @@ bool GameDataLoader::loadSelectedMap(
         m_monsterTable,
         m_objectTable,
         mapLoadPurpose,
-        MapCompanionLoadOptions{.rulesetRoot = activeRulesetRoot()},
+        MapCompanionLoadOptions{.rulesetRoot = activeRulesetRoot(), .surfaceMaterials = m_surfaceMaterials},
         progressPump,
         &m_mapAssetLoadSharedCache,
         m_pActorModelManifest);
@@ -5136,7 +5146,14 @@ bool GameDataLoader::loadSelectedMap(
         if (!m_mapAssetLoadSharedCache.decorationRows)
         {
             std::vector<std::vector<std::string>> rows;
-            if (!loadTextTableRows(assetFileSystem, engineDataTablePath("decoration_data.txt"), rows))
+            std::string decorationError;
+            if (!loadDecorationTableRows(assetFileSystem, rows, decorationError))
+            {
+                std::cerr << "Failed to load the decoration table: " << decorationError << '\n';
+                return false;
+            }
+            // The active ruleset may patch the decoration table as any other engine table.
+            if (!applyActiveRulesetTable(assetFileSystem, engineDataTablePath("decoration_data.txt"), rows))
             {
                 return false;
             }
@@ -5145,8 +5162,22 @@ bool GameDataLoader::loadSelectedMap(
         DecorationTable decorationTable;
         if (!decorationTable.loadRows(*m_mapAssetLoadSharedCache.decorationRows))
         {
-            std::cerr << "Failed to parse gameplay decoration table\n";
+            std::cerr << "Failed to parse gameplay decoration table (decoration numbers must increase)\n";
             return false;
+        }
+
+        // Entities naming a decoration the table does not have (a skipped number or past its end) are not drawn.
+        const std::vector<UnresolvedMapDecoration> unresolvedDecorations = m_selectedMap->outdoorMapData
+            ? unresolvedMapDecorations(decorationTable, m_selectedMap->outdoorMapData->entities)
+            : m_selectedMap->indoorMapData
+                ? unresolvedMapDecorations(decorationTable, m_selectedMap->indoorMapData->entities)
+                : std::vector<UnresolvedMapDecoration>{};
+        for (const UnresolvedMapDecoration &decoration : unresolvedDecorations)
+        {
+            std::cerr << "Map " << m_selectedMap->map.fileName << ": " << decoration.entityCount
+                      << " entities (first '" << decoration.firstEntityName << "') place decoration_list_id "
+                      << decoration.decorationId << " (decoration_data # " << decoration.decorationId + 1
+                      << "), which the decoration table does not have; they are not drawn\n";
         }
 
         if (m_selectedMap->outdoorMapData)

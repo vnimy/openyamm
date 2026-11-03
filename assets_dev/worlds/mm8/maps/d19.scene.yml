@@ -450,7 +450,7 @@ initial_state:
       npc_id: 34
       attributes: 0
       hp: 302
-      hostility_type: 103
+      hostility_type: 0
       monster_info_id: 56
       monster_id: 2184
       radius: 60
@@ -472,7 +472,7 @@ initial_state:
       npc_id: 34
       attributes: 0
       hp: 302
-      hostility_type: 103
+      hostility_type: 0
       monster_info_id: 56
       monster_id: 2184
       radius: 60
@@ -494,7 +494,7 @@ initial_state:
       npc_id: 34
       attributes: 0
       hp: 302
-      hostility_type: 103
+      hostility_type: 0
       monster_info_id: 56
       monster_id: 2184
       radius: 60
@@ -516,7 +516,7 @@ initial_state:
       npc_id: 34
       attributes: 0
       hp: 302
-      hostility_type: 103
+      hostility_type: 0
       monster_info_id: 56
       monster_id: 2184
       radius: 60
@@ -538,7 +538,7 @@ initial_state:
       npc_id: 34
       attributes: 0
       hp: 302
-      hostility_type: 103
+      hostility_type: 0
       monster_info_id: 56
       monster_id: 2184
       radius: 60
@@ -560,7 +560,7 @@ initial_state:
       npc_id: 34
       attributes: 0
       hp: 302
-      hostility_type: 103
+      hostility_type: 0
       monster_info_id: 56
       monster_id: 2184
       radius: 60

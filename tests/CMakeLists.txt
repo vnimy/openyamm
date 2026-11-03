@@ -15,6 +15,7 @@ add_executable(openyamm_unit_tests
     MapWorldOwnershipTests.cpp
     ChestRegressionTests.cpp
     ContentManifestTests.cpp
+    WorldDecorationTests.cpp
     RulesetTests.cpp
     QuickItemSlotTests.cpp
     EffectSystemTests.cpp
@@ -75,8 +76,13 @@ add_executable(openyamm_unit_tests
     ../tools/TextureBlockEncode.cpp
     NativeSpriteTextureCacheTests.cpp
     IndoorCollisionPrimitivesTests.cpp
+    IndoorMoverFaceTexelTests.cpp
+    IndoorMoversTests.cpp
     IndoorActorActivationTests.cpp
     IndoorActorPlacementTests.cpp
+    IndoorBakedLightingTests.cpp
+    IndoorFogTests.cpp
+    IndoorTranslucentFacesTests.cpp
     IndoorLightingRuntimeTests.cpp
     IndoorMovementRecoveryTests.cpp
     IndoorPathfindingBuilderTests.cpp
@@ -94,6 +100,7 @@ add_executable(openyamm_unit_tests
     Mm9BarrelRuntimeTests.cpp
     Mm9TeacherScheduleTests.cpp
     Mm9RudeDialogueTests.cpp
+    Mm9MonsterFamilyTests.cpp
     Mm9SkillTrainerTests.cpp
     Mm9TransportRouteTests.cpp
     Mm9QuestMarkerTests.cpp
@@ -197,6 +204,7 @@ add_executable(openyamm_unit_tests
     ../game/audio/SoundCatalog.cpp
     ../game/content/ContentManifest.cpp
     ../game/content/ContentTableComposer.cpp
+    ../game/content/WorldDecorations.cpp
     ../game/content/RulesetDefinition.cpp
     ../game/content/RulesetOptions.cpp
     ../game/data/ActorNameResolver.cpp
@@ -252,6 +260,7 @@ add_executable(openyamm_unit_tests
     ../game/gameplay/TravelRuntime.cpp
     ../game/gameplay/CorpseLootRuntime.cpp
     ../game/gameplay/GameplayLootFilter.cpp
+    ../game/gameplay/MonsterDeathExplosion.cpp
     ../game/gameplay/SavePreviewImage.cpp
     ../game/maps/MapDeltaData.cpp
     ../game/maps/MapAssetLoader.cpp
@@ -269,8 +278,10 @@ add_executable(openyamm_unit_tests
     ../game/maps/TerrainTileData.cpp
     ../game/indoor/IndoorCollisionPrimitives.cpp
     ../game/indoor/IndoorGeometryUtils.cpp
+    ../game/indoor/IndoorMovers.cpp
     ../game/indoor/IndoorLightingRuntime.cpp
     ../game/indoor/IndoorMapData.cpp
+    ../game/indoor/IndoorBakedLighting.cpp
     ../game/indoor/IndoorMovementController.cpp
     ../game/indoor/IndoorPartyRuntime.cpp
     ../game/indoor/IndoorPathfindingBuilder.cpp
@@ -405,6 +416,7 @@ add_executable(openyamm_unit_tests
     ../game/outdoor/OutdoorMeadow.cpp
     ../game/outdoor/OutdoorLightingRuntime.cpp
     ../game/outdoor/OutdoorLightingData.cpp
+    ../game/render/lighting/BakedLightingFormat.cpp
     ../game/outdoor/OutdoorMapData.cpp
     ../game/outdoor/OutdoorNavigationData.cpp
     ../game/outdoor/OutdoorRenderData.cpp
@@ -498,7 +510,9 @@ add_executable(openyamm_runtime_tests
     IndoorDecorationInteractionTests.cpp
     OutdoorLightingProbeRuntimeTests.cpp
     OutdoorEventSpellProjectileTests.cpp
+    OutdoorClassicMechanismTests.cpp
     MonsterModifierWorldTests.cpp
+    StealingInputRuntimeTests.cpp
 )
 
 target_include_directories(openyamm_runtime_tests PRIVATE

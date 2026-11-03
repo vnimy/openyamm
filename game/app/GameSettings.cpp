@@ -1351,6 +1351,18 @@ std::optional<GameSettings> parseGameSettingsDocument(const IniDocument &documen
     {
         parseBoolValue(*value, settings.terrainSpecular);
     }
+    if (const std::optional<std::string> value = getIniValue(document, "video", "surface_materials"))
+    {
+        parseBoolValue(*value, settings.surfaceMaterials);
+    }
+    if (const std::optional<std::string> value = getIniValue(document, "video", "surface_parallax"))
+    {
+        parseBoolValue(*value, settings.surfaceParallax);
+    }
+    if (const std::optional<std::string> value = getIniValue(document, "video", "surface_reflections"))
+    {
+        parseBoolValue(*value, settings.surfaceReflections);
+    }
     if (const std::optional<std::string> value = getIniValue(document, "video", "wet_surfaces"))
     {
         parseBoolValue(*value, settings.wetSurfaces);
@@ -2386,6 +2398,9 @@ std::vector<SettingsEntry> serializeGameSettings(const GameSettings &settings)
     serializer.add("rain_ripples", boolValue(settings.rainRipples));
     serializer.add("wet_surfaces", boolValue(settings.wetSurfaces));
     serializer.add("terrain_specular", boolValue(settings.terrainSpecular));
+    serializer.add("surface_materials", boolValue(settings.surfaceMaterials));
+    serializer.add("surface_parallax", boolValue(settings.surfaceParallax));
+    serializer.add("surface_reflections", boolValue(settings.surfaceReflections));
     serializer.add("terrain_filtering", settings.terrainFiltering);
     serializer.add("terrain_anisotropy", settings.terrainAnisotropy);
     serializer.add("bmodel_filtering", settings.bmodelFiltering);

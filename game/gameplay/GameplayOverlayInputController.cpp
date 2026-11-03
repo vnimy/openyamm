@@ -4,6 +4,7 @@
 #include "game/gameplay/GameplayInputFrame.h"
 #include "game/gameplay/GameplayPartyOverlayInputController.h"
 #include "game/gameplay/GameplaySaveLoadUiSupport.h"
+#include "game/gameplay/GameplayWorldItemPolicy.h"
 #include "game/gameplay/HouseInteraction.h"
 #include "game/gameplay/HouseServiceRuntime.h"
 #include "game/gameplay/NpcFollowerRuntime.h"
@@ -606,8 +607,8 @@ InventoryItem chestItemAsInventoryItem(const GameplayChestItemState &chestItem)
     return item;
 }
 
-// Takes all gold, then (unless goldOnly) every item that fits somewhere in the party (largest first); the rest stays
-// in the chest.
+// Takes all gold, then (unless goldOnly) every item that fits somewhere in the party (largest first), each into a bag
+// tagged for it as a ground pickup goes; the rest stays in the chest.
 void takeAllActiveChestItems(GameplayScreenRuntime &view, bool goldOnly)
 {
     IGameplayWorldRuntime *pWorldRuntime = view.worldRuntime();
@@ -663,10 +664,10 @@ void takeAllActiveChestItems(GameplayScreenRuntime &view, bool goldOnly)
         }
 
         const GameplayChestItemState chestItem = pChestView->items[*nextIndex];
-        size_t recipientMemberIndex = 0;
+        std::optional<StoredPickup> stored;
 
         if (!chestItem.isGold
-            && !pParty->tryGrantInventoryItem(chestItemAsInventoryItem(chestItem), &recipientMemberIndex))
+            && !(stored = storePickedUpItem(*pParty, chestItemAsInventoryItem(chestItem), view.itemTable())))
         {
             leftBehindCells.emplace_back(chestItem.gridX, chestItem.gridY);
             continue;
@@ -693,7 +694,7 @@ void takeAllActiveChestItems(GameplayScreenRuntime &view, bool goldOnly)
             "item_received destination=inventory source=chest_take_all item_id="
             + std::to_string(removedItem.item.objectDescriptionId)
             + gameplayDebugTraceItemSummary(removedItem.item.objectDescriptionId, view.itemTable())
-            + " member_index=" + std::to_string(recipientMemberIndex));
+            + " member_index=" + std::to_string(stored ? stored->memberIndex : 0));
     }
 
     std::string status = totalGold.amount > 0 ? foundGoldStatusText(totalGold) : std::string();
@@ -4153,9 +4154,10 @@ void GameplayOverlayInputController::handleLootOverlayInput(
         const auto findChestPointerTarget =
             [&view, screenWidth, screenHeight](float mouseX, float mouseY) -> GameplayChestPointerTarget
             {
-                static constexpr std::array<std::pair<const char *, GameplayChestPointerTargetType>, 3> Buttons = {{
+                static constexpr std::array<std::pair<const char *, GameplayChestPointerTargetType>, 4> Buttons = {{
                     {"ChestTakeAllButton", GameplayChestPointerTargetType::TakeAllButton},
                     {"ChestTakeGoldButton", GameplayChestPointerTargetType::TakeGoldButton},
+                    {"ChestInventoryButton", GameplayChestPointerTargetType::InventoryButton},
                     {"ChestCloseButton", GameplayChestPointerTargetType::CloseButton},
                 }};
 
@@ -4344,6 +4346,21 @@ void GameplayOverlayInputController::handleLootOverlayInput(
                     || target.type == GameplayChestPointerTargetType::TakeGoldButton)
                 {
                     takeAllActiveChestItems(view, target.type == GameplayChestPointerTargetType::TakeGoldButton);
+                    return;
+                }
+
+                // Switches between the chest and the party's packs, as the inventory key does.
+                if (target.type == GameplayChestPointerTargetType::InventoryButton)
+                {
+                    if (view.inventoryNestedOverlay().active)
+                    {
+                        view.closeInventoryNestedOverlay();
+                    }
+                    else
+                    {
+                        view.openChestTransferInventoryOverlay();
+                    }
+
                     return;
                 }
 
@@ -4606,7 +4623,10 @@ void GameplayOverlayInputController::handleLootOverlayInput(
 
                 if (!item.isGold)
                 {
-                    canLoot = view.party()->tryGrantInventoryItem(item.item, &recipientMemberIndex);
+                    const std::optional<StoredPickup> stored =
+                        storePickedUpItem(*view.party(), item.item, view.itemTable());
+                    canLoot = stored.has_value();
+                    recipientMemberIndex = stored ? stored->memberIndex : 0;
                 }
 
                 if (canLoot)

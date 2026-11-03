@@ -212,6 +212,13 @@ struct GameSettings
     bool wetSurfaces = true;
     // Sun and point-light highlights on smooth and wet ground (the materials terrain).
     bool terrainSpecular = true;
+    // Building and dungeon faces drawn with their material maps (relief, roughness, metal, glow;
+    // devdocs/SURFACE_MATERIALS_PLAN.md), and the parallax depth of their height maps up close. Experimental,
+    // off by default and outside the graphics presets; off, map loads read none of the maps.
+    bool surfaceMaterials = false;
+    bool surfaceParallax = false;
+    // Screen-space reflections in smooth surface materials (marble, glass, metal, puddles); experimental.
+    bool surfaceReflections = false;
     int waterReflectionSize = 512;
     std::string terrainFiltering = "anisotropic";
     // Level of every anisotropic sampler (terrain when enabled, buildings, models). 4x: at 16x the materials terrain

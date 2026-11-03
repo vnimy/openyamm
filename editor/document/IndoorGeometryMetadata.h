@@ -93,6 +93,8 @@ struct EditorIndoorGeometryMechanismMetadata
     std::string kind;
     std::vector<std::string> sourceNodeNames;
     std::vector<std::string> triggerSurfaceIds;
+    // A `rotating` mover: the other room its swing enters (at most one; its faces then belong to both).
+    std::vector<std::string> extraRoomIds;
     std::optional<size_t> runtimeDoorIndex = std::nullopt;
     std::optional<uint32_t> doorId = std::nullopt;
     std::string initialState;

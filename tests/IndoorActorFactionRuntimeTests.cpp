@@ -221,6 +221,20 @@ TEST_CASE("indoor faction alert survives restore without granting detection and 
     CHECK((fixture.delta->actors[1].attributes & uint32_t(EvtActorAttribute::Nearby)) != 0);
 }
 
+TEST_CASE("indoor first visit gives placed monsters hostile to the party their Hst and leaves friendly ones at 0")
+{
+    // Placed actors load with no hostility (MapDeltaData); outdoors and spawned monsters already take Hst.
+    GoblinwatchFactionFixture fixture({VillagerA, Gw3Actors[1], VillagerB});
+    const int goblinHostility = fixture.monsters.findStatsById(Gw3Actors[1].monsterId)->hostility;
+    REQUIRE_GT(goblinHostility, 0);
+    REQUIRE(fixture.hostile(1));
+    REQUIRE_FALSE(fixture.hostile(0));
+
+    CHECK_EQ(fixture.delta->actors[0].hostilityType, 0);
+    CHECK_EQ(fixture.delta->actors[1].hostilityType, goblinHostility);
+    CHECK_EQ(fixture.delta->actors[2].hostilityType, 0);
+}
+
 TEST_CASE("indoor faction alert: a monster hostile on its own turns no friendly actor of its class")
 {
     // Mount Nighon's raiding warlocks share their class with the town's.

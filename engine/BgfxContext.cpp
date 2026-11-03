@@ -6,6 +6,9 @@
 #if defined(__APPLE__)
 #include <SDL3/SDL_metal.h>
 #endif
+#if defined(__linux__) && !defined(__ANDROID__)
+#include <dlfcn.h>
+#endif
 
 #include <cstdarg>
 #include <cstdint>
@@ -41,6 +44,18 @@ bgfx::RendererType::Enum selectRendererType(bool useNoopRenderer)
     return bgfx::RendererType::OpenGL;
 #endif
 }
+
+#if defined(__linux__) && !defined(__ANDROID__)
+// NVIDIA's EGL for Wayland (seen with egl-wayland 1.1.21 and driver 580) gives the Wayland objects it makes on the
+// game's connection interface descriptions from libwayland-server, and libglvnd unloads both when bgfx shuts EGL down.
+// The objects outlive them, so the next dispatch on the connection (SDL's roundtrip when it destroys the window) read
+// unmapped memory and crashed on exit. RTLD_NODELETE keeps the library mapped until the process ends; no handle is
+// needed. Drop this once fixed drivers are common.
+void keepWaylandServerLoaded()
+{
+    dlopen("libwayland-server.so.0", RTLD_LAZY | RTLD_NODELETE);
+}
+#endif
 }
 
 class BgfxContext::Callback final : public bgfx::CallbackI
@@ -211,6 +226,12 @@ bool BgfxContext::initialize(
     init.type = selectRendererType(useNoopRenderer);
     init.vendorId = BGFX_PCI_ID_NONE;
     init.platformData = resolvePlatformData(pWindow);
+#if defined(__linux__) && !defined(__ANDROID__)
+    if (init.platformData.type == bgfx::NativeWindowHandleType::Wayland)
+    {
+        keepWaylandServerLoaded();
+    }
+#endif
 #if defined(__APPLE__)
     if (!useNoopRenderer)
     {

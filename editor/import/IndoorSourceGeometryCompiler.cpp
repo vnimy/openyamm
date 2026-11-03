@@ -726,6 +726,9 @@ const EditorIndoorGeometryPortalMetadata *findPortalMetadata(
     return nullptr;
 }
 
+// BLV sector flag: the sector has portals in its floor (read as floor faces by findIndoorSectorForPoint).
+constexpr int32_t IndoorSectorHasFloorPortals = 0x8;
+
 bool compilePortalModel(
     const ImportedModel &model,
     const EditorIndoorGeometryPortalMetadata *pPortalMetadata,
@@ -798,6 +801,14 @@ bool compilePortalModel(
     {
         indoorGeometry.sectors[frontIterator->second].portalFaceIds.push_back(faceIndex);
         indoorGeometry.sectors[backIterator->second].portalFaceIds.push_back(faceIndex);
+
+        // A floor portal (a pit's mouth, a ladder shaft's top): the room above has no floor face over the hole, so the
+        // native flag makes the portal stand for one when a point there looks for its sector. Without it a body whose
+        // eye rises through the hole has no sector, and the move is refused. The front room is on the normal's side.
+        if (indoorGeometry.faces[faceIndex].facetType == 3)
+        {
+            indoorGeometry.sectors[frontIterator->second].flags |= IndoorSectorHasFloorPortals;
+        }
     }
 
     refreshSectorCounts(indoorGeometry.sectors[frontIterator->second]);
@@ -1244,6 +1255,7 @@ bool compileMechanismModel(
     const ImportedModel &model,
     const EditorIndoorGeometryMechanismMetadata *pMechanismMetadata,
     const EditorIndoorGeometrySurfaceMetadata *pSurfaceMetadata,
+    const std::unordered_map<std::string, uint16_t> &roomSectorById,
     const MaterialTextureLookup &materialTextureLookup,
     std::optional<uint16_t> sourceSector,
     float scale,
@@ -1325,6 +1337,55 @@ bool compileMechanismModel(
 
     refreshSectorCounts(sector);
 
+    // A rotating mover (devdocs/INDOOR_ROTATING_MOVERS_AND_LADDERS.md): its faces keep the sector list of their
+    // stored pose but take facet type 0, their kind following the current normal, and belong also to the other room
+    // the swing enters. Its direction is zero and its travel in tenths of a degree, so the rest is an ordinary door.
+    const bool rotatingMover = toLowerCopy(trimCopy(pMechanismMetadata->kind)) == "rotating";
+    std::optional<uint16_t> extraSectorIndex;
+
+    if (rotatingMover)
+    {
+        if (pMechanismMetadata->extraRoomIds.size() > 1)
+        {
+            errorMessage = "Rotating mechanism has more than one extra room: " + pMechanismMetadata->id;
+            return false;
+        }
+
+        if (!pMechanismMetadata->extraRoomIds.empty())
+        {
+            const auto extraRoom = roomSectorById.find(pMechanismMetadata->extraRoomIds.front());
+
+            if (extraRoom == roomSectorById.end())
+            {
+                errorMessage = "Rotating mechanism names an unknown room: " + pMechanismMetadata->id;
+                return false;
+            }
+
+            if (extraRoom->second != sectorIndex)
+            {
+                extraSectorIndex = extraRoom->second;
+            }
+        }
+
+        for (uint16_t faceIndex : appendedFaceIds)
+        {
+            Game::IndoorFace &face = indoorGeometry.faces[faceIndex];
+
+            if (extraSectorIndex)
+            {
+                face.roomBehindNumber = *extraSectorIndex;
+                appendFaceToSector(indoorGeometry.sectors[*extraSectorIndex], faceIndex, face.facetType);
+            }
+
+            face.facetType = 0;
+        }
+
+        if (extraSectorIndex)
+        {
+            refreshSectorCounts(indoorGeometry.sectors[*extraSectorIndex]);
+        }
+    }
+
     Game::IndoorSceneDoor sceneDoor = {};
     sceneDoor.doorIndex = result.generatedDoors.size();
     sceneDoor.door.slotIndex = sceneDoor.doorIndex;
@@ -1336,6 +1397,10 @@ bool compileMechanismModel(
     sceneDoor.door.vertexIds = std::move(vertexIds);
     sceneDoor.door.faceIds = std::move(appendedFaceIds);
     sceneDoor.door.sectorIds.push_back(sectorIndex);
+    if (extraSectorIndex)
+    {
+        sceneDoor.door.sectorIds.push_back(*extraSectorIndex);
+    }
     sceneDoor.door.deltaUs.assign(sceneDoor.door.faceIds.size(), 0);
     sceneDoor.door.deltaVs.assign(sceneDoor.door.faceIds.size(), 0);
     sceneDoor.door.xOffsets.reserve(sceneDoor.door.vertexIds.size());
@@ -1463,7 +1528,13 @@ bool compileIndoorSourceGeometry(
     result = {};
     std::vector<ImportedModel> models;
 
-    if (!loadImportedModelsFromFile(sourcePath, models, errorMessage, metadata.importSettings.mergeCoplanarFaces))
+    if (!loadImportedModelsFromFile(
+            sourcePath,
+            models,
+            errorMessage,
+            metadata.importSettings.mergeCoplanarFaces,
+            true,
+            !metadata.importSettings.triangulateNgons))
     {
         return false;
     }
@@ -1689,6 +1760,7 @@ bool compileIndoorSourceGeometry(
                 model,
                 findMechanismMetadata(mechanismLookup, sourceNodeName),
                 findSurfaceMetadata(surfaceLookup, sourceNodeName),
+                roomSectorById,
                 materialTextureLookup,
                 explicitSector(sourceNodeName),
                 metadata.source.unitScale,

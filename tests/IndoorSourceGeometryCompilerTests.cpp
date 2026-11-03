@@ -271,7 +271,7 @@ TEST_CASE("indoor authored closed lift retains its floor and opens upward throug
     const std::array<std::array<float, 2>, 3> samples = {{{384,384}, {192,576}, {0,768}}};
     for (const std::array<float, 2> &sample : samples)
     {
-        OpenYAMM::Game::applyIndoorMechanismDoorToVertices(door, sample[0], vertices);
+        OpenYAMM::Game::applyIndoorMechanismDoorToVertices(door, nullptr, sample[0], 1, vertices);
         for (uint16_t vertexId : door.vertexIds)
         {
             CHECK(vertices[vertexId].z == sample[1]);
@@ -297,12 +297,12 @@ TEST_CASE("indoor mechanism default source pose is the native open baseline")
     REQUIRE_MESSAGE(compileIndoorSourceGeometry(fixture.source, fixture.metadata, result, error), error);
     const OpenYAMM::Game::MapDeltaDoor &door = result.generatedDoors.front().door;
     std::vector<OpenYAMM::Game::IndoorVertex> vertices = result.indoorGeometry.vertices;
-    OpenYAMM::Game::applyIndoorMechanismDoorToVertices(door, 256, vertices);
+    OpenYAMM::Game::applyIndoorMechanismDoorToVertices(door, nullptr, 256, 1, vertices);
     for (uint16_t vertexId : door.vertexIds)
     {
         CHECK(vertices[vertexId].x == result.indoorGeometry.vertices[vertexId].x + 256);
     }
-    OpenYAMM::Game::applyIndoorMechanismDoorToVertices(door, 0, vertices);
+    OpenYAMM::Game::applyIndoorMechanismDoorToVertices(door, nullptr, 0, 1, vertices);
     for (uint16_t vertexId : door.vertexIds)
     {
         CHECK(vertices[vertexId].x == result.indoorGeometry.vertices[vertexId].x);
@@ -381,6 +381,44 @@ TEST_CASE("indoor source preserves pixel UVs and reserved sector through native 
     CHECK(loaded->faces[0].textureUs == result.indoorGeometry.faces[0].textureUs);
     CHECK(loaded->faces[0].textureVs == result.indoorGeometry.faces[0].textureVs);
     CHECK(loaded->faces[0].textureName == "GSton1WL");
+}
+
+TEST_CASE("indoor source keeps glTF fan polygons whole when n-gons are not triangulated")
+{
+    SourceFixture fixture;
+    fixture.source = fixture.directory / "fan.gltf";
+    // One square room floor as a five-vertex fan with a collinear vertex on its east edge.
+    const std::array<float, 25> buffer = {0, 0, 0, 256, 0, 0, 256, 128, 0, 256, 256, 0, 0, 256, 0,
+                                          0, 1, 1, 1, 1, 0.5f, 1, 0, 0, 0};
+    std::ofstream binary(fixture.directory / "fan.bin", std::ios::binary);
+    binary.write(reinterpret_cast<const char *>(buffer.data()), sizeof(buffer));
+    binary.close();
+    std::ofstream stream(fixture.source);
+    stream << R"({"asset":{"version":"2.0"},"buffers":[{"uri":"fan.bin","byteLength":100}],)"
+           << R"("bufferViews":[{"buffer":0,"byteOffset":0,"byteLength":60},)"
+           << R"({"buffer":0,"byteOffset":60,"byteLength":40}],)"
+           << R"("accessors":[{"bufferView":0,"componentType":5126,"count":5,"type":"VEC3"},)"
+           << R"({"bufferView":1,"componentType":5126,"count":5,"type":"VEC2"}],)"
+           << R"("materials":[{"name":"stone"}],)"
+           << R"("meshes":[{"primitives":[{"attributes":{"POSITION":0,"TEXCOORD_0":1},"material":0,"mode":6}]}],)"
+           << R"("nodes":[{"name":"ROOM_entry","mesh":0}],"scenes":[{"nodes":[0]}],"scene":0})";
+    stream.close();
+
+    IndoorSourceGeometryCompileResult result;
+    std::string error;
+    REQUIRE_MESSAGE(compileIndoorSourceGeometry(fixture.source, fixture.metadata, result, error), error);
+    CHECK(result.indoorGeometry.faces.size() == 3);
+
+    fixture.metadata.importSettings.triangulateNgons = false;
+    REQUIRE_MESSAGE(compileIndoorSourceGeometry(fixture.source, fixture.metadata, result, error), error);
+    REQUIRE(result.indoorGeometry.faces.size() == 1);
+    const OpenYAMM::Game::IndoorFace &face = result.indoorGeometry.faces[0];
+    CHECK(face.vertexIndices.size() == 5);
+    CHECK(face.facetType == 3);
+    CHECK(face.textureUs == std::vector<int16_t>{0, 64, 64, 64, 0});
+    CHECK(face.textureVs == std::vector<int16_t>{128, 128, 64, 0, 0});
+    REQUIRE(result.indoorGeometry.sectors.size() == 1);
+    CHECK(result.indoorGeometry.sectors[0].floorFaceIds == std::vector<uint16_t>{0});
 }
 
 TEST_CASE("indoor room ambient survives metadata and native serialization with bounded values")
@@ -543,6 +581,34 @@ TEST_CASE("indoor source explicit ownership and plate detection flags survive na
     CHECK(error.find("multiple rooms") != std::string::npos);
 }
 
+TEST_CASE("indoor source marks the room above a floor portal, as a native BLV does")
+{
+    // All three nodes share the fixture's triangle, whose normal points up: a portal in a floor.
+    SourceFixture fixture;
+    fixture.useGltfNodes(R"([{"name":"ROOM_entry","mesh":0},{"name":"ROOM_lower","mesh":0},)"
+                         R"({"name":"PORTAL_mouth","mesh":0}])", "[0,1,2]");
+    for (const char *pId : {"entry", "lower"})
+    {
+        EditorIndoorGeometryRoomMetadata room;
+        room.id = std::string("room_") + pId;
+        room.sourceNodeNames = {std::string("ROOM_") + pId};
+        fixture.metadata.rooms.push_back(room);
+    }
+    EditorIndoorGeometryPortalMetadata portal;
+    portal.id = "mouth";
+    portal.sourceNodeName = "PORTAL_mouth";
+    portal.frontRoom = "room_entry";
+    portal.backRoom = "room_lower";
+    fixture.metadata.portals.push_back(portal);
+    IndoorSourceGeometryCompileResult result;
+    std::string error;
+    REQUIRE_MESSAGE(compileIndoorSourceGeometry(fixture.source, fixture.metadata, result, error), error);
+    const OpenYAMM::Game::IndoorFace &face = result.indoorGeometry.faces.back();
+    REQUIRE(face.isPortal);
+    CHECK((result.indoorGeometry.sectors[face.roomNumber].flags & 0x8) != 0);
+    CHECK((result.indoorGeometry.sectors[face.roomBehindNumber].flags & 0x8) == 0);
+}
+
 TEST_CASE("Static indoor furnishings retain explicit ownership in overlapping sectors")
 {
     SourceFixture fixture;
@@ -571,4 +637,21 @@ TEST_CASE("Static indoor furnishings retain explicit ownership in overlapping se
     fixture.metadata.rooms.clear();
     CHECK_FALSE(compileIndoorSourceGeometry(fixture.source, fixture.metadata, result, error));
     CHECK(error.find("requires explicit room ownership") != std::string::npos);
+}
+
+TEST_CASE("indoor derived data keeps long thin triangles far from the origin planar")
+{
+    // A sliver of MM9 Lich Lab's diagonal stair: off its own single-precision Newell plane by 0.3 units.
+    OpenYAMM::Game::IndoorMapData geometry;
+    geometry.version = 8;
+    geometry.vertices = {{-2642, 7967, -635}, {-3707, 7946, -102}, {-3625, 7946, -143}};
+    OpenYAMM::Game::IndoorFace face;
+    face.vertexIndices = {0, 1, 2};
+    face.facetType = 3;
+    geometry.faces.push_back(face);
+    OpenYAMM::Game::IndoorSector sector;
+    sector.faceIds = {0};
+    geometry.sectors.push_back(sector);
+    std::string error;
+    CHECK_MESSAGE(generateIndoorDerivedGeometry(geometry, {}, true, true, error), error);
 }

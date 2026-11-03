@@ -185,7 +185,7 @@ TEST_CASE("incremental mechanism vertex update matches full adjusted vertex buil
     const std::vector<OpenYAMM::Game::IndoorVertex> fullVertices =
         buildIndoorMechanismAdjustedVertices(mapData, &mapDeltaData, &eventRuntimeState);
     std::vector<OpenYAMM::Game::IndoorVertex> incrementalVertices = mapData.vertices;
-    applyIndoorMechanismDoorToVertices(door, mechanism.currentDistance, incrementalVertices);
+    applyIndoorMechanismDoorToVertices(door, nullptr, mechanism.currentDistance, 1, incrementalVertices);
 
     REQUIRE(incrementalVertices.size() == fullVertices.size());
 

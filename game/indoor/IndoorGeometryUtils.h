@@ -1,6 +1,7 @@
 #pragma once
 
 #include "game/indoor/IndoorMapData.h"
+#include "game/indoor/IndoorMovers.h"
 #include "game/events/EventRuntime.h"
 #include "game/maps/DecorationModelPlacement.h"
 #include "game/maps/MapDeltaData.h"
@@ -10,6 +11,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <vector>
 
 namespace OpenYAMM::Game
@@ -128,9 +130,14 @@ std::vector<IndoorVertex> buildIndoorMechanismAdjustedVertices(
     const MapDeltaData *pIndoorMapDeltaData,
     const EventRuntimeState *pEventRuntimeState
 );
+// A door's vertices at `distance`: linear doors as the original engines move them; a door with a rotating mover
+// (pMover, devdocs/INDOOR_ROTATING_MOVERS_AND_LADDERS.md) turned about its hinge, `rotationDirection` its open-away
+// sign.
 void applyIndoorMechanismDoorToVertices(
     const MapDeltaDoor &door,
+    const IndoorMoverDefinition *pMover,
     float distance,
+    int8_t rotationDirection,
     std::vector<IndoorVertex> &vertices
 );
 std::vector<std::vector<uint16_t>> buildNeighboringIndoorSectorIds(
@@ -139,6 +146,12 @@ std::vector<std::vector<uint16_t>> buildNeighboringIndoorSectorIds(
 float fixedIndoorDoorDirectionComponentToFloat(int value);
 bool indoorDoorCarriesPartySupport(const MapDeltaDoor &door);
 bool mechanismDoorContainsFace(const MapDeltaDoor &door, size_t faceIndex);
+// Per face, the motion of the rotating mover that moves it from its stored pose to its current pose; empty when the
+// map has no rotating mover (devdocs/INDOOR_ROTATING_MOVERS_AND_LADDERS.md).
+std::vector<std::optional<IndoorRigidMotion>> buildIndoorRotatingFaceMotions(
+    const IndoorMapData &indoorMapData,
+    const MapDeltaData *pIndoorMapDeltaData,
+    const EventRuntimeState *pEventRuntimeState);
 bx::Vec3 indoorVertexToWorld(const IndoorVertex &vertex);
 bool buildIndoorFaceGeometry(
     const IndoorMapData &indoorMapData,
@@ -264,6 +277,21 @@ std::optional<DecorationWallContact> findIndoorWallContact(
     const bx::Vec3 &point,
     float reach
 );
+// Texels a door-moved face may differ by from the original engines' door mapping and still count as that mapping:
+// integer texels on integer vertices round by up to a texel either way.
+inline constexpr float IndoorMoverFaceTexelTolerance = 2.0f;
+
+// Whether a face that moves whole with its door keeps its stored texels. The original engines redraw a door face
+// from its geometry at one texel per unit (the projection's texels per vertex, `geometryTexels`), ignoring the BLV's
+// texels (`storedTexels`, with the face's delta, in the BLV's vertex pose). Every MM6-MM8 face that moves whole
+// stores that mapping up to a constant offset (within the tolerance), so it keeps the geometric rule. A converted
+// map's mover (the MM9 rework's doors, about 0.52 texels per unit and often rotated) stores its own mapping, which
+// then moves with the face as MM9 draws it.
+bool indoorMoverFaceKeepsStoredTexels(
+    std::span<const IndoorProjectedFacePoint> geometryTexels,
+    std::span<const IndoorProjectedFacePoint> storedTexels
+);
+
 // Where a wall-mounted decoration standing at (x, y, z) hangs: the nearest wall within a few dozen units, measured
 // at half its height.
 std::optional<DecorationWallContact> findIndoorDecorationWall(

@@ -557,6 +557,23 @@ elements:
         align_y: middle
         scale: 0.4
         pad_x: 0.0
+    - id: SettingsVideoGroup8
+      anchor: top_left
+      offset_x: 0.0
+      offset_y: 1506.3097
+      width: 525.3333
+      height: 18.1333
+      z_index: 10
+      visible: true
+      interactive: false
+      text:
+        value: Experimental
+        font: fondamento
+        color: '#e0c990'
+        align_x: left
+        align_y: middle
+        scale: 0.4
+        pad_x: 0.0
     - id: SettingsVideoWindowModeLabel
       anchor: top_left
       offset_x: 1.6
@@ -2200,6 +2217,144 @@ elements:
       anchor: top_left
       offset_x: 453.3333
       offset_y: 1460.9014
+      width: 70.4
+      height: 32.158
+      z_index: 10
+      visible: true
+      interactive: true
+      asset:
+        default: hud_x2/menus/omenu_toggle_off.png
+        selected: hud_x2/menus/omenu_toggle_on.png
+    - id: SettingsVideoSurfaceMaterialsLabel
+      anchor: top_left
+      offset_x: 1.6
+      offset_y: 1531.9097
+      width: 435.7333
+      height: 14.0752
+      z_index: 10
+      visible: true
+      interactive: false
+      text:
+        value: Surface materials
+        font: menu_arrus
+        color: '#eadfc6'
+        align_x: left
+        align_y: middle
+        scale: 0.74105
+        pad_x: 0.0
+    - id: SettingsVideoSurfaceMaterialsDescription
+      anchor: top_left
+      offset_x: 1.6
+      offset_y: 1548.1182
+      width: 435.7333
+      height: 23.0336
+      z_index: 10
+      visible: true
+      interactive: false
+      text:
+        value: Walls, floors and doors show their relief, metal, glass and glowing windows. Takes effect on the next map.
+        font: menu_lucida
+        color: '#aeb5a5'
+        align_x: left
+        align_y: middle
+        scale: 0.60235
+        pad_x: 0.0
+    - id: SettingsVideoSurfaceMaterialsControl
+      anchor: top_left
+      offset_x: 453.3333
+      offset_y: 1535.4518
+      width: 70.4
+      height: 32.158
+      z_index: 10
+      visible: true
+      interactive: true
+      asset:
+        default: hud_x2/menus/omenu_toggle_off.png
+        selected: hud_x2/menus/omenu_toggle_on.png
+    - id: SettingsVideoSurfaceParallaxLabel
+      anchor: top_left
+      offset_x: 1.6
+      offset_y: 1582.3518
+      width: 435.7333
+      height: 14.0752
+      z_index: 10
+      visible: true
+      interactive: false
+      text:
+        value: Surface depth
+        font: menu_arrus
+        color: '#eadfc6'
+        align_x: left
+        align_y: middle
+        scale: 0.74105
+        pad_x: 0.0
+    - id: SettingsVideoSurfaceParallaxDescription
+      anchor: top_left
+      offset_x: 1.6
+      offset_y: 1598.5603
+      width: 435.7333
+      height: 11.5168
+      z_index: 10
+      visible: true
+      interactive: false
+      text:
+        value: Nearby bricks, stones and carvings show their depth. Costs a little extra rendering.
+        font: menu_lucida
+        color: '#aeb5a5'
+        align_x: left
+        align_y: middle
+        scale: 0.60235
+        pad_x: 0.0
+    - id: SettingsVideoSurfaceParallaxControl
+      anchor: top_left
+      offset_x: 453.3333
+      offset_y: 1580.1355
+      width: 70.4
+      height: 32.158
+      z_index: 10
+      visible: true
+      interactive: true
+      asset:
+        default: hud_x2/menus/omenu_toggle_off.png
+        selected: hud_x2/menus/omenu_toggle_on.png
+    - id: SettingsVideoSurfaceReflectionsLabel
+      anchor: top_left
+      offset_x: 1.6
+      offset_y: 1621.2771
+      width: 435.7333
+      height: 14.0752
+      z_index: 10
+      visible: true
+      interactive: false
+      text:
+        value: Surface reflections
+        font: menu_arrus
+        color: '#eadfc6'
+        align_x: left
+        align_y: middle
+        scale: 0.74105
+        pad_x: 0.0
+    - id: SettingsVideoSurfaceReflectionsDescription
+      anchor: top_left
+      offset_x: 1.6
+      offset_y: 1637.4856
+      width: 435.7333
+      height: 11.5168
+      z_index: 10
+      visible: true
+      interactive: false
+      text:
+        value: Marble, glass, metal and puddles reflect the buildings around them. Needs surface materials.
+        font: menu_lucida
+        color: '#aeb5a5'
+        align_x: left
+        align_y: middle
+        scale: 0.60235
+        pad_x: 0.0
+    - id: SettingsVideoSurfaceReflectionsControl
+      anchor: top_left
+      offset_x: 453.3333
+      offset_y: 1619.0608
       width: 70.4
       height: 32.158
       z_index: 10

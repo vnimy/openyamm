@@ -79,6 +79,10 @@ private:
     std::array<bool, SDL_SCANCODE_COUNT> m_previousKeyboardHeld = {};
     // Left, middle and right button events not yet applied to a frame.
     std::array<std::deque<SDL_MouseButtonEvent>, 3> m_pendingMouseButtonEvents = {};
+    // Mouse motion not yet applied to a frame, summed from motion events. SDL's own relative state also counts the
+    // pointer position a compositor reports after a warp it did not make (Wayland), which turned the camera.
+    float m_pendingRelativeMouseX = 0.0f;
+    float m_pendingRelativeMouseY = 0.0f;
     std::array<bool, KeyboardActionCount> m_previousActionHeld = {};
     std::array<MobileTouchPoint, 8> m_mobileTouches = {};
     bool m_mobilePendingHudTap = false;

@@ -130,6 +130,8 @@ private:
         // Pick triangles in asset space (three corners each), from LOD1 or LOD0; camera-facing cards apart.
         std::vector<std::array<float, 3>> pickTriangles;
         std::vector<std::array<float, 3>> billboardPickTriangles;
+        // For each corner of billboardPickTriangles, the asset point its card turns about.
+        std::vector<std::array<float, 3>> billboardPickPivots;
     };
     // Where a billboard's placement lives; group -1 when no model draws it. binding is the binding its sprite
     // selects (group is that binding's free-standing group when no wall was in reach).

@@ -446,6 +446,30 @@ uint32_t absoluteEventReferenceId(int32_t rawReferenceId)
 }
 }
 
+const IndoorFaceTranslucency *findIndoorFaceTranslucency(const IndoorMapData &indoorMapData, size_t faceIndex)
+{
+    const std::vector<IndoorTranslucentFace> &faces = indoorMapData.translucentFaces;
+    if (faces.empty() || faceIndex > std::numeric_limits<uint16_t>::max())
+    {
+        return nullptr;
+    }
+    const auto found = std::lower_bound(faces.begin(), faces.end(), faceIndex,
+        [](const IndoorTranslucentFace &face, size_t index) { return face.faceIndex < index; });
+    return found != faces.end() && found->faceIndex == faceIndex ? &found->translucency : nullptr;
+}
+
+const IndoorMoverDefinition *findIndoorMoverDefinition(const IndoorMapData &indoorMapData, uint32_t doorId)
+{
+    const std::vector<IndoorMoverDefinition> &movers = indoorMapData.moverDefinitions;
+    if (movers.empty())
+    {
+        return nullptr;
+    }
+    const auto found = std::lower_bound(movers.begin(), movers.end(), doorId,
+        [](const IndoorMoverDefinition &mover, uint32_t id) { return mover.doorId < id; });
+    return found != movers.end() && found->doorId == doorId ? &*found : nullptr;
+}
+
 std::vector<uint32_t> resolveIndoorLightReferenceIds(const IndoorMapData &indoorMapData, int32_t rawReferenceId)
 {
     if (indoorMapData.version >= 8 && rawReferenceId >= 0)

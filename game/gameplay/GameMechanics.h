@@ -382,6 +382,11 @@ public:
         const Character &character,
         const ItemDefinition &itemDefinition,
         const CharacterDollTypeEntry *pCharacterDollType);
+    // Why canCharacterEquipItem refuses, when the reason is the character's (skill, class, race, stat).
+    static std::optional<std::string> equipRefusalReason(
+        const Character &character,
+        const ItemDefinition &itemDefinition,
+        const CharacterDollTypeEntry *pCharacterDollType);
     static std::optional<CharacterEquipPlan> resolveCharacterEquipPlan(
         const Character &character,
         const ItemDefinition &itemDefinition,

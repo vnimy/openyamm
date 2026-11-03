@@ -195,6 +195,11 @@ std::optional<uint32_t> ItemRules::nameColor(const InventoryItem &) const
     return std::nullopt;
 }
 
+bool ItemRules::glowsItemRarity() const
+{
+    return false;
+}
+
 std::vector<ItemInspectLine> ItemRules::inspectLines(
     const InventoryItem &,
     const ItemDefinition &,

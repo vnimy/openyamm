@@ -1507,7 +1507,7 @@ bool IndoorGameView::canActivateMapActorDialogue(size_t actorIndex) const
         return false;
     }
 
-    if (actor.npcId > 0)
+    if (actor.mm9RudeId > 0 || actor.npcId > 0)
     {
         return !runtimeState.hostileToParty;
     }
@@ -1592,6 +1592,32 @@ bool IndoorGameView::activateMapActorDialogue(size_t actorIndex)
         };
 
     GameplayDialogController::Context context = buildDialogContext(*pEventRuntimeState);
+
+    if (actor.mm9RudeId > 0)
+    {
+        GameplayDialogController::Mm9ActorDialogueActivation activation = {};
+        activation.rudeId = static_cast<uint32_t>(actor.mm9RudeId);
+        activation.actorIndex = static_cast<uint32_t>(actorIndex);
+        activation.sourceObjectIndex = actor.mm9SourceObjectIndex;
+        activation.pLocalEventProgram = &m_pIndoorSceneRuntime->localEventProgram();
+        return m_gameSession.gameplayDialogController().activateMm9ActorDialogue(
+            context,
+            activation,
+            [this](size_t previousMessageCount)
+            {
+                m_gameSession.gameplayScreenRuntime().presentPendingEventDialog(
+                    previousMessageCount,
+                    false,
+                    [this](EventRuntimeState &eventRuntimeState)
+                    {
+                        return buildDialogContext(eventRuntimeState);
+                    });
+            },
+            [this]()
+            {
+                m_gameSession.gameplayScreenRuntime().presentActiveEventDialog();
+            });
+    }
 
     if (actor.npcId > 0)
     {

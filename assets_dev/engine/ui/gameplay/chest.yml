@@ -274,6 +274,27 @@ elements:
       align_y: middle
       color: '#e8d1a4'
       scale: 0.41666665625
+  - id: ChestInventoryButton
+    anchor: top_right
+    offset_x: -42
+    offset_y: 258
+    width: 83
+    height: 30
+    z_index: 300
+    interactive: true
+    asset:
+      default: obsidian_button_close_normal
+      highlighted: obsidian_button_close_hover
+      pressed: obsidian_button_close_pressed
+    notes: Shows the party's packs in place of the chest, to put items in (the inventory key's ChestTransfer page);
+      reads Chest while they show and switches back. The renderer sets the label.
+    text:
+      value: Inventory
+      font: Fondamento
+      align_x: center
+      align_y: middle
+      color: '#e8d1a4'
+      scale: 0.41666665625
   - id: ChestCloseButton
     anchor: bottom_right
     offset_x: -42

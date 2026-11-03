@@ -5,6 +5,7 @@
 #include "engine/ImageAssetLoader.h"
 #include "engine/TextTable.h"
 #include "engine/scripting/LuaStateOwner.h"
+#include "game/content/WorldDecorations.h"
 #include "game/events/EvtEnums.h"
 #include "game/indoor/IndoorGeometryUtils.h"
 #include "game/maps/TerrainTileData.h"
@@ -25,6 +26,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <iterator>
 #include <sstream>
 #include <unordered_map>
@@ -620,9 +622,11 @@ bool loadEditorChestTable(const Engine::AssetFileSystem &assetFileSystem, Game::
 bool loadEditorDecorationTable(const Engine::AssetFileSystem &assetFileSystem, Game::DecorationTable &decorationTable)
 {
     std::vector<std::vector<std::string>> decorationRows;
+    std::string errorMessage;
 
-    if (!loadTextTableRows(assetFileSystem, "engine/data_tables/decoration_data.txt", decorationRows))
+    if (!Game::loadDecorationTableRows(assetFileSystem, decorationRows, errorMessage))
     {
+        std::cerr << "Failed to load the decoration table: " << errorMessage << '\n';
         return false;
     }
 
@@ -642,7 +646,19 @@ bool loadEditorEntityBillboardSpriteFrameTable(
     }
 
     std::string errorMessage;
-    return spriteFrameTable.loadFromYaml(*contents, errorMessage);
+
+    if (!spriteFrameTable.loadFromYaml(*contents, errorMessage))
+    {
+        return false;
+    }
+
+    if (!Game::appendWorldDecorationSpriteFrames(assetFileSystem, spriteFrameTable, errorMessage))
+    {
+        std::cerr << "Failed to load world decoration sprite frame data: " << errorMessage << '\n';
+        return false;
+    }
+
+    return true;
 }
 
 std::optional<std::string> monsterSpriteFamilyRoot(const std::string &spriteName)
@@ -3267,8 +3283,14 @@ void EditorSession::initialize(const Engine::AssetFileSystem &assetFileSystem)
     }
 
     std::vector<std::vector<std::string>> decorationRows;
-    m_hasDecorationTable = loadTextTableRows(assetFileSystem, "engine/data_tables/decoration_data.txt", decorationRows)
+    std::string decorationError;
+    m_hasDecorationTable = Game::loadDecorationTableRows(assetFileSystem, decorationRows, decorationError)
         && m_decorationTable.loadRows(decorationRows);
+
+    if (!decorationError.empty())
+    {
+        appendLog("error", "Failed to load the decoration table: " + decorationError);
+    }
 
     if (m_hasDecorationTable)
     {

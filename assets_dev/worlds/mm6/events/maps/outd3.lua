@@ -16,7 +16,7 @@ SetMapMetadata({
     [2] = { kind = "enter_house", source = "opcode", houseId = 24, targetName = "Fine Blades" },
     [4] = { kind = "enter_house", source = "opcode", houseId = 64, targetName = "Metalweave Armory" },
     [6] = { kind = "enter_house", source = "opcode", houseId = 101, targetName = "Eye of Newt" },
-    [8] = { kind = "enter_house", source = "opcode", houseId = 471, targetName = "Royal Lines " },
+    [8] = { kind = "enter_house", source = "opcode", houseId = 471, targetName = "Royal Lines" },
     [10] = { kind = "enter_house", source = "opcode", houseId = 1589, targetName = "Royal Gymnasium" },
     [12] = { kind = "enter_house", source = "opcode", houseId = 264, targetName = "The King's Crown" },
     [14] = { kind = "enter_house", source = "opcode", houseId = 132, targetName = "Initiate Guild of Fire" },
@@ -105,11 +105,11 @@ end, "Eye of Newt")
 
 RegisterEvent(7, "Eye of Newt", nil, "Eye of Newt")
 
-RegisterEvent(8, "Royal Lines ", function()
+RegisterEvent(8, "Royal Lines", function()
     evt.EnterHouse(471) -- Royal Lines
-end, "Royal Lines ")
+end, "Royal Lines")
 
-RegisterEvent(9, "Royal Lines ", nil, "Royal Lines ")
+RegisterEvent(9, "Royal Lines", nil, "Royal Lines")
 
 RegisterEvent(10, "Royal Gymnasium", function()
     evt.EnterHouse(1589) -- Royal Gymnasium

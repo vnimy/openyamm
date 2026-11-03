@@ -853,7 +853,7 @@ TEST_CASE("party rejects a race restricted artifact for the wrong member")
         std::nullopt,
         false,
         heldReplacement));
-    CHECK_EQ(party.lastStatus(), "cannot equip");
+    CHECK_EQ(party.lastStatus(), "Dark Elves only");
 
     pMember->raceId = 2;
 
@@ -896,7 +896,7 @@ TEST_CASE("forge gauntlets require a dwarf race member")
         std::nullopt,
         false,
         heldReplacement));
-    CHECK_EQ(party.lastStatus(), "cannot equip");
+    CHECK_EQ(party.lastStatus(), "Dwarves only");
 
     pMember->raceId = 9;
     REQUIRE(party.tryEquipItemOnMember(
@@ -925,6 +925,29 @@ TEST_CASE("equip rules respect class restricted artifacts")
     OpenYAMM::Game::Character lich = {};
     lich.className = "Lich";
     CHECK(OpenYAMM::Game::GameMechanics::canCharacterEquipItem(lich, *pCrown, &dollType));
+}
+
+TEST_CASE("a refused gated artifact says who may wear it")
+{
+    const OpenYAMM::Tests::RegressionGameData &gameData = requireRegressionGameData();
+    const OpenYAMM::Game::ItemDefinition *pSupremePlate = gameData.itemTable.get(515);
+    REQUIRE(pSupremePlate != nullptr);
+
+    OpenYAMM::Game::CharacterDollTypeEntry dollType = {};
+    dollType.canEquipArmor = true;
+
+    OpenYAMM::Game::Character paladin = {};
+    paladin.className = "Paladin";
+    CHECK(OpenYAMM::Game::GameMechanics::equipRefusalReason(paladin, *pSupremePlate, &dollType)
+        == "Requires the Plate Armor skill");
+
+    paladin.skills["PlateArmor"] = {"PlateArmor", 1, OpenYAMM::Game::SkillMastery::Normal};
+    CHECK(OpenYAMM::Game::GameMechanics::equipRefusalReason(paladin, *pSupremePlate, &dollType) == "Knights only");
+
+    OpenYAMM::Game::Character champion = paladin;
+    champion.className = "Champion";
+    CHECK(OpenYAMM::Game::GameMechanics::canCharacterEquipItem(champion, *pSupremePlate, &dollType));
+    CHECK_FALSE(OpenYAMM::Game::GameMechanics::equipRefusalReason(champion, *pSupremePlate, &dollType).has_value());
 }
 
 TEST_CASE("artifact ring of planes applies resistance bonuses")

@@ -32,6 +32,8 @@ public:
     void teleportEyePosition(float x, float y, float z);
     void teleportPartyPosition(float x, float y, float z);
     void translatePartyPosition(float deltaX, float deltaY, float deltaZ);
+    // A moving face pushes the party (a rotating mover's push rule): moved, no longer supported, falling from there.
+    void pushPartyPosition(float deltaX, float deltaY, float deltaZ);
     // Raises the party in place; it falls back from there (MAW's unstuck key).
     void lift(float height);
     void update(
@@ -49,6 +51,9 @@ public:
     void invalidateRuntimeGeometryCache();
 
     const IndoorMoveState &movementState() const;
+    // Fly Up/Fly Down while on a ladder: +1, -1 or 0 (devdocs/INDOOR_ROTATING_MOVERS_AND_LADDERS.md, "Ladders").
+    void setLadderVerticalInput(int verticalInput);
+    bool climbingLadder() const;
     // Moves out the floor faces stood on during movement steps since the last call, in order, so pressure plates
     // see every face crossed instead of only the frame's final one.
     void takeSteppedFloorFaces(std::vector<size_t> &faces);
@@ -74,7 +79,18 @@ public:
     void requestDash(float velocityX, float velocityY, float seconds);
 
 private:
+    // One movement step on a ladder (grabbing it first when the party walks into one); false: walk normally.
+    bool stepOnLadder(
+        float desiredVelocityX,
+        float desiredVelocityY,
+        bool runningMovement,
+        const IndoorBodyDimensions &body,
+        std::vector<size_t> &contactedActorIndices);
+
     IndoorMovementController m_movementController;
+    // Runtime only: a save made on a ladder restores the party falling from where it was.
+    std::optional<size_t> m_ladderIndex;
+    int m_ladderVerticalInput = 0;
     Party m_party;
     IndoorMoveState m_movementState = {};
     float m_movementSpeedMultiplier = 1.0f;
@@ -89,6 +105,9 @@ private:
     float m_pendingImpulseVelocityX = 0.0f;
     float m_pendingImpulseVelocityY = 0.0f;
     float m_pendingImpulseVelocityZ = 0.0f;
+    // A special jump's horizontal speed, kept until the party is back on the ground.
+    float m_jumpCarryVelocityX = 0.0f;
+    float m_jumpCarryVelocityY = 0.0f;
     float m_dashVelocityX = 0.0f;
     float m_dashVelocityY = 0.0f;
     float m_dashSeconds = 0.0f;

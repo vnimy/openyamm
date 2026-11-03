@@ -6,6 +6,7 @@
 #include "game/audio/SoundIds.h"
 #include "game/debug/GameplayDebugTrace.h"
 #include "game/gameplay/GameplayLootFilter.h"
+#include "game/gameplay/GameplayWorldItemPolicy.h"
 #include "game/items/InventoryBags.h"
 #include "game/items/ItemGenerator.h"
 #include "game/items/ItemRuntime.h"
@@ -559,7 +560,7 @@ GameplayCorpseAutoLootResult autoLootActiveCorpseView(
         const InventoryItem inventoryItem = normalizedCorpseInventoryItem(item);
         const std::string itemName = corpseLootItemName(item, pItemTable);
 
-        if (party.tryGrantInventoryItemStartingAt(party.activeMemberIndex(), inventoryItem))
+        if (const std::optional<StoredPickup> stored = storePickedUpItem(party, inventoryItem, pItemTable))
         {
             GameplayChestItemState removedItem = {};
 
@@ -574,7 +575,7 @@ GameplayCorpseAutoLootResult autoLootActiveCorpseView(
                 + gameplayDebugTraceItemSummary(inventoryItem.objectDescriptionId, pItemTable)
                 + " corpse_index=" + std::to_string(pCorpseView->sourceIndex)
                 + " loot_item_index=0"
-                + " member_index=" + std::to_string(party.activeMemberIndex()));
+                + " member_index=" + std::to_string(stored->memberIndex));
 
             if (result.firstItemName.empty())
             {
@@ -706,6 +707,8 @@ GameplayUiController::LootSummaryOverlayState lootAllCorpses(IGameplayWorldRunti
 {
     GameplayUiController::LootSummaryOverlayState summary = {};
     const int bagCount = party.rules().items.bagCount(party);
+    // Added once after the sweep: each addGold queues the gold sound.
+    int partyGold = 0;
 
     for (size_t actorIndex : worldRuntime.lootableCorpseActorIndices())
     {
@@ -733,7 +736,7 @@ GameplayUiController::LootSummaryOverlayState lootAllCorpses(IGameplayWorldRunti
                 }
 
                 const FoundGold foundGold = resolveFoundGold(taken.goldAmount, worldRuntime.eventRuntimeState());
-                party.addGold(static_cast<int>(foundGold.partyAmount));
+                partyGold += static_cast<int>(foundGold.partyAmount);
                 summary.goldAmount += static_cast<int>(foundGold.amount);
                 summary.followerGoldShare += static_cast<int>(foundGold.followerShare);
                 continue;
@@ -741,9 +744,9 @@ GameplayUiController::LootSummaryOverlayState lootAllCorpses(IGameplayWorldRunti
 
             const InventoryItem inventoryItem = normalizedCorpseInventoryItem(item);
             const std::vector<std::vector<size_t>> bagSizes = memberBagSizes(party, bagCount);
-            size_t recipientIndex = 0;
+            const std::optional<StoredPickup> stored = storePickedUpItem(party, inventoryItem, party.itemTable());
 
-            if (!party.tryGrantInventoryItemStartingAt(party.activeMemberIndex(), inventoryItem, &recipientIndex))
+            if (!stored)
             {
                 summary.leftItems.push_back(inventoryItem);
                 ++itemIndex;
@@ -756,13 +759,17 @@ GameplayUiController::LootSummaryOverlayState lootAllCorpses(IGameplayWorldRunti
             }
 
             summary.takenItems.push_back(inventoryItem);
-            summary.takenItemPlaces.push_back(grantedItemPlace(party, recipientIndex, bagCount, bagSizes));
+            summary.takenItemPlaces.push_back(grantedItemPlace(party, stored->memberIndex, bagCount, bagSizes));
         }
 
         worldRuntime.closeActiveCorpseView();
     }
 
-    if (!summary.takenItems.empty() && summary.goldAmount == 0)
+    if (partyGold > 0)
+    {
+        party.addGold(partyGold);
+    }
+    else if (!summary.takenItems.empty())
     {
         party.requestSound(SoundId::Gold);
     }

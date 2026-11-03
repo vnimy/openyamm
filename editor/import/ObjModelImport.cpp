@@ -709,6 +709,7 @@ bool appendPrimitiveFaces(
     size_t basePositionIndex,
     size_t localVertexCount,
     const std::string &materialName,
+    bool keepFanPolygons,
     ImportedModel &model,
     std::string &errorMessage)
 {
@@ -800,6 +801,30 @@ bool appendPrimitiveFaces(
             return false;
         }
 
+        if (keepFanPolygons)
+        {
+            ImportedModelFace face = {};
+            face.materialName = materialName;
+
+            for (size_t localIndex : indices)
+            {
+                ImportedModelFaceVertex vertex = {};
+                vertex.positionIndex = basePositionIndex + localIndex;
+
+                if (localIndex < texCoords.size() && localIndex < hasTexCoord.size() && hasTexCoord[localIndex])
+                {
+                    vertex.hasUv = true;
+                    vertex.u = texCoords[localIndex].first;
+                    vertex.v = texCoords[localIndex].second;
+                }
+
+                face.vertices.push_back(vertex);
+            }
+
+            model.faces.push_back(std::move(face));
+            return true;
+        }
+
         for (size_t index = 1; index + 1 < indices.size(); ++index)
         {
             if (!appendPrimitiveTriangleFace(
@@ -831,6 +856,7 @@ bool appendPrimitiveToImportedModel(
     const float worldTransform[16],
     ImportedModel &model,
     bool flipGltfV,
+    bool keepFanPolygons,
     std::string &errorMessage)
 {
     const cgltf_accessor *pPositionAccessor = findAttributeAccessor(primitive, cgltf_attribute_type_position);
@@ -899,6 +925,7 @@ bool appendPrimitiveToImportedModel(
         basePositionIndex,
         localVertexCount,
         materialName,
+        keepFanPolygons,
         model,
         errorMessage);
 }
@@ -909,6 +936,7 @@ bool appendNodeMeshesToImportedModels(
     const cgltf_node &node,
     std::vector<ImportedModel> &models,
     bool flipGltfV,
+    bool keepFanPolygons,
     std::string &errorMessage)
 {
     float worldTransform[16] = {};
@@ -928,6 +956,7 @@ bool appendNodeMeshesToImportedModels(
                     worldTransform,
                     model,
                     flipGltfV,
+                    keepFanPolygons,
                     errorMessage))
             {
                 return false;
@@ -942,7 +971,8 @@ bool appendNodeMeshesToImportedModels(
 
     for (cgltf_size childIndex = 0; childIndex < node.children_count; ++childIndex)
     {
-        if (!appendNodeMeshesToImportedModels(path, data, *node.children[childIndex], models, flipGltfV, errorMessage))
+        if (!appendNodeMeshesToImportedModels(
+                path, data, *node.children[childIndex], models, flipGltfV, keepFanPolygons, errorMessage))
         {
             return false;
         }
@@ -955,6 +985,7 @@ bool loadGltfModelsFromFile(
     const std::filesystem::path &path,
     std::vector<ImportedModel> &models,
     bool flipGltfV,
+    bool keepFanPolygons,
     std::string &errorMessage)
 {
     models.clear();
@@ -994,6 +1025,7 @@ bool loadGltfModelsFromFile(
                     *pScene->nodes[nodeIndex],
                     models,
                     flipGltfV,
+                    keepFanPolygons,
                     errorMessage))
             {
                 cgltf_free(pData);
@@ -1016,6 +1048,7 @@ bool loadGltfModelsFromFile(
                     pData->nodes[nodeIndex],
                     models,
                     flipGltfV,
+                    keepFanPolygons,
                     errorMessage))
             {
                 cgltf_free(pData);
@@ -1610,7 +1643,8 @@ bool loadImportedModelsFromFile(
     std::vector<ImportedModel> &models,
     std::string &errorMessage,
     bool mergeCoplanarFaces,
-    bool flipGltfV)
+    bool flipGltfV,
+    bool keepFanPolygons)
 {
     switch (importedModelFileTypeFromPath(path))
     {
@@ -1640,7 +1674,7 @@ bool loadImportedModelsFromFile(
 
     case ImportedModelFileType::Gltf:
     case ImportedModelFileType::Glb:
-        if (!loadGltfModelsFromFile(path, models, flipGltfV, errorMessage))
+        if (!loadGltfModelsFromFile(path, models, flipGltfV, keepFanPolygons, errorMessage))
         {
             return false;
         }

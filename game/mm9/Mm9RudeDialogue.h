@@ -111,6 +111,10 @@ std::optional<Mm9RudeSkillTrainerTopic> resolveMm9RudeSkillTrainerTopic(const Mm
 bool mm9RudeRowPassesQuestKeys(
     const Mm9RudeRow &row,
     const std::function<bool(uint32_t)> &hasQBit);
+// Whether the row's c16-c20 and c26-c30 are quest keys it grants and removes: ordinary rows, and the hire and dismiss
+// services, whose tails keep the key meaning (Forad's hire grants 29 and 371, a dismissal removes its hire key); the
+// other services reuse those columns as parameters.
+bool mm9RudeRowAppliesQuestKeys(const Mm9RudeRow &row);
 void applyMm9RudeRowActions(
     const Mm9RudeRow &row,
     Party &party,

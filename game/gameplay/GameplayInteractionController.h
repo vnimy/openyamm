@@ -179,6 +179,14 @@ public:
         bool heldItemActive);
     static WorldInteractionPointerPolicy resolveWorldInteractionPointerPolicy(
         const WorldInteractionPointerPolicyInput &input);
+    // Ctrl + left click steals from the creature clicked, as in the original: under the cursor, or with mouse look
+    // the one in the crosshair.
+    static bool stealClickPressed(
+        const GameplayInputFrame &input,
+        const WorldInteractionPointerPolicy &pointerPolicy);
+    // Whether the attack waits: from a steal click until the left button is released, so the next ready member
+    // does not strike while the button is still held.
+    static bool stealClickHoldsAttack(bool &stealClickLatch, const GameplayInputFrame &input, bool stealPressed);
     static WorldInteractionFrameResult updateWorldInteractionFrame(
         GameplayScreenState &screenState,
         GameplayOverlayInteractionState &overlayInteractionState,
@@ -187,6 +195,8 @@ public:
         const GameplayInputFrame &input,
         const GameplaySharedInputFrameResult &sharedInput,
         bool worldInputBlocked);
+    // Drops the held item in front of the party, for the touch Drop buttons.
+    static bool dropHeldItemInFrontOfParty(GameplayScreenRuntime &runtime);
 
 private:
     static bool isSameActivationTarget(const GameplayWorldHit &lhs, const GameplayWorldHit &rhs);

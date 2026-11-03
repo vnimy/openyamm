@@ -29,6 +29,7 @@ liquid's colour, so the runtime never loads their art.
   tools/cook_surface_textures.py --plan                         what would be cooked; writes nothing
   tools/cook_surface_textures.py --verify                       fail on a missing, stale or orphaned cooked file
   tools/cook_surface_textures.py --force                        re-cook everything
+  The desktop profile also cooks and verifies the surface material maps (tools/surface_materials.py).
   options: --only 'mm6/t1*'  --sources ROOT (default assets_source)  --output ROOT (default per profile)
            --world NAME (repeatable; default mm6, mm7 and mm8: a staged world such as hesper names itself)
 
@@ -51,6 +52,8 @@ import tempfile
 
 from PIL import Image
 import yaml
+
+import surface_materials
 
 ROOT = Path(__file__).resolve().parent.parent
 WORLDS = ("mm6", "mm7", "mm8")
@@ -268,6 +271,8 @@ def verify(sources_root, output_root, profile, cooker, only, world_names, requir
     for problem in problems[:40]:
         print(problem)
     print(f"{profile}: {len(paths)} cooked surface textures checked, {len(problems)} problems")
+    if profile == "desktop":
+        problems += surface_materials.verify(sources_root, output_root, world_names)
     return problems
 
 
@@ -295,6 +300,8 @@ def main():
     with lock_path.open("w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         cook(args.sources, output, args.profile, args.cooker, args.only, args.force, args.plan, world_names)
+        if args.profile == "desktop":
+            surface_materials.cook(args.sources, output, args.cooker, args.only, args.force, args.plan, world_names)
 
 
 if __name__ == "__main__":

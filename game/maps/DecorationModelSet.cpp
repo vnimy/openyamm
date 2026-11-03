@@ -31,7 +31,8 @@ std::string lowercase(std::string text)
 
 // Triangles of each mesh node in asset space at rest, from the first coarser LOD when there is one: those of
 // camera-facing (openyamm_billboard) materials, or all others.
-std::vector<std::array<float, 3>> pickTriangles(const Engine::ModelAsset &asset, bool billboards)
+std::vector<std::array<float, 3>> pickTriangles(const Engine::ModelAsset &asset, bool billboards,
+    std::vector<std::array<float, 3>> *pCardPivots = nullptr)
 {
     Engine::ModelPose rest;
     Engine::resetModelPose(asset, rest);
@@ -56,12 +57,36 @@ std::vector<std::array<float, 3>> pickTriangles(const Engine::ModelAsset &asset,
             {
                 continue;
             }
+            const auto toAsset = [&matrix](const std::array<float, 3> &p)
+            {
+                return std::array<float, 3>{matrix[0] * p[0] + matrix[4] * p[1] + matrix[8] * p[2] + matrix[12],
+                    matrix[1] * p[0] + matrix[5] * p[1] + matrix[9] * p[2] + matrix[13],
+                    matrix[2] * p[0] + matrix[6] * p[1] + matrix[10] * p[2] + matrix[14]};
+            };
+            // A card billboard turns about its primitive's centre (ModelRenderer: the bounds' centre), others about
+            // the model origin.
+            std::array<float, 3> pivot = {};
+            if (billboard && asset.materials[size_t(material)].billboardCard && !primitive.vertices.empty())
+            {
+                std::array<float, 3> low = primitive.vertices.front().position;
+                std::array<float, 3> high = low;
+                for (const Engine::ModelVertex &vertex : primitive.vertices)
+                {
+                    for (size_t axis = 0; axis < 3; ++axis)
+                    {
+                        low[axis] = std::min(low[axis], vertex.position[axis]);
+                        high[axis] = std::max(high[axis], vertex.position[axis]);
+                    }
+                }
+                pivot = toAsset({(low[0] + high[0]) * 0.5f, (low[1] + high[1]) * 0.5f, (low[2] + high[2]) * 0.5f});
+            }
             for (const uint32_t vertex : primitive.indices)
             {
-                const std::array<float, 3> &p = primitive.vertices[vertex].position;
-                triangles.push_back({matrix[0] * p[0] + matrix[4] * p[1] + matrix[8] * p[2] + matrix[12],
-                    matrix[1] * p[0] + matrix[5] * p[1] + matrix[9] * p[2] + matrix[13],
-                    matrix[2] * p[0] + matrix[6] * p[1] + matrix[10] * p[2] + matrix[14]});
+                triangles.push_back(toAsset(primitive.vertices[vertex].position));
+                if (pCardPivots != nullptr)
+                {
+                    pCardPivots->push_back(pivot);
+                }
             }
         }
     }
@@ -164,12 +189,13 @@ bool DecorationModelSet::raycast(size_t billboardIndex, const std::array<float, 
     // Camera-facing cards (flames) face the ray's origin, as they face the camera when drawn. They turn outside the
     // rest bounds, so they skip the broad phase; models carry only a few of them.
     const std::vector<std::array<float, 3>> &cards = m_bindings[slot.group].billboardPickTriangles;
+    const std::vector<std::array<float, 3>> &pivots = m_bindings[slot.group].billboardPickPivots;
     for (size_t index = 0; index + 2 < cards.size(); index += 3)
     {
         float t = 0.0f;
-        const std::array<float, 3> a = facingCardCorner(matrix, cards[index], origin);
-        const std::array<float, 3> b = facingCardCorner(matrix, cards[index + 1], origin);
-        const std::array<float, 3> c = facingCardCorner(matrix, cards[index + 2], origin);
+        const std::array<float, 3> a = facingCardCorner(matrix, cards[index], origin, pivots[index]);
+        const std::array<float, 3> b = facingCardCorner(matrix, cards[index + 1], origin, pivots[index + 1]);
+        const std::array<float, 3> c = facingCardCorner(matrix, cards[index + 2], origin, pivots[index + 2]);
         if (intersectTriangle(origin, direction, a, b, c, t) && t >= 0.0f && t < best)
         {
             best = t;
@@ -723,7 +749,7 @@ bool DecorationModelSet::load(const Engine::AssetFileSystem &assets, const std::
                 return false;
             }
             binding.pickTriangles = pickTriangles(*binding.asset, false);
-            binding.billboardPickTriangles = pickTriangles(*binding.asset, true);
+            binding.billboardPickTriangles = pickTriangles(*binding.asset, true, &binding.billboardPickPivots);
             std::optional<Binding> freeStanding;
             if (entry["free_model"])
             {
@@ -740,7 +766,8 @@ bool DecorationModelSet::load(const Engine::AssetFileSystem &assets, const std::
                 freeStanding->asset = free.asset;
                 freeStanding->mountWall = false;
                 freeStanding->pickTriangles = pickTriangles(*free.asset, false);
-                freeStanding->billboardPickTriangles = pickTriangles(*free.asset, true);
+                freeStanding->billboardPickTriangles = pickTriangles(*free.asset, true,
+                    &freeStanding->billboardPickPivots);
             }
             const uint32_t index = uint32_t(m_bindings.size());
             bindingByName.emplace(name, index);

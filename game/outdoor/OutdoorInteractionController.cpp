@@ -4778,7 +4778,7 @@ bool OutdoorInteractionController::tryActivateActorInspectEvent(OutdoorGameView 
             return false;
         }
 
-        const bool facedParty = faceTalkingActor();
+        faceTalkingActor();
         const MapDeltaData *pMapDeltaData = view.m_pOutdoorWorldRuntime->mapDeltaData();
         const MapDeltaActor *pSourceActor =
             resolvedRuntimeActorIndex.has_value()
@@ -4822,83 +4822,31 @@ bool OutdoorInteractionController::tryActivateActorInspectEvent(OutdoorGameView 
             }
         }
 
-        const std::optional<ScriptedEventProgram> *pLocalEventProgram =
-            view.m_pOutdoorSceneRuntime != nullptr
+        GameplayDialogController::Mm9ActorDialogueActivation activation = {};
+        activation.rudeId = static_cast<uint32_t>(pResolvedActorState->mm9RudeId);
+        activation.actorIndex = static_cast<uint32_t>(*resolvedRuntimeActorIndex);
+        activation.pLocalEventProgram = view.m_pOutdoorSceneRuntime != nullptr
             ? &view.m_pOutdoorSceneRuntime->localEventProgram()
             : nullptr;
-        std::optional<uint16_t> entryEventId;
 
-        if (pSourceActor != nullptr && pLocalEventProgram != nullptr && pLocalEventProgram->has_value())
+        if (pSourceActor != nullptr)
         {
-            const std::optional<uint16_t> useEventId =
-                mm9RudeUseEventIdForSourceObject(pSourceActor->mm9SourceObjectIndex);
-
-            if (useEventId.has_value() && (*pLocalEventProgram)->hasEvent(*useEventId))
-            {
-                entryEventId = useEventId;
-            }
-        }
-
-        if (entryEventId.has_value())
-        {
-            EventRuntimeState::ActiveHookContext hookContext = {};
-            hookContext.actorIndex = resolvedRuntimeActorIndex32;
-            const std::optional<EventRuntimeState::ActiveHookContext> previousHookContext =
-                pEventRuntimeState->activeHookContext;
-            pEventRuntimeState->activeHookContext = std::move(hookContext);
-            size_t previousMessageCount = pEventRuntimeState->messages.size();
-            const bool executed = view.m_pOutdoorWorldRuntime->executeMapEvent(
-                *entryEventId,
-                previousMessageCount);
-            pEventRuntimeState->activeHookContext = previousHookContext;
-
-            if (executed && pEventRuntimeState->pendingDialogueContext.has_value())
-            {
-                OutdoorInteractionController::presentPendingEventDialog(
-                    view,
-                    previousMessageCount,
-                    false);
-            }
-
-            const bool dialogActive = view.m_gameSession.gameplayScreenRuntime().activeEventDialog().isActive
-                && view.m_gameSession.gameplayScreenRuntime().activeEventDialog().presentation
-                    == EventDialogPresentation::Mm9Rude;
-            pEventRuntimeState->lastActivationResult = executed
-                ? "MM9 SCR entry " + std::to_string(*entryEventId) + " executed"
-                : "MM9 SCR entry " + std::to_string(*entryEventId) + " failed";
-            GAMEPLAY_DEBUG_TRACE(
-                "outdoor_mm9_scr_activation"
-                " event_id=" + std::to_string(*entryEventId)
-                + " runtime_actor=" + std::to_string(*resolvedRuntimeActorIndex)
-                + " faced_party=" + std::string(facedParty ? "true" : "false")
-                + " executed=" + std::string(executed ? "true" : "false")
-                + " dialog_active=" + std::string(dialogActive ? "true" : "false"));
-            return executed;
+            activation.sourceObjectIndex = pSourceActor->mm9SourceObjectIndex;
         }
 
         GameplayDialogController::Context context =
             createGameplayDialogContext(view, *pEventRuntimeState, "activate_actor_mm9_rude_dialog");
-        GameplayScreenRuntime &screenRuntime = view.m_gameSession.gameplayScreenRuntime();
-        view.m_gameSession.gameplayDialogController().openMm9RudeDialogue(
+        return view.m_gameSession.gameplayDialogController().activateMm9ActorDialogue(
             context,
-            static_cast<uint32_t>(pResolvedActorState->mm9RudeId),
-            resolvedRuntimeActorIndex32);
-        screenRuntime.presentActiveEventDialog();
-        const bool dialogActive = context.activeEventDialog.isActive
-            && context.activeEventDialog.presentation == EventDialogPresentation::Mm9Rude;
-        GAMEPLAY_DEBUG_TRACE(
-            "outdoor_mm9_rude_activation"
-            " rude_id=" + std::to_string(pResolvedActorState->mm9RudeId)
-            + " runtime_actor=" + std::to_string(*resolvedRuntimeActorIndex)
-            + " faced_party=" + std::string(facedParty ? "true" : "false")
-            + " actor_yaw=" + std::to_string(pResolvedActorState->yawRadians)
-            + " dialog_active=" + std::string(dialogActive ? "true" : "false")
-            + " title=\"" + context.activeEventDialog.title + "\""
-            + " actions=" + std::to_string(context.activeEventDialog.actions.size()));
-        pEventRuntimeState->lastActivationResult = dialogActive
-            ? "MM9 RUDE " + std::to_string(pResolvedActorState->mm9RudeId) + " engaged"
-            : "MM9 RUDE " + std::to_string(pResolvedActorState->mm9RudeId) + " failed";
-        return dialogActive;
+            activation,
+            [&view](size_t previousMessageCount)
+            {
+                OutdoorInteractionController::presentPendingEventDialog(view, previousMessageCount, false);
+            },
+            [&view]()
+            {
+                view.m_gameSession.gameplayScreenRuntime().presentActiveEventDialog();
+            });
     }
 
     if (inspectHit.kind == "actor" && inspectHit.npcId > 0)

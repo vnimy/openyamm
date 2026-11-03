@@ -66,7 +66,7 @@ const std::vector<NestedKeys> AssertBlockKeys = {
     {"journal_map_note", {"map", "id", "text", "present"}},
     {"quick_item_ring", {"open", "member_index"}},
     {"dimension_door", {"pending", "without_quest"}},
-    {"actor_visible", {"actor_index", "map", "name", "monster_id", "current_hp", "max_hp", "dead",
+    {"actor_visible", {"actor_index", "map", "name", "monster_id", "current_hp", "max_hp", "dead", "hidden",
         "hostile_to_party", "report_state", "near", "far", "faces", "has_aim_target", "has_detected_party",
         "combat_targeting_party", "shield_raised", "shield_fraction", "hp", "hp_below",
         // recorded:

@@ -6,6 +6,7 @@
 #include "game/tables/CharacterDollTable.h"
 #include "game/gameplay/GameMechanics.h"
 #include "game/gameplay/GameplayInputFrame.h"
+#include "game/gameplay/GameplayInteractionController.h"
 #include "game/gameplay/GameplayItemService.h"
 #include "game/gameplay/GameplayScreenRuntime.h"
 #include "game/gameplay/AwardRuntime.h"
@@ -2731,9 +2732,17 @@ void GameplayPartyOverlayInputController::handleCharacterOverlayInput(
             if (!context.isAdventurersInnCharacterSourceActive()
                 && context.characterScreenReadOnly().page == GameplayUiController::CharacterPage::Inventory)
             {
-                const GameplayCharacterPointerTarget sortTarget = resolveCharacterButtonTarget(
-                    "CharacterInventorySortButton",
-                    GameplayCharacterPointerTargetType::InventorySortButton);
+#if defined(__ANDROID__) || defined(OPENYAMM_IOS)
+                // Touch has no world under the cursor to drop on, so the held item turns Sort into Drop.
+                const GameplayCharacterPointerTargetType sortTargetType = context.heldInventoryItem().active
+                    ? GameplayCharacterPointerTargetType::InventoryDropButton
+                    : GameplayCharacterPointerTargetType::InventorySortButton;
+#else
+                const GameplayCharacterPointerTargetType sortTargetType =
+                    GameplayCharacterPointerTargetType::InventorySortButton;
+#endif
+                const GameplayCharacterPointerTarget sortTarget =
+                    resolveCharacterButtonTarget("CharacterInventorySortButton", sortTargetType);
 
                 if (sortTarget.type != GameplayCharacterPointerTargetType::None)
                 {
@@ -3602,6 +3611,12 @@ void GameplayPartyOverlayInputController::handleCharacterOverlayInput(
                 return;
             }
 
+            if (target.type == GameplayCharacterPointerTargetType::InventoryDropButton)
+            {
+                GameplayInteractionController::dropHeldItemInFrontOfParty(context);
+                return;
+            }
+
             if (target.type == GameplayCharacterPointerTargetType::InventorySortButton && pParty != nullptr)
             {
                 // With several bags (MAW) every sort is MAW's: the open bag, Shift its tab's bags as one, Ctrl the
@@ -3838,7 +3853,9 @@ void GameplayPartyOverlayInputController::handleCharacterOverlayInput(
 
                 if (!plan.has_value())
                 {
-                    context.setStatusBarEvent(UiText::translate("Can't equip that item there"));
+                    context.setStatusBarEvent(
+                        GameMechanics::equipRefusalReason(*pCharacter, *pItemDefinition, pActiveCharacterDollType)
+                            .value_or(UiText::translate("Can't equip that item there")));
                     context.playSpeechReaction(memberIndex, SpeechId::CantEquip, true);
                     return;
                 }
@@ -3930,7 +3947,8 @@ void GameplayPartyOverlayInputController::handleCharacterOverlayInput(
 
                 if (!plan.has_value())
                 {
-                    context.setStatusBarEvent(UiText::translate("Can't equip that item"));
+                    context.setStatusBarEvent(GameMechanics::equipRefusalReason(
+                        *pCharacter, *pItemDefinition, pActiveCharacterDollType).value_or(UiText::translate("Can't equip that item")));
                     context.playSpeechReaction(memberIndex, SpeechId::CantEquip, true);
                     return;
                 }

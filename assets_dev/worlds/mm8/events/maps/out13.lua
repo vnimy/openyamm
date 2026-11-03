@@ -411,7 +411,7 @@ RegisterEvent(452, nil, function()
         evt.MoveNPC(64, 899) -- Derrin Delver -> Hostel
         evt.MoveNPC(20, 900) -- Queen Catherine -> Hostel
         evt.MoveNPC(21, 900) -- King Roland -> Hostel
-        AddValue(History(15), 0)
+        AddValue(History(13), 0)
         SetValue(MapVar(41), 0)
         evt.SetFacetBit(31, FacetBits.Invisible, 0)
         evt.SetFacetBit(31, FacetBits.Untouchable, 0)

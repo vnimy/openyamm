@@ -1176,6 +1176,19 @@ bool MonsterTable::loadStatsFromRows(const std::vector<std::vector<std::string>>
         entry.lightResistance = row.size() > 35 ? parseMonsterResistanceValue(row[35]) : 0;
         entry.darkResistance = row.size() > 36 ? parseMonsterResistanceValue(row[36]) : 0;
         entry.physicalResistance = row.size() > 37 ? parseMonsterResistanceValue(row[37]) : 0;
+
+        if (row.size() > 38)
+        {
+            const std::vector<std::string> special = parseMonsterSpellDescriptorTokens(row[38]);
+
+            if (special.size() >= 3 && toLowerCopy(special[0]) == "explode")
+            {
+                entry.explodesOnDeath = true;
+                entry.deathExplosionDamage = parseDamageProfile(special[1]);
+                entry.deathExplosionType = special[2];
+            }
+        }
+
         entry.attackStyle = classifyAttackStyle(entry);
 
         const MonsterEntry *pEntry = findById(static_cast<int16_t>(entry.id));

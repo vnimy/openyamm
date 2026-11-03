@@ -76,6 +76,8 @@ void migrateLegacyConsumedCorpseMarkers(GameSaveData &data, uint32_t sourceSaveV
 void migrateLegacyNpcRosters(GameSaveData &data);
 void migrateLegacyMapAutonotes(GameSaveData &data, uint32_t sourceSaveVersion);
 void migrateLegacyMapHistory(GameSaveData &data, uint32_t sourceSaveVersion);
+// Saves before version 141 recorded MMerge history pages two pages late: moves pages from 3 down by two.
+void migrateLegacyHistoryNumbering(GameSaveData &data, uint32_t sourceSaveVersion);
 void migrateLegacyMapJournalNotes(GameSaveData &data, uint32_t sourceSaveVersion);
 // Saves before version 129 numbered the decoration states with the legacy campfire keys: marks every saved map state
 // (EventRuntimeState::legacyCampFireDecorVars) for the map to renumber when it is next entered.

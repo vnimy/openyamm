@@ -76,7 +76,13 @@ bool WaterRenderer::initialize(const Engine::AssetFileSystem &assets, std::vecto
             return false;
         }
     }
-    m_program = loadRuntimeProgram("vs_water", indoor ? "fs_indoor_water" : "fs_water");
+    const bool fogged = indoor && m_indoorFog.enabled;
+    m_program = loadRuntimeProgram("vs_water", fogged ? "fs_indoor_water_fog" : indoor ? "fs_indoor_water" : "fs_water");
+    if (fogged)
+    {
+        m_fogColor = bgfx::createUniform("u_fogColor", bgfx::UniformType::Vec4);
+        m_fogDistances = bgfx::createUniform("u_fogDistances", bgfx::UniformType::Vec4);
+    }
     m_normalTexture = bgfx::createTexture2D(uint16_t(image->width), uint16_t(image->height), true, 1,
         bgraTextureUploadFormat(), BGFX_SAMPLER_NONE);
     updateBgraTextureArrayLayer(m_normalTexture, 0, uint16_t(image->width), uint16_t(image->height), image->pixels);
@@ -487,7 +493,24 @@ void WaterRenderer::renderIndoor(uint16_t viewId, float seconds, const IndoorLig
         bgfx::setUniform(m_indoorLightPositions, lights.positions.data(), 12);
         bgfx::setUniform(m_indoorLightColors, lights.colors.data(), 12);
         bgfx::setUniform(m_indoorLightParams, lights.params.data());
+        setFogUniforms();
         submitSurface(surface, viewId, seconds, 0.0f, pRipples, pReflection == nullptr);
+    }
+}
+
+void WaterRenderer::setIndoorFog(const IndoorFog &fog)
+{
+    m_indoorFog = fog;
+}
+
+void WaterRenderer::setFogUniforms()
+{
+    if (bgfx::isValid(m_fogColor))
+    {
+        const std::array<float, 4> color = indoorFogColorUniform(m_indoorFog);
+        const std::array<float, 4> distances = indoorFogDistancesUniform(m_indoorFog);
+        bgfx::setUniform(m_fogColor, color.data());
+        bgfx::setUniform(m_fogDistances, distances.data());
     }
 }
 
@@ -516,6 +539,7 @@ void WaterRenderer::renderBillboard(uint16_t viewId, std::span<const WaterVertex
     bgfx::setUniform(m_sunColor, sunColor.data());
     bgfx::setUniform(m_skyColor, skyColor.data());
     bgfx::setUniform(m_reflectionMatrix, identity);
+    setFogUniforms();
     bgfx::setTexture(0, m_spriteSampler, sprite, BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
     bgfx::setTexture(1, m_normalSampler, m_normalTexture);
     bgfx::setTexture(2, m_reflectionSampler, m_emptyReflection);
@@ -547,7 +571,8 @@ void WaterRenderer::prepareRippleResources(const WaterRippleRuntime *pRipples)
     if (pRipples != nullptr && pRipples->enabled() && !bgfx::isValid(m_rippleProgram)
         && std::any_of(m_surfaces.begin(), m_surfaces.end(), [](const Surface &surface) { return surface.visible; }))
     {
-        m_rippleProgram = loadRuntimeProgram("vs_water", m_indoor ? "fs_indoor_water_ripples" : "fs_water_ripples");
+        m_rippleProgram = loadRuntimeProgram("vs_water", m_indoor && m_indoorFog.enabled ? "fs_indoor_water_ripples_fog"
+            : m_indoor ? "fs_indoor_water_ripples" : "fs_water_ripples");
         m_rippleRings = bgfx::createUniform("u_waterRippleRings", bgfx::UniformType::Vec4, MaxDrawWaterRipples);
         m_rippleParams = bgfx::createUniform("u_waterRippleParams", bgfx::UniformType::Vec4);
     }
@@ -680,7 +705,7 @@ void WaterRenderer::shutdown()
         &m_coverageSampler, &m_seabedSampler, &m_seabedUniform, &m_seabedDepthUniform, &m_params, &m_rain,
         &m_sunDirection, &m_sunColor, &m_skyColor, &m_reflectionMatrix,
         &m_cameraPosition, &m_indoorLightPositions, &m_indoorLightColors, &m_indoorLightParams,
-        &m_rippleRings, &m_rippleParams})
+        &m_rippleRings, &m_rippleParams, &m_fogColor, &m_fogDistances})
     {
         if (bgfx::isValid(*pUniform))
         {

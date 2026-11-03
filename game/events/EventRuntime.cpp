@@ -346,6 +346,39 @@ bool matchesRandomGiveItemType(const ItemDefinition &itemDefinition, uint32_t tr
     }
 }
 
+std::optional<InventoryItem> generateRandomEventItem(
+    EventRuntimeState &runtimeState,
+    Party *pParty,
+    uint16_t eventId,
+    uint8_t randomStep,
+    uint32_t treasureLevel,
+    const std::function<bool(const ItemDefinition &)> &filter)
+{
+    const ItemTable *pItemTable = pParty != nullptr ? pParty->itemTable() : nullptr;
+
+    if (pItemTable == nullptr
+        || pParty->standardItemEnchantTable() == nullptr
+        || pParty->specialItemEnchantTable() == nullptr)
+    {
+        return std::nullopt;
+    }
+
+    ItemGenerationRequest request = {};
+    request.treasureLevel = std::clamp(static_cast<int>(treasureLevel), 1, 6);
+    request.mode = ItemGenerationMode::Generic;
+    request.allowRareItems = true;
+    request.worldId = runtimeState.mapWorldId;
+    std::mt19937 rng(nextEventRandom(eventId, randomStep, runtimeState));
+    return ItemGenerator::generateRandomInventoryItem(
+        *pItemTable,
+        *pParty->standardItemEnchantTable(),
+        *pParty->specialItemEnchantTable(),
+        request,
+        pParty,
+        rng,
+        filter);
+}
+
 std::optional<InventoryItem> createGrantedEventItem(
     EventRuntimeState &runtimeState,
     Party *pParty,
@@ -369,32 +402,12 @@ std::optional<InventoryItem> createGrantedEventItem(
         return item;
     }
 
-    if (pParty == nullptr
-        || pItemTable == nullptr
-        || pParty->standardItemEnchantTable() == nullptr
-        || pParty->specialItemEnchantTable() == nullptr)
-    {
-        return std::nullopt;
-    }
-
-    ItemGenerationRequest request = {};
-    request.treasureLevel = std::clamp(static_cast<int>(treasureLevel), 1, 6);
-    request.mode = ItemGenerationMode::Generic;
-    request.allowRareItems = true;
-    request.worldId = runtimeState.mapWorldId;
-
-    std::mt19937 rng(nextEventRandom(
+    return generateRandomEventItem(
+        runtimeState,
+        pParty,
         eventId,
         static_cast<uint8_t>(runtimeState.grantedItems.size() & 0xFFu),
-        runtimeState));
-
-    return ItemGenerator::generateRandomInventoryItem(
-        *pItemTable,
-        *pParty->standardItemEnchantTable(),
-        *pParty->specialItemEnchantTable(),
-        request,
-        pParty,
-        rng,
+        treasureLevel,
         [treasureType](const ItemDefinition &itemDefinition)
         {
             return matchesRandomGiveItemType(itemDefinition, treasureType);
@@ -7038,6 +7051,61 @@ int luaSummonItem(lua_State *pLuaState)
     return 0;
 }
 
+// evt.SummonRandomItem(treasureLevel, kindItemId, x, y, z, speed, count, randomRotate): count random items of the
+// treasure level and of the kind (equip type) of kindItemId, thrown like evt.SummonItem. MM8 encodes this in its
+// summon payload as treasureLevel * 1000 + kindItemId.
+int luaSummonRandomItem(lua_State *pLuaState)
+{
+    LuaExecutionContext *pExecutionContext = executionContextFromLua(pLuaState);
+    EventRuntimeState *pRuntimeState = writableRuntimeState(pLuaState);
+    Party *pParty = writableParty(pLuaState);
+    const ItemTable *pItemTable = pParty != nullptr ? pParty->itemTable() : nullptr;
+
+    if (pExecutionContext == nullptr || pExecutionContext->pSceneEventContext == nullptr
+        || pRuntimeState == nullptr || pItemTable == nullptr)
+    {
+        return 0;
+    }
+
+    const uint32_t treasureLevel = static_cast<uint32_t>(luaL_checkinteger(pLuaState, 1));
+    const ItemDefinition *pKind = pItemTable->get(static_cast<uint32_t>(luaL_checkinteger(pLuaState, 2)));
+
+    if (pKind == nullptr)
+    {
+        return 0;
+    }
+
+    const std::string kindEquipStat = pKind->equipStat;
+    const uint32_t count = static_cast<uint32_t>(luaL_optinteger(pLuaState, 7, 1));
+
+    for (uint32_t index = 0; index < count; ++index)
+    {
+        const std::optional<InventoryItem> item = generateRandomEventItem(
+            *pRuntimeState,
+            pParty,
+            pExecutionContext->currentEventId,
+            static_cast<uint8_t>(index & 0xFFu),
+            treasureLevel,
+            [&kindEquipStat](const ItemDefinition &itemDefinition)
+            {
+                return itemDefinition.equipStat == kindEquipStat;
+            });
+
+        if (item)
+        {
+            pExecutionContext->pSceneEventContext->summonEventInventoryItem(
+                *item,
+                static_cast<int32_t>(luaL_checkinteger(pLuaState, 3)),
+                static_cast<int32_t>(luaL_checkinteger(pLuaState, 4)),
+                static_cast<int32_t>(luaL_checkinteger(pLuaState, 5)),
+                static_cast<int32_t>(luaL_checkinteger(pLuaState, 6)),
+                luaEventBoolean(pLuaState, 8));
+        }
+    }
+
+    return 0;
+}
+
 // evt.SummonGold(amount, x, y, z[, speed]): a gold heap of the amount on the ground. Returns whether it appeared.
 int luaSummonGold(lua_State *pLuaState)
 {
@@ -9259,6 +9327,7 @@ void registerEventBindings(LuaSessionCache &session)
     registerLuaFunction(pLuaState, "SimpleMessage", luaSimpleMessage);
     registerLuaFunction(pLuaState, "SummonItem", luaSummonItem);
     registerLuaFunction(pLuaState, "SummonObject", luaSummonObject);
+    registerLuaFunction(pLuaState, "SummonRandomItem", luaSummonRandomItem);
     registerLuaFunction(pLuaState, "SummonGold", luaSummonGold);
     registerLuaFunction(pLuaState, "SetNPCTopic", luaSetNpcTopic);
     registerLuaFunction(pLuaState, "MoveNPC", luaMoveNpc);

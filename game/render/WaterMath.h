@@ -29,6 +29,10 @@ constexpr uint16_t SkyImageView = 238;
 constexpr uint16_t ActorPortraitView = 239;
 // MenuDesignScreen menus (pause, settings, save and load), drawn after the world and the HUD.
 constexpr uint16_t MenuDesignView = 240;
+// Screen-space reflections of surface materials: the finished world's colour and positions at half resolution, which
+// the next frame's smooth faces trace (CinematicGrading, devdocs/SURFACE_MATERIALS_PLAN.md).
+constexpr uint16_t ReflectionHistoryColorView = 241;
+constexpr uint16_t ReflectionHistoryPositionView = 242;
 constexpr uint16_t AmbientOcclusionDepthView = 244;
 constexpr uint16_t AmbientOcclusionView = 245;
 constexpr uint16_t AmbientOcclusionBlurView = 246;
@@ -56,7 +60,8 @@ constexpr bool uniqueGameViewIds()
     {
         views[count++] = view;
     }
-    for (uint16_t view : {SkyImageView, ActorPortraitView, MenuDesignView, AmbientOcclusionDepthView,
+    for (uint16_t view : {SkyImageView, ActorPortraitView, MenuDesignView, ReflectionHistoryColorView,
+             ReflectionHistoryPositionView, AmbientOcclusionDepthView,
              AmbientOcclusionView, AmbientOcclusionBlurView, AmbientOcclusionCompositeView, WorldTransparentView,
              WorldGradingView, DebugImGuiView, LoadingReadbackView, LoadingOverlayView})
     {
@@ -210,7 +215,7 @@ inline WaterReflectionScissor waterReflectionScissor(const float *pViewProjectio
 }
 
 constexpr std::array<uint16_t, WorldGradingView + 1> worldRenderViewOrder(bool grading, bool ambientOcclusion = false,
-    bool bloom = false)
+    bool bloom = false, bool reflections = false)
 {
     std::array<uint16_t, WorldGradingView + 1> order = {};
     size_t index = 0;
@@ -240,6 +245,12 @@ constexpr std::array<uint16_t, WorldGradingView + 1> worldRenderViewOrder(bool g
             order[index++] = view;
         }
     }
+    // Before the presentation: the backbuffer stays the last bound target (bgfx's OpenGL screenshots read it).
+    if (reflections)
+    {
+        order[index++] = ReflectionHistoryColorView;
+        order[index++] = ReflectionHistoryPositionView;
+    }
     if (grading)
     {
         order[index++] = WorldGradingView;
@@ -252,7 +263,8 @@ constexpr std::array<uint16_t, WorldGradingView + 1> worldRenderViewOrder(bool g
             && view != ActorPortraitView
             && (!grading || view != WorldGradingView)
             && (!ambientOcclusion || view < AmbientOcclusionDepthView || view > WorldTransparentView)
-            && (!bloom || view < WorldGlowView || view > BloomBlurVerticalView))
+            && (!bloom || view < WorldGlowView || view > BloomBlurVerticalView)
+            && (!reflections || (view != ReflectionHistoryColorView && view != ReflectionHistoryPositionView)))
         {
             order[index++] = view;
         }

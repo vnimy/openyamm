@@ -20,8 +20,8 @@ bool applyWorldItemPolicyActions(
     const ItemTable &itemTable);
 std::string formatWorldItemPickupStatusText(const InventoryItem &item, const ItemTable &itemTable);
 
-// Where a ground item the party picked up went: a member's bag tagged for it (ItemRules::bagTag, MAW's crafting bag),
-// else the inventory as Party::tryGrantInventoryItem gives it.
+// Where an item the party picked up or looted (ground, chest Take All, corpses) went: a member's bag tagged for it
+// (ItemRules::bagTag, MAW's crafting bag), else the inventory as Party::tryGrantInventoryItem gives it.
 struct StoredPickup
 {
     size_t memberIndex = 0;

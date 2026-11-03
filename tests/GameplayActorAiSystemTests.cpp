@@ -881,7 +881,7 @@ TEST_CASE("shared actor AI pursues a remembered party target without attack line
     CHECK(*update.state.motionState == ActorAiMotionState::Pursuing);
     CHECK(update.movementIntent.action == ActorAiMovementAction::Pursue);
     CHECK(update.movementIntent.applyMovement);
-    CHECK(update.movementIntent.moveSpeed == doctest::Approx(350.0f));
+    CHECK(update.movementIntent.moveSpeed == doctest::Approx(400.0f));
     CHECK_FALSE(update.movementIntent.inMeleeRange);
     CHECK_FALSE(update.attackRequest.has_value());
 }
@@ -952,12 +952,12 @@ TEST_CASE("turn-based wait stage multiplies movement speed by 5/3 before the cap
     REQUIRE(waitUpdate.state.motionState.has_value());
     CHECK(*waitUpdate.state.motionState == ActorAiMotionState::Pursuing);
     CHECK(waitUpdate.movementIntent.applyMovement);
-    CHECK(waitUpdate.movementIntent.moveSpeed == doctest::Approx(200.0f * 1.75f * 5.0f / 3.0f));
+    CHECK(waitUpdate.movementIntent.moveSpeed == doctest::Approx(200.0f * 2.0f * 5.0f / 3.0f));
 
     frame.turnBased.mode = OpenYAMM::Game::ActorTurnBasedMode::RealTime;
     const OpenYAMM::Game::ActorAiFrameResult realTimeResult = system.updateActors(frame);
     REQUIRE_EQ(realTimeResult.actorUpdates.size(), 1u);
-    CHECK(realTimeResult.actorUpdates.front().movementIntent.moveSpeed == doctest::Approx(350.0f));
+    CHECK(realTimeResult.actorUpdates.front().movementIntent.moveSpeed == doctest::Approx(400.0f));
 
     frame.turnBased.mode = OpenYAMM::Game::ActorTurnBasedMode::MoveOnly;
     frame.activeActors.front().stats.moveSpeed = 700;

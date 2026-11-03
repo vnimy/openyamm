@@ -191,4 +191,77 @@ TEST_CASE("silver helm sloped platforms admit slow walking without jumping")
     }
 }
 
+TEST_CASE("the party running at the base of plane of earth cave slopes stays inside its room")
+{
+    using namespace OpenYAMM::Tests;
+    REQUIRE_MESSAGE(regressionMapLoaderLoaded(), regressionMapLoaderFailure());
+    GameDataLoader data = regressionMapLoader().gameDataLoader;
+    REQUIRE(data.loadMapByFileNameForHeadlessGameplay(regressionMapLoader().assetFileSystem, "eleme.blv"));
+    const MapAssetInfo &loaded = *data.getSelectedMap();
+    IndoorMovementController controller(*loaded.indoorMapData, &loaded.indoorMapDeltaData, &loaded.eventRuntimeState);
+    controller.setSlopeRule(IndoorSlopeRule::Party);
+    const IndoorBodyDimensions body = {};
+    constexpr float RunSpeed = 768.0f;
+
+    // Running west off floor 3072 toward slope 1600: the footprint probe ahead reached under the slope and found
+    // room 15's floor 384 below, which dropped the party into room 15 and through the slope.
+    // Running along the base of the near-vertical slope 1428: the floor sample skipped the slope above the knees
+    // and took room 22's floor 950 below, inside the rock.
+    struct Run
+    {
+        float x;
+        float y;
+        float footZ;
+        float yaw;
+        int16_t sectorId;
+    };
+
+    for (const Run &run : {Run{-3408, 4736, -384, 3.14159f, 20}, Run{-1488, 3200, -1044, 0.5236f, 16}})
+    {
+        CAPTURE(run.x);
+        IndoorMoveState state = controller.initializeStateFromEyePosition(run.x, run.y, run.footZ + 160, body);
+        REQUIRE(state.grounded);
+        REQUIRE_EQ(state.sectorId, run.sectorId);
+
+        for (int step = 0; step < 128; ++step)
+        {
+            state = controller.resolveMove(state, body, RunSpeed * std::cos(run.yaw), RunSpeed * std::sin(run.yaw),
+                false, 1.0f / 128.0f, nullptr, std::nullopt, true, nullptr, false, false, 480.0f, 0.0f, false,
+                false, false, false, false, 1280.0f);
+            REQUIRE_EQ(state.sectorId, run.sectorId);
+        }
+
+        CHECK(state.grounded);
+        CHECK_GE(state.footZ, run.footZ - 64.0f);
+    }
+}
+
+TEST_CASE("the party walks off the low edge of a sloped lip")
+{
+    using namespace OpenYAMM::Tests;
+    REQUIRE_MESSAGE(regressionMapLoaderLoaded(), regressionMapLoaderFailure());
+    GameDataLoader data = regressionMapLoader().gameDataLoader;
+    REQUIRE(data.loadMapByFileNameForHeadlessGameplay(regressionMapLoader().assetFileSystem, "d18.blv"));
+    const MapAssetInfo &loaded = *data.getSelectedMap();
+    IndoorMovementController controller(*loaded.indoorMapData, &loaded.indoorMapDeltaData, &loaded.eventRuntimeState);
+    controller.setSlopeRule(IndoorSlopeRule::Party);
+    const IndoorBodyDimensions body = {};
+    constexpr float RunSpeed = 768.0f;
+    constexpr float Yaw = 5.5978f;
+
+    // The lip ends above a lower floor, so the footprint probe takes that floor while the centre is on the lip. The
+    // body must leave: refusing every lower floor ahead held it at the lip's edge, z 840.
+    IndoorMoveState state = controller.initializeStateFromEyePosition(5969, -1088, 1004, body);
+
+    for (int step = 0; step < 64; ++step)
+    {
+        state = controller.resolveMove(state, body, RunSpeed * std::cos(Yaw), RunSpeed * std::sin(Yaw), false,
+            1.0f / 128.0f, nullptr, std::nullopt, true, nullptr, false, false, 480.0f, 0.0f, false, false, false, false,
+            false, 1280.0f);
+    }
+
+    CHECK_GT(state.x, 6100.0f);
+    CHECK_LT(state.footZ, 800.0f);
+}
+
 TEST_SUITE_END();

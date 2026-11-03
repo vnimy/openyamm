@@ -1459,6 +1459,32 @@ GameplayInteractionController::resolveWorldInteractionPointerPolicy(
     return policy;
 }
 
+bool GameplayInteractionController::stealClickPressed(
+    const GameplayInputFrame &input,
+    const WorldInteractionPointerPolicy &pointerPolicy)
+{
+    return input.leftMouseButton.pressed
+        && (pointerPolicy.leftMousePressed || pointerPolicy.useCenterGameplayPoint)
+        && (input.isScancodeHeld(SDL_SCANCODE_LCTRL) || input.isScancodeHeld(SDL_SCANCODE_RCTRL));
+}
+
+bool GameplayInteractionController::stealClickHoldsAttack(
+    bool &stealClickLatch,
+    const GameplayInputFrame &input,
+    bool stealPressed)
+{
+    if (stealPressed)
+    {
+        stealClickLatch = true;
+    }
+    else if (!input.leftMouseButton.held)
+    {
+        stealClickLatch = false;
+    }
+
+    return stealClickLatch;
+}
+
 GameplayInteractionController::WorldInteractionFrameResult
 GameplayInteractionController::updateWorldInteractionFrame(
     GameplayScreenState &screenState,
@@ -1522,6 +1548,13 @@ GameplayInteractionController::updateWorldInteractionFrame(
         buildSpellActionTargetQueries(screenState, input);
 
     const uint64_t currentTickNanoseconds = SDL_GetTicksNS();
+
+    // A steal click holds the attack back only while its button stays down, also when the release lands on a frame
+    // that returns early below (an overlay opened with the button still held).
+    if (!input.leftMouseButton.held)
+    {
+        worldInteractionInputState.stealClickLatch = false;
+    }
 
     if (worldInputBlocked)
     {
@@ -1764,9 +1797,7 @@ GameplayInteractionController::updateWorldInteractionFrame(
         if (overlayInteractionState.gameplayHudDropHeldItemRequested)
         {
             overlayInteractionState.gameplayHudDropHeldItemRequested = false;
-            const std::optional<GameplayHeldItemDropRequest> heldItemDropRequest =
-                pWorldRuntime != nullptr ? pWorldRuntime->buildHeldItemDropRequest() : std::nullopt;
-            dropHeldItemToActiveWorld(runtime, heldItemDropRequest);
+            dropHeldItemInFrontOfParty(runtime);
             runtime.clearContextActionState();
             result.heldItemHandled = true;
             return result;
@@ -1960,17 +1991,18 @@ GameplayInteractionController::updateWorldInteractionFrame(
             return currentHit;
         };
 
-    if (pointerPolicy.attackPressed
+    const bool stealPressed = stealClickPressed(input, pointerPolicy);
+    const bool worldAttackPressed =
+        pointerPolicy.attackPressed
+        && !stealClickHoldsAttack(worldInteractionInputState.stealClickLatch, input, stealPressed);
+
+    if (worldAttackPressed
         || pointerPolicy.leftMousePressed
+        || stealPressed
         || worldInteractionInputState.inspectMouseActivateLatch)
     {
         pickCurrentHit();
     }
-
-    const bool stealPressed =
-        input.leftMouseButton.pressed
-        && pointerPolicy.leftMousePressed
-        && (input.isScancodeHeld(SDL_SCANCODE_LCTRL) || input.isScancodeHeld(SDL_SCANCODE_RCTRL));
 
     if (stealPressed
         && currentHit.kind == GameplayWorldHitKind::Actor
@@ -2059,7 +2091,7 @@ GameplayInteractionController::updateWorldInteractionFrame(
             attackActionState,
             quickSpellState,
             GameplayActionController::AttackActionConfig{
-                .attackPressed = pointerPolicy.attackPressed,
+                .attackPressed = worldAttackPressed,
                 .hasReadyMember = hasReadyMember,
             });
 
@@ -2117,6 +2149,14 @@ GameplayInteractionController::updateWorldInteractionFrame(
     }
 
     return result;
+}
+
+bool GameplayInteractionController::dropHeldItemInFrontOfParty(GameplayScreenRuntime &runtime)
+{
+    const IGameplayWorldRuntime *pWorldRuntime = runtime.worldRuntime();
+    const std::optional<GameplayHeldItemDropRequest> dropRequest =
+        pWorldRuntime != nullptr ? pWorldRuntime->buildHeldItemDropRequest() : std::nullopt;
+    return dropHeldItemToActiveWorld(runtime, dropRequest);
 }
 
 bool GameplayInteractionController::isSameActivationTarget(

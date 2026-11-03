@@ -559,8 +559,8 @@ glossy props such as the iron torches, so it stays faint until indoor models get
 The billboard pass skips sprites a model draws. Water reflections draw the models too.
 
 **Picking.** Indoors and outdoors, `DecorationModelSet::raycast` tests a model's LOD1 triangles. Camera-facing
-cards are turned toward the ray origin first (`facingCardCorner`, the same turn as `modelStaticPosition`), so a
-flame picks where it is drawn. Indoors, the coarse entity box is skipped for entities drawn by a model.
+cards are turned toward the ray origin first (`facingCardCorner`, the same turn as `modelStaticPosition`, about the
+same pivot: the model origin, or a `"card"` billboard's own centre), so a flame picks where it is drawn. Indoors, the coarse entity box is skipped for entities drawn by a model.
 
 **Animated materials.** `openyamm_flipbook` (fire), `openyamm_uv_scroll` (water, foam), `openyamm_flutter` (flags),
 `openyamm_wind` (foliage) and `openyamm_pulse: [amplitude, period]` (glow; the emission scaled by

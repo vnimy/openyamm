@@ -8,11 +8,13 @@
 
 #include "game/FaceEnums.h"
 #include "game/events/EventRuntime.h"
+#include "game/indoor/IndoorMovers.h"
 #include "game/events/ISceneEventContext.h"
 #include "game/gameplay/GameplayActorAiTypes.h"
 #include "game/gameplay/GameplayBolsterRuntime.h"
 #include "game/gameplay/GameplayProjectileService.h"
 #include "game/gameplay/GameplayRuntimeInterfaces.h"
+#include "game/gameplay/MonsterDeathExplosion.h"
 #include "game/gameplay/InteractiveDecorationRules.h"
 #include "game/gameplay/SearchableLootPropRuntime.h"
 #include "game/ui/GameplayOverlayTypes.h"
@@ -301,6 +303,7 @@ public:
     }
     const MergedBolsterMonsterTable *mergedBolsterMonsterTable() const override;
     bool isIndoorMap() const override;
+    bool partyClimbingLadder() const override;
     bool allowsLloydsBeacon() const override;
     bool allowsRest() const override;
     float currentGameMinutes() const override;
@@ -647,6 +650,14 @@ public:
         uint32_t count,
         bool randomRotate
     ) override;
+    bool summonEventInventoryItem(
+        const InventoryItem &item,
+        int32_t x,
+        int32_t y,
+        int32_t z,
+        int32_t speed,
+        bool randomRotate
+    ) override;
     bool summonEventObject(
         uint32_t objectId,
         int32_t x,
@@ -665,6 +676,13 @@ public:
 
     void applyEventRuntimeState(bool syncPersistentHostilityMasks = false) override;
     void invalidateRuntimeGeometryCache();
+    // The live actors whose bodies reach into a box, and moving one of them (the rotating movers' body rules,
+    // devdocs/INDOOR_ROTATING_MOVERS_AND_LADDERS.md).
+    void collectMoverActorBodies(
+        const bx::Vec3 &minimum,
+        const bx::Vec3 &maximum,
+        std::vector<std::pair<size_t, IndoorMoverBody>> &bodies) const;
+    void displaceActorByMover(size_t actorIndex, float deltaX, float deltaY, float deltaZ);
     std::vector<uint32_t> refreshMechanismRuntimeGeometryCache(
         const std::unordered_map<uint32_t, RuntimeMechanismState> &previousMechanisms);
     Snapshot snapshot() const;
@@ -901,7 +919,8 @@ private:
     GameplayWorldPoint chestTrapSourcePoint() const;
     GameplayWorldPoint chestTrapVisualPoint(const GameplayWorldPoint &sourcePoint) const;
     void applyChestTrapState(uint32_t chestId, const ChestTrapOpenResult &trapResult);
-    void spawnChestTrapVisual(const GameplayWorldPoint &point, const ChestTrapOpenResult &trapResult);
+    // The impact of object objectId at point, with the fireball's sound: a chest trap or a monster's death blast.
+    void spawnObjectBurstVisual(const GameplayWorldPoint &point, uint16_t objectId, CombatDamageType damageType);
     bool applyActorMeleeAttackToMapActor(size_t sourceActorIndex, const ActorAttackRequest &attackRequest);
     int applyMonsterDamageEventHooks(
         size_t actorIndex,
@@ -920,6 +939,16 @@ private:
         const GameplayWorldPoint *pSource,
         bool force = false);
     void beginMapActorDyingState(size_t actorIndex, MapDeltaActor &actor);
+    // Damage from a monster's splash or blast (not the party's): shields, event hooks, death and a kill reward for
+    // sourceActorId when it is an actor.
+    void applyNonPartyAreaDamageToActor(
+        size_t actorIndex,
+        int damage,
+        CombatDamageType damageType,
+        ShieldAttackTier shieldTier,
+        const GameplayWorldPoint &sourcePoint,
+        std::optional<uint32_t> killerActorId);
+    void detonatePendingDeathExplosions();
     void spawnMonsterDeathDropsForActor(size_t actorIndex, const MapDeltaActor &actor);
     bool spawnMonsterDeathDropItem(
         const InventoryItem &item,
@@ -1053,6 +1082,11 @@ private:
     uint64_t m_lastIndoorJournalRevealSurfaceRevision = 0;
     uint64_t m_lastIndoorJournalRevealVisibilityRevision = 0;
     uint64_t m_indoorMinimapRevealRevision = 0;
+    // Per sector: some of its faces are drawn on the automap. Rebuilt only when the reveal pass maps something new;
+    // Wizard Eye shows the actors standing in these sectors.
+    std::vector<bool> m_indoorDiscoveredSectors;
+    // Deaths of exploding monsters, detonated on the next actor update (MonsterDeathExplosion.h).
+    std::vector<PendingMonsterDeathExplosion> m_pendingDeathExplosions;
     size_t m_lastIndoorJournalRevealFaceCount = 0;
     size_t m_lastIndoorJournalRevealOutlineCount = 0;
     std::vector<FireSpikeTrapState> m_fireSpikeTraps;

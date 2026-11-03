@@ -13,6 +13,7 @@
 #include "game/app/GameUpdater.h"
 #include "game/app/ProfilingControl.h"
 #include "game/app/OpenYammMain.h"
+#include "game/indoor/IndoorBakeSceneExport.h"
 #include "game/outdoor/HeadlessOutdoorDiagnostics.h"
 #include "game/scenario/ScenarioHeadlessCommand.h"
 
@@ -85,6 +86,7 @@ void printUsage(std::ostream &stream, const char *pProgram)
            << "  --headless-profile-map-load-full <map>\n"
            << "  --headless-dump-outdoor-navigation <map>\n"
            << "  --headless-export-decoration-models <map> <output-directory>\n"
+           << "  --headless-export-indoor-bake-scene <map.blv> <output.json>\n"
            << "  --headless-verify-outdoor-world-item-floor <map>\n"
            << "  --headless-verify-outdoor-save-roundtrip <map> <chest-event-id> <mechanism-event-id>\n"
            << "  --headless-verify-outdoor-mechanism-passage <map> <mechanism-id>\n"
@@ -489,6 +491,7 @@ int runGame(int argc, char **argv, OpenYAMM::Engine::LogFile &logFile)
 
     if (headlessCommand)
     {
+        config.saveSettings = false;
         setEnvironmentVariable("OPENYAMM_DISABLE_LOADING_OVERLAY", "1");
         // Monster path plans land in simulated time (ActorPathRuntime::setWorkerCount).
         setEnvironmentVariable("OPENYAMM_SYNCHRONOUS_PATH_PLANS", "1");
@@ -623,6 +626,11 @@ int runGame(int argc, char **argv, OpenYAMM::Engine::LogFile &logFile)
     {
         OpenYAMM::Game::HeadlessGameplayDiagnostics diagnostics(config);
         return diagnostics.runExportDecorationModels(argv[0], arguments[1], arguments[2]);
+    }
+
+    if (arguments.size() == 3 && arguments[0] == "--headless-export-indoor-bake-scene")
+    {
+        return OpenYAMM::Game::exportIndoorBakeScene(config, argv[0], arguments[1], arguments[2]);
     }
 
     if (arguments.size() == 2 && arguments[0] == "--headless-verify-outdoor-world-item-floor")

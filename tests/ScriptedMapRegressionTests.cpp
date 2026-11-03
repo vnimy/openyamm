@@ -5398,8 +5398,9 @@ TEST_CASE("mm7 global mmmerge supplement applies remaining original quest fixups
         sceneContext.setCurrentGameMinutes(360.0f);
         REQUIRE(eventRuntime.executeEventById(
             std::nullopt, globalEventProgram, 783, runtimeState, &party, &sceneContext));
-        CHECK_EQ(party.historyEventTimes(2).at(3), 360);
-        CHECK_EQ(party.historyEventTimes(2).at(4), 360);
+        // Its pages 1 and 2 are the forward pages, known from the start; the castle pages come later.
+        CHECK_FALSE(party.historyEventTimes(2).contains(3));
+        CHECK_FALSE(party.historyEventTimes(2).contains(4));
         CHECK_EQ(sceneContext.currentGameMinutes(), 360.0f + 14 * 24 * 60);
         CHECK_FALSE(party.hasQuestBit(528));
         CHECK_EQ(runtimeState.npcHouseOverrides[340], 215u);
@@ -5813,6 +5814,7 @@ TEST_CASE("looting every satchel takes all the gold and each item that fits, and
     world.addSatchel(first);
     world.addSatchel(second);
     const int goldBefore = world.party()->gold();
+    world.party()->clearPendingAudioRequests();
 
     const OpenYAMM::Game::GameplayUiController::LootSummaryOverlayState summary =
         OpenYAMM::Game::lootAllCorpses(world, *world.party());
@@ -5821,6 +5823,15 @@ TEST_CASE("looting every satchel takes all the gold and each item that fits, and
     CHECK_EQ(summary.satchelCount, 2u);
     CHECK_EQ(summary.goldAmount, 150);
     CHECK_EQ(world.party()->gold() - goldBefore, 150);
+    // One gold sound for the whole sweep, not one per satchel.
+    size_t goldSounds = 0;
+
+    for (const OpenYAMM::Game::Party::PendingAudioRequest &request : world.party()->pendingAudioRequests())
+    {
+        goldSounds += request.soundId == OpenYAMM::Game::SoundId::Gold ? 1 : 0;
+    }
+
+    CHECK_EQ(goldSounds, 1u);
     REQUIRE_EQ(summary.takenItems.size(), 1u);
     CHECK_EQ(summary.takenItems[0].objectDescriptionId, 1406u);
     // Where it went, for the summary to inspect (identify, repair) the item itself.
@@ -5961,10 +5972,10 @@ TEST_CASE("mm7 colony zod releases Roland and restores the open pathway")
     freshState.activeHistoryContinentId = 2;
     freshState.variables[static_cast<uint32_t>(OpenYAMM::Game::EvtVariable::Hour)] = 6;
     REQUIRE(eventRuntime.executeEventById(localEventProgram, std::nullopt, 376, freshState, &freshParty));
-    CHECK_EQ(freshParty.historyEventTimes(2).at(26), 360);
+    CHECK_EQ(freshParty.historyEventTimes(2).at(24), 360);
     freshState.variables[static_cast<uint32_t>(OpenYAMM::Game::EvtVariable::Hour)] = 7;
     REQUIRE(eventRuntime.executeEventById(localEventProgram, std::nullopt, 376, freshState, &freshParty));
-    CHECK_EQ(freshParty.historyEventTimes(2).at(26), 360);
+    CHECK_EQ(freshParty.historyEventTimes(2).at(24), 360);
     REQUIRE_EQ(freshState.grantedItems.size(), 1u);
     CHECK_EQ(freshState.grantedItems.front().objectDescriptionId, 1463u);
     CHECK(freshParty.hasQuestBit(752));

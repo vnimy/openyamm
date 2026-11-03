@@ -83,11 +83,49 @@ def outdoor_lighting_dependencies(path):
     return found
 
 
+def indoor_lighting_dependencies(path):
+    """(asset path, FNV-1a 64 content hash) of each source an installed indoor (BLV) .lighting file was baked from,
+    after validating its layout (devdocs/INDOOR_BAKED_LIGHTING.md)."""
+    data = path.read_bytes()
+    if len(data) < 64 or data[:8] != b"OYILIT1\0":
+        raise ValueError(f"Invalid indoor lighting header: {path}")
+    version, header_size = struct.unpack_from("<II", data, 8)
+    (face_count, sector_count, page_count, dependency_count, page_offset, face_offset, sector_offset,
+     dependency_offset, pixel_offset, file_size) = struct.unpack_from("<10I", data, 24)
+    if version != 1 or header_size != 64:
+        raise ValueError(f"Unsupported indoor lighting version: {path}")
+    if (file_size != len(data) or page_offset != 64 or face_offset != page_offset + page_count * 16
+            or sector_offset != face_offset + face_count * 36 or dependency_offset != sector_offset + sector_count * 12
+            or not dependency_offset <= pixel_offset <= file_size):
+        raise ValueError(f"Invalid indoor lighting sections: {path}")
+    found = []
+    cursor = dependency_offset
+    for _ in range(dependency_count):
+        if cursor + 12 > pixel_offset:
+            raise ValueError(f"Truncated indoor lighting dependency: {path}")
+        length, content_hash = struct.unpack_from("<IQ", data, cursor)
+        cursor += 12
+        if not 0 < length <= 1024 or cursor + length > pixel_offset:
+            raise ValueError(f"Invalid indoor lighting dependency: {path}")
+        found.append((data[cursor:cursor + length].decode("utf-8"), content_hash))
+        cursor += length
+    if cursor != pixel_offset:
+        raise ValueError(f"Invalid indoor lighting dependency section: {path}")
+    return found
+
+
+def lighting_dependencies(path):
+    """The recorded sources of an installed .lighting file of either kind: outdoor (ODM) or indoor (BLV)."""
+    with path.open("rb") as stream:
+        magic = stream.read(8)
+    return indoor_lighting_dependencies(path) if magic == b"OYILIT1\0" else outdoor_lighting_dependencies(path)
+
+
 def lighting_archive_dependencies(assets_root):
     """Retain only archived source files still required by the installed lighting's hash contract."""
     entries = {}
     for path in sorted((assets_root / "worlds").glob("*/maps/*.lighting")):
-        for name, _ in outdoor_lighting_dependencies(path):
+        for name, _ in lighting_dependencies(path):
             if name.startswith("_legacy/"):
                 if not name.startswith("_legacy/sprites_original/") or ".." in name or "\\" in name or "\0" in name:
                     raise ValueError(f"Invalid archived lighting dependency: {name}")
@@ -141,10 +179,13 @@ def select_surface_textures(entries, profile, android_world):
     """World surface textures (tools/cook_surface_textures.py). Every package keeps textures/ (the .act palettes; the
     original BMPs are source art in assets_source). Desktop ships the BC7 x4 tier (textures_x4/*.oytex); android
     ships its ASTC x2 tier from assets_cooked/android instead. Images that runtime code reads as images
-    (hwsplat04.png) stay in their tier folder."""
+    (hwsplat04.png) stay in their tier folder. The surface material maps of the x4 tier (tools/surface_materials.py)
+    ship on desktop only."""
     keep_tier = "textures_x4/" if profile == "desktop" else "textures_x2/"
     for name in list(entries):
         if name.startswith("textures_x") and not name.startswith(keep_tier):
+            del entries[name]
+        elif name.startswith("surface_materials_x") and profile != "desktop":
             del entries[name]
     if profile != "desktop" and android_world is not None:
         overlay = android_world / "textures_x2"

@@ -40,6 +40,8 @@ struct ApplicationConfig
     bool performanceTrace;
     bool hitchTrace;
     float hitchThresholdMilliseconds;
+    // False for headless commands: their runs must not rewrite the player's settings file (start_world).
+    bool saveSettings = true;
 
     static ApplicationConfig createDefault();
 };

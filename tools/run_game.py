@@ -23,6 +23,17 @@ def finite_number(value):
     return number
 
 
+def print_fps_lines(log_path, offset):
+    """Print FPS samples from complete log lines after offset; returns the offset after the last complete line."""
+    with log_path.open('rb') as reader:
+        reader.seek(offset)
+        chunk = reader.read()
+    end = chunk.rfind(b'\n') + 1
+    for value in re.findall(r'Average FPS \(last second\): ([0-9.]+)', chunk[:end].decode(errors='replace')):
+        print(f'FPS {value}', flush=True)
+    return offset + end
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('name', help='Short label; every invocation creates a fresh temporary directory')
@@ -44,6 +55,7 @@ def parse_args():
     parser.add_argument('--prepare-only', action='store_true', help='Prepare private settings/save without a GUI launch')
     parser.add_argument('--visible', action='store_true',
                         help='Show the window; runs start minimized otherwise, which does not give representative FPS')
+    parser.add_argument('--show-fps', action='store_true', help='Print the per-second FPS to the terminal during the run')
     args = parser.parse_args()
     if not re.fullmatch(r'[a-zA-Z0-9_-]{1,60}', args.name):
         parser.error('name must contain 1-60 letters, digits, underscores or hyphens')
@@ -220,8 +232,11 @@ def run_game(args, run, binary, environment, metadata):
             measured = time.monotonic()
             print('Run active; ' + ('close the window to finish.' if args.seconds == 0
                                    else f'automatic exit in {args.seconds:g} seconds.'), flush=True)
+            fps_offset = offset
             while process.poll() is None and (args.seconds == 0 or time.monotonic() - measured < args.seconds):
                 time.sleep(0.1)
+                if args.show_fps:
+                    fps_offset = print_fps_lines(log_path, fps_offset)
             metadata['measurement_seconds'] = time.monotonic() - measured
             with log_path.open('rb') as reader:
                 reader.seek(offset)

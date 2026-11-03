@@ -116,6 +116,7 @@ function(openyamm_compile_bgfx_shader_for_target sourcePath shaderType outputNam
             "${CMAKE_SOURCE_DIR}/game/shaders/sky_common.sh"
             "${CMAKE_SOURCE_DIR}/game/shaders/weather_wetness.sh"
             "${CMAKE_SOURCE_DIR}/game/shaders/shield_common.sh"
+            "${CMAKE_SOURCE_DIR}/game/shaders/surface_material.sh"
             "${OPENYAMM_BGFX_SOURCE_DIR}/examples/common/shaderlib.sh"
             openyamm_shaderc
         VERBATIM
@@ -502,6 +503,16 @@ function(openyamm_configure_runtime_shaders)
             "${CMAKE_SOURCE_DIR}/game/shaders/${arrayShader}.sc"
             "fragment" "${arrayShader}_array_shadow.bin" "BMODEL_TEXTURE_ARRAY=1$<SEMICOLON>SUN_SHADOWS=1")
     endforeach()
+    # Bmodel faces whose textures have surface material maps (devdocs/SURFACE_MATERIALS_PLAN.md), baked maps only.
+    openyamm_compile_bgfx_shader("${CMAKE_SOURCE_DIR}/game/shaders/fs_outdoor_bmodel_baked.sc"
+        "fragment" "fs_outdoor_bmodel_baked_materials.bin" "SURFACE_MATERIALS=1")
+    openyamm_compile_bgfx_shader("${CMAKE_SOURCE_DIR}/game/shaders/fs_outdoor_bmodel_baked.sc"
+        "fragment" "fs_outdoor_bmodel_baked_shadow_materials.bin" "SUN_SHADOWS=1$<SEMICOLON>SURFACE_MATERIALS=1")
+    openyamm_compile_bgfx_shader("${CMAKE_SOURCE_DIR}/game/shaders/fs_outdoor_bmodel_baked.sc"
+        "fragment" "fs_outdoor_bmodel_baked_array_materials.bin" "BMODEL_TEXTURE_ARRAY=1$<SEMICOLON>SURFACE_MATERIALS=1")
+    openyamm_compile_bgfx_shader("${CMAKE_SOURCE_DIR}/game/shaders/fs_outdoor_bmodel_baked.sc"
+        "fragment" "fs_outdoor_bmodel_baked_array_shadow_materials.bin"
+        "BMODEL_TEXTURE_ARRAY=1$<SEMICOLON>SUN_SHADOWS=1$<SEMICOLON>SURFACE_MATERIALS=1")
     # The outdoor terrain (OutdoorTerrainMaterials).
     openyamm_compile_bgfx_shader(
         "${CMAKE_SOURCE_DIR}/game/shaders/vs_outdoor_terrain_materials.sc" "vertex" "vs_outdoor_terrain_materials.bin")
@@ -555,6 +566,49 @@ function(openyamm_configure_runtime_shaders)
         "${CMAKE_SOURCE_DIR}/game/shaders/fs_indoor_textured_lit.sc"
         "fragment"
         "fs_indoor_textured_lit.bin")
+    openyamm_compile_bgfx_shader(
+        "${CMAKE_SOURCE_DIR}/game/shaders/fs_indoor_textured_lit.sc" "fragment" "fs_indoor_textured_lit_materials.bin"
+        "SURFACE_MATERIALS=1")
+    # Faces of a BLV with baked lighting (devdocs/INDOOR_BAKED_LIGHTING.md): the lightmap instead of the vertex bake.
+    openyamm_compile_bgfx_shader(
+        "${CMAKE_SOURCE_DIR}/game/shaders/vs_indoor_textured_baked.sc" "vertex" "vs_indoor_textured_baked.bin")
+    openyamm_compile_bgfx_shader(
+        "${CMAKE_SOURCE_DIR}/game/shaders/fs_indoor_textured_lit.sc" "fragment" "fs_indoor_textured_baked.bin"
+        "INDOOR_BAKED=1")
+    openyamm_compile_bgfx_shader(
+        "${CMAKE_SOURCE_DIR}/game/shaders/fs_indoor_textured_lit.sc" "fragment"
+        "fs_indoor_textured_baked_materials.bin" "INDOOR_BAKED=1$<SEMICOLON>SURFACE_MATERIALS=1")
+    # Translucent BLV faces (devdocs/INDOOR_TRANSLUCENT_FACES.md): tinted and alpha-blended, vertex-lit or baked.
+    openyamm_compile_bgfx_shader(
+        "${CMAKE_SOURCE_DIR}/game/shaders/fs_indoor_textured_lit.sc" "fragment" "fs_indoor_textured_translucent.bin"
+        "INDOOR_TRANSLUCENT=1")
+    openyamm_compile_bgfx_shader(
+        "${CMAKE_SOURCE_DIR}/game/shaders/fs_indoor_textured_lit.sc" "fragment"
+        "fs_indoor_textured_baked_translucent.bin" "INDOOR_BAKED=1$<SEMICOLON>INDOOR_TRANSLUCENT=1")
+    # Faces and water of a map with scene fog (devdocs/INDOOR_FOG.md): the same programs fading into its fog colour.
+    openyamm_compile_bgfx_shader(
+        "${CMAKE_SOURCE_DIR}/game/shaders/fs_indoor_textured_lit.sc" "fragment" "fs_indoor_textured_lit_fog.bin"
+        "INDOOR_FOG=1")
+    openyamm_compile_bgfx_shader(
+        "${CMAKE_SOURCE_DIR}/game/shaders/fs_indoor_textured_lit.sc" "fragment"
+        "fs_indoor_textured_lit_materials_fog.bin" "INDOOR_FOG=1$<SEMICOLON>SURFACE_MATERIALS=1")
+    openyamm_compile_bgfx_shader(
+        "${CMAKE_SOURCE_DIR}/game/shaders/fs_indoor_textured_lit.sc" "fragment" "fs_indoor_textured_baked_fog.bin"
+        "INDOOR_BAKED=1$<SEMICOLON>INDOOR_FOG=1")
+    openyamm_compile_bgfx_shader(
+        "${CMAKE_SOURCE_DIR}/game/shaders/fs_indoor_textured_lit.sc" "fragment"
+        "fs_indoor_textured_baked_materials_fog.bin" "INDOOR_BAKED=1$<SEMICOLON>INDOOR_FOG=1$<SEMICOLON>SURFACE_MATERIALS=1")
+    openyamm_compile_bgfx_shader(
+        "${CMAKE_SOURCE_DIR}/game/shaders/fs_indoor_textured_lit.sc" "fragment"
+        "fs_indoor_textured_translucent_fog.bin" "INDOOR_FOG=1$<SEMICOLON>INDOOR_TRANSLUCENT=1")
+    openyamm_compile_bgfx_shader(
+        "${CMAKE_SOURCE_DIR}/game/shaders/fs_indoor_textured_lit.sc" "fragment"
+        "fs_indoor_textured_baked_translucent_fog.bin" "INDOOR_BAKED=1$<SEMICOLON>INDOOR_FOG=1$<SEMICOLON>INDOOR_TRANSLUCENT=1")
+    openyamm_compile_bgfx_shader(
+        "${CMAKE_SOURCE_DIR}/game/shaders/fs_indoor_water.sc" "fragment" "fs_indoor_water_fog.bin" "INDOOR_FOG=1")
+    openyamm_compile_bgfx_shader(
+        "${CMAKE_SOURCE_DIR}/game/shaders/fs_indoor_water.sc" "fragment" "fs_indoor_water_ripples_fog.bin"
+        "INDOOR_FOG=1$<SEMICOLON>WATER_MOVEMENT_RIPPLES=1")
     openyamm_compile_bgfx_shader(
         "${CMAKE_SOURCE_DIR}/game/shaders/vs_particle.sc"
         "vertex"
@@ -657,11 +711,12 @@ function(openyamm_configure_runtime_shaders)
         "${CMAKE_SOURCE_DIR}/game/shaders/fs_sky_upscale.sc" "fragment" "fs_sky_upscale.bin")
 
     foreach(shader fs_ambient_occlusion_depth fs_ambient_occlusion fs_ambient_occlusion_blur
-        fs_ambient_occlusion_composite fs_bloom_downsample fs_bloom_blur)
+        fs_ambient_occlusion_composite fs_bloom_downsample fs_bloom_blur fs_reflection_history_color
+        fs_reflection_history_position)
         openyamm_compile_bgfx_shader("${CMAKE_SOURCE_DIR}/game/shaders/${shader}.sc" "fragment" "${shader}.bin")
     endforeach()
     # The passes reading the world depth, on its first sample when multisampled (no depth resolve).
-    foreach(shader fs_ambient_occlusion_depth fs_ambient_occlusion_composite)
+    foreach(shader fs_ambient_occlusion_depth fs_ambient_occlusion_composite fs_reflection_history_position)
         openyamm_compile_bgfx_shader(
             "${CMAKE_SOURCE_DIR}/game/shaders/${shader}.sc" "fragment" "${shader}_msaa.bin" "AO_MSAA_DEPTH=1")
     endforeach()
@@ -675,6 +730,9 @@ function(openyamm_configure_runtime_shaders)
         fs_ambient_occlusion_composite_msaa.bin
         fs_bloom_downsample.bin
         fs_bloom_blur.bin
+        fs_reflection_history_color.bin
+        fs_reflection_history_position.bin
+        fs_reflection_history_position_msaa.bin
         vs_cinematic_grading.bin
         fs_cinematic_grading.bin
         vs_sky.bin
@@ -727,6 +785,14 @@ function(openyamm_configure_runtime_shaders)
         vs_terrain_shadow.bin fs_terrain_shadow.bin
         fs_outdoor_bmodel_lightmap_array.bin fs_outdoor_bmodel_baked_array.bin fs_outdoor_textured_fog_array.bin
         fs_outdoor_bmodel_baked_array_shadow.bin fs_outdoor_textured_fog_array_shadow.bin
+        fs_outdoor_bmodel_baked_materials.bin fs_outdoor_bmodel_baked_shadow_materials.bin
+        fs_outdoor_bmodel_baked_array_materials.bin fs_outdoor_bmodel_baked_array_shadow_materials.bin
+        fs_indoor_textured_lit_materials.bin
+        vs_indoor_textured_baked.bin fs_indoor_textured_baked.bin fs_indoor_textured_baked_materials.bin
+        fs_indoor_textured_translucent.bin fs_indoor_textured_baked_translucent.bin
+        fs_indoor_textured_lit_fog.bin fs_indoor_textured_lit_materials_fog.bin fs_indoor_textured_baked_fog.bin
+        fs_indoor_textured_baked_materials_fog.bin fs_indoor_textured_translucent_fog.bin
+        fs_indoor_textured_baked_translucent_fog.bin fs_indoor_water_fog.bin fs_indoor_water_ripples_fog.bin
         fs_model_coverage.bin fs_model_emissive.bin
         fs_terrain_decoration_coverage.bin fs_terrain_decoration_baked_coverage.bin
         fs_terrain_decoration_shadow_coverage.bin fs_terrain_decoration_baked_shadow_coverage.bin)

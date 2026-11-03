@@ -2,6 +2,7 @@
 #include "game/data/ActorNameResolver.h"
 #include "game/events/EvtEnums.h"
 #include "game/FaceEnums.h"
+#include "game/content/WorldDecorations.h"
 #include "game/gameplay/InteractiveDecorationRules.h"
 #include "game/maps/ActorModelManifest.h"
 #include "game/maps/DecorationModelManifest.h"
@@ -12,6 +13,7 @@
 #include "game/maps/MapPresentation.h"
 #include "game/maps/OutdoorSceneYml.h"
 #include "game/maps/TerrainTileData.h"
+#include "game/indoor/IndoorBakedLighting.h"
 #include "game/indoor/IndoorGeometryUtils.h"
 #include "game/outdoor/OutdoorGeometryUtils.h"
 #include "game/outdoor/OutdoorNavigationData.h"
@@ -586,26 +588,12 @@ bool loadDecorationRows(
         return true;
     }
 
-    const std::optional<std::string> contents =
-        assetFileSystem.readTextFile(engineDataTablePath("decoration_data.txt"));
+    std::string errorMessage;
 
-    if (!contents)
+    if (!loadDecorationTableRows(assetFileSystem, rows, errorMessage))
     {
+        std::cerr << "Failed to load the decoration table: " << errorMessage << '\n';
         return false;
-    }
-
-    const std::optional<Engine::TextTable> parsedTable = Engine::TextTable::parseTabSeparated(*contents);
-
-    if (!parsedTable)
-    {
-        return false;
-    }
-
-    rows.reserve(parsedTable->getRowCount());
-
-    for (size_t rowIndex = 0; rowIndex < parsedTable->getRowCount(); ++rowIndex)
-    {
-        rows.push_back(parsedTable->getRow(rowIndex));
     }
 
     if (pSharedCache != nullptr)
@@ -1024,6 +1012,12 @@ std::optional<SpriteFrameTable> parseCommonSpriteFrameTable(const Engine::AssetF
         }
     }
 
+    if (!appendWorldDecorationSpriteFrames(assetFileSystem, spriteFrameTable, errorMessage))
+    {
+        std::cerr << "Failed to load world decoration sprite frame data: " << errorMessage << '\n';
+        return std::nullopt;
+    }
+
     // Contact frames and attack sound delays of monster attack sprites; an attack sprite without a contact frame
     // applies its attack at the animation's end, and without a delay plays its sound as the attack starts.
     const std::string attackTimingPath = "Data/rendering/sprite_attack_timing.yml";
@@ -1414,6 +1408,8 @@ struct BitmapLoadCache
     MapAssetLoadSharedCache *pSharedCache = nullptr;
     bool retainBinaryFiles = true;
     bool retainDecodedPixels = true;
+    // Face textures read their surface material maps (MapCompanionLoadOptions::surfaceMaterials).
+    bool surfaceMaterials = false;
     std::unordered_map<std::string, std::unordered_map<std::string, std::string>> directoryAssetPathsByPath;
     std::unordered_map<std::string, std::optional<std::string>> bitmapPathByKey;
     std::unordered_map<std::string, std::optional<std::vector<uint8_t>>> binaryFilesByPath;
@@ -1828,6 +1824,62 @@ OutdoorBitmapTexture decodeCookedSurfaceTexture(
     return texture;
 }
 
+// A cooked surface material map beside a surface texture, or null when the texture has none: the colour texture's size
+// halved (tools/surface_materials.py MAP_REDUCTION) with the full mip chain below it. The maps share its texture
+// coordinates, and every texture of one size its arrays.
+std::shared_ptr<const Engine::CookedTexture> decodeSurfaceMaterialMap(const Engine::AssetFileSystem &assetFileSystem,
+    const std::string &path, const Engine::CookedTexture &color)
+{
+    const std::optional<std::vector<uint8_t>> bytes = assetFileSystem.readBinaryFile(path);
+    if (!bytes)
+    {
+        return nullptr;
+    }
+    std::shared_ptr<Engine::CookedTexture> map;
+    try
+    {
+        map = std::make_shared<Engine::CookedTexture>(Engine::decodeCookedTexture(*bytes));
+    }
+    catch (const std::exception &exception)
+    {
+        throw std::runtime_error("Cannot load surface material map " + path + ": " + exception.what());
+    }
+    if (map->semantic != Engine::ImageMipSemantic::Linear || map->width * 2 != color.width
+        || map->height * 2 != color.height
+        || map->levels != Engine::cookedTextureFullChainLevels(map->width, map->height))
+    {
+        throw std::runtime_error("Surface material map " + path
+            + " does not match its texture's size or mips; run tools/cook_surface_textures.py");
+    }
+    return map;
+}
+
+// The surface material maps of a cooked surface texture (tools/surface_materials.py): <stem>_n.oytex and
+// <stem>_d.oytex in the surface_materials folder of the same scale tier beside its textures folder. Safe on any
+// thread.
+void loadSurfaceMaterialMaps(const Engine::AssetFileSystem &assetFileSystem, const std::string &texturePath,
+    OutdoorBitmapTexture &texture)
+{
+    const std::filesystem::path path(texturePath);
+    const std::string folder = path.parent_path().filename().string();
+    if (!folder.starts_with("textures") || texture.cookedTexture == nullptr)
+    {
+        return;
+    }
+    const std::string materialFolder =
+        (path.parent_path().parent_path() / ("surface_materials" + folder.substr(8))).generic_string();
+    const std::string stem = path.stem().string();
+    texture.materialNormal =
+        decodeSurfaceMaterialMap(assetFileSystem, materialFolder + "/" + stem + "_n.oytex", *texture.cookedTexture);
+    texture.materialDetail =
+        decodeSurfaceMaterialMap(assetFileSystem, materialFolder + "/" + stem + "_d.oytex", *texture.cookedTexture);
+    if ((texture.materialNormal == nullptr) != (texture.materialDetail == nullptr))
+    {
+        throw std::runtime_error("Surface texture " + texturePath
+            + " has only one of its two material maps; run tools/cook_surface_textures.py");
+    }
+}
+
 std::optional<std::vector<uint8_t>> loadBitmapPixelsBgra(
     const Engine::AssetFileSystem &assetFileSystem,
     const std::string &directoryPath,
@@ -1837,7 +1889,8 @@ std::optional<std::vector<uint8_t>> loadBitmapPixelsBgra(
     bool applyTransparencyKey,
     BitmapLoadCache &bitmapLoadCache,
     int16_t paletteId = 0,
-    const std::string &paletteWorldId = {}
+    const std::string &paletteWorldId = {},
+    Engine::AssetScaleTier *pLoadedTier = nullptr
 )
 {
     const std::string cacheKey =
@@ -1867,6 +1920,10 @@ std::optional<std::vector<uint8_t>> loadBitmapPixelsBgra(
 
             width = cachedPixelsIt->second->width;
             height = cachedPixelsIt->second->height;
+            if (pLoadedTier != nullptr)
+            {
+                *pLoadedTier = cachedPixelsIt->second->assetScaleTier;
+            }
             return cachedPixelsIt->second->pixels;
         }
     }
@@ -1947,10 +2004,15 @@ std::optional<std::vector<uint8_t>> loadBitmapPixelsBgra(
     width = image->width;
     height = image->height;
     std::vector<uint8_t> pixels = std::move(image->pixels);
+    const Engine::AssetScaleTier loadedTier = Engine::assetScaleTierFromResolvedPath(*bitmapPath);
+    if (pLoadedTier != nullptr)
+    {
+        *pLoadedTier = loadedTier;
+    }
 
     if (pPixelCache != nullptr)
     {
-        (*pPixelCache)[cacheKey] = MapAssetBitmapPixelsResult{width, height, pixels};
+        (*pPixelCache)[cacheKey] = MapAssetBitmapPixelsResult{width, height, pixels, loadedTier};
     }
 
     return pixels;
@@ -3603,8 +3665,6 @@ std::vector<OutdoorBitmapTexture> loadFaceTextures(
     const MapLoadProgressPump &progressPump)
 {
     std::vector<OutdoorBitmapTexture> textures;
-    const Engine::AssetScaleTier textureAssetScaleTier =
-        assetFileSystem.getAssetScaleTier(Engine::AssetScaleCategory::Textures);
 
     // Cooked files resolve through the load's caches here, then read and decode on the load workers.
     struct CookedSlot
@@ -3634,7 +3694,9 @@ std::vector<OutdoorBitmapTexture> loadFaceTextures(
             }
         }
     }
-    Engine::parallelFor(cookedSlots.size(), [&assetFileSystem, &textureNames, &cookedSlots](size_t index)
+    const bool surfaceMaterials = bitmapLoadCache.surfaceMaterials;
+    Engine::parallelFor(cookedSlots.size(), [&assetFileSystem, &textureNames, &cookedSlots, surfaceMaterials](
+        size_t index)
     {
         CookedSlot &slot = cookedSlots[index];
         if (!slot.path)
@@ -3647,6 +3709,10 @@ std::vector<OutdoorBitmapTexture> loadFaceTextures(
         }
         slot.texture = decodeCookedSurfaceTexture(textureNames[index], *slot.path,
             slot.pCachedBytes != nullptr ? *slot.pCachedBytes : slot.readBytes);
+        if (surfaceMaterials)
+        {
+            loadSurfaceMaterialMaps(assetFileSystem, *slot.path, *slot.texture);
+        }
     });
 
     for (size_t index = 0; index < textureNames.size(); ++index)
@@ -3669,6 +3735,7 @@ std::vector<OutdoorBitmapTexture> loadFaceTextures(
         }
         int textureWidth = 0;
         int textureHeight = 0;
+        Engine::AssetScaleTier loadedTier = Engine::AssetScaleTier::X1;
         const std::optional<std::vector<uint8_t>> pixels =
             loadBitmapPixelsBgra(
                 assetFileSystem,
@@ -3677,7 +3744,10 @@ std::vector<OutdoorBitmapTexture> loadFaceTextures(
                 textureWidth,
                 textureHeight,
                 false,
-                bitmapLoadCache
+                bitmapLoadCache,
+                0,
+                {},
+                &loadedTier
             );
 
         if (!pixels || textureWidth <= 0 || textureHeight <= 0)
@@ -3687,8 +3757,8 @@ std::vector<OutdoorBitmapTexture> loadFaceTextures(
 
         OutdoorBitmapTexture texture = {};
         texture.textureName = textureName;
-        texture.width = Engine::scalePhysicalPixelsToLogical(textureWidth, textureAssetScaleTier);
-        texture.height = Engine::scalePhysicalPixelsToLogical(textureHeight, textureAssetScaleTier);
+        texture.width = Engine::scalePhysicalPixelsToLogical(textureWidth, loadedTier);
+        texture.height = Engine::scalePhysicalPixelsToLogical(textureHeight, loadedTier);
         texture.physicalWidth = textureWidth;
         texture.physicalHeight = textureHeight;
         updateBitmapAlphaInfo(texture, *pixels);
@@ -4015,6 +4085,14 @@ std::optional<OutdoorBitmapTexture> loadCookedSurfaceTexture(
     return decodeCookedSurfaceTexture(textureName, *path, cachedIt->second);
 }
 
+bool hasSurfaceMaterialMaps(const std::vector<OutdoorBitmapTexture> &textures)
+{
+    return std::any_of(textures.begin(), textures.end(), [](const OutdoorBitmapTexture &texture)
+    {
+        return texture.materialNormal != nullptr;
+    });
+}
+
 std::optional<OutdoorBitmapTexture> loadSurfaceTexture(
     const Engine::AssetFileSystem &assetFileSystem,
     const std::string &textureName)
@@ -4041,7 +4119,9 @@ size_t texturePixelBytes(const std::vector<OutdoorBitmapTexture> &textures)
 
     for (const OutdoorBitmapTexture &texture : textures)
     {
-        byteCount += texture.pixels.size() + (texture.cookedTexture ? texture.cookedTexture->blocks.size() : 0);
+        byteCount += texture.pixels.size() + (texture.cookedTexture ? texture.cookedTexture->blocks.size() : 0)
+            + (texture.materialNormal ? texture.materialNormal->blocks.size() : 0)
+            + (texture.materialDetail ? texture.materialDetail->blocks.size() : 0);
     }
 
     return byteCount;
@@ -4053,6 +4133,8 @@ void clearTexturePixels(std::vector<OutdoorBitmapTexture> &textures)
     {
         std::vector<uint8_t>().swap(texture.pixels);
         texture.cookedTexture.reset();
+        texture.materialNormal.reset();
+        texture.materialDetail.reset();
     }
 }
 
@@ -4225,6 +4307,7 @@ std::optional<MapAssetInfo> MapAssetLoader::load(
 ) const
 {
     BitmapLoadCache bitmapLoadCache = {};
+    bitmapLoadCache.surfaceMaterials = companionLoadOptions.surfaceMaterials;
     if (pSharedCache != nullptr)
     {
         pSharedCache->beginLoad(assetFileSystem.contentGeneration());
@@ -4793,6 +4876,36 @@ std::optional<MapAssetInfo> MapAssetLoader::load(
         {
             assetInfo.indoorMapData->mapPresentation = mapPresentation;
 
+            // Opt-in baked lighting: a valid sidecar lightmaps the map; a stale or broken one is ignored (the map
+            // renders with its point lights and ambient, as every map without one does) and tools/lighting/
+            // stale_bakes.py lists it.
+            const std::optional<std::string> lightingDataFileName = buildLightingDataFileName(map.fileName);
+            const std::optional<std::string> lightingDataPath = lightingDataFileName && loadFullPresentation
+                ? findAssetPath(assetFileSystem, map.worldId, *lightingDataFileName)
+                : std::nullopt;
+            const std::optional<std::vector<uint8_t>> lightingDataBytes =
+                lightingDataPath ? assetFileSystem.readBinaryFile(*lightingDataPath) : std::nullopt;
+
+            if (lightingDataBytes)
+            {
+                std::string lightingError;
+                std::optional<IndoorBakedLighting> lighting = loadIndoorBakedLighting(
+                    *lightingDataBytes, *geometryBytes, *assetInfo.indoorMapData, lightingError);
+
+                if (lighting)
+                {
+                    assetInfo.lightingDataPath = *lightingDataPath;
+                    assetInfo.lightingDataSize = lightingDataBytes->size();
+                    assetInfo.indoorMapData->bakedLighting =
+                        std::make_shared<const IndoorBakedLighting>(std::move(*lighting));
+                    logStageComplete("indoor baked lighting loaded");
+                }
+                else
+                {
+                    std::cerr << "Ignoring the baked lighting of " << map.fileName << ": " << lightingError << '\n';
+                }
+            }
+
             if (sceneText)
             {
                 IndoorSceneYmlLoader sceneLoader = {};
@@ -5145,7 +5258,7 @@ std::optional<std::string> MapAssetLoader::buildLightingDataFileName(const std::
 {
     const std::string normalized = toLower(fileName);
 
-    if (normalized.size() < 4 || !normalized.ends_with(".odm"))
+    if (normalized.size() < 4 || (!normalized.ends_with(".odm") && !normalized.ends_with(".blv")))
     {
         return std::nullopt;
     }

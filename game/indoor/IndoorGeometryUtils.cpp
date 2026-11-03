@@ -1,4 +1,5 @@
 #include "game/indoor/IndoorGeometryUtils.h"
+#include "game/indoor/IndoorMovers.h"
 
 #include "game/FaceEnums.h"
 #include "game/events/EvtEnums.h"
@@ -914,10 +915,19 @@ bool mechanismDoorContainsFace(const MapDeltaDoor &door, size_t faceIndex)
 
 void applyIndoorMechanismDoorToVertices(
     const MapDeltaDoor &door,
+    const IndoorMoverDefinition *pMover,
     float distance,
+    int8_t rotationDirection,
     std::vector<IndoorVertex> &vertices
 )
 {
+    if (const std::optional<IndoorRigidMotion> motion =
+            indoorRotatingMoverMotion(door, pMover, distance, rotationDirection))
+    {
+        applyIndoorRotatingMoverToVertices(door, *motion, vertices);
+        return;
+    }
+
     const size_t movableVertexCount = std::min(
         door.vertexIds.size(),
         std::min(door.xOffsets.size(), std::min(door.yOffsets.size(), door.zOffsets.size()))
@@ -975,6 +985,7 @@ std::vector<IndoorVertex> buildIndoorMechanismAdjustedVertices(
             door.state == static_cast<uint16_t>(EvtMechanismState::Opening)
             || door.state == static_cast<uint16_t>(EvtMechanismState::Closing);
         float distance = runtimeMechanism.currentDistance;
+        int8_t rotationDirection = runtimeMechanism.rotationDirection;
 
         if (pEventRuntimeState != nullptr)
         {
@@ -984,13 +995,68 @@ std::vector<IndoorVertex> buildIndoorMechanismAdjustedVertices(
             if (mechanismIterator != pEventRuntimeState->mechanisms.end())
             {
                 distance = mechanismIterator->second.currentDistance;
+                rotationDirection = mechanismIterator->second.rotationDirection;
             }
         }
 
-        applyIndoorMechanismDoorToVertices(door, distance, vertices);
+        applyIndoorMechanismDoorToVertices(
+            door, findIndoorMoverDefinition(indoorMapData, door.doorId), distance, rotationDirection, vertices);
     }
 
     return vertices;
+}
+
+std::vector<std::optional<IndoorRigidMotion>> buildIndoorRotatingFaceMotions(
+    const IndoorMapData &indoorMapData,
+    const MapDeltaData *pIndoorMapDeltaData,
+    const EventRuntimeState *pEventRuntimeState)
+{
+    std::vector<std::optional<IndoorRigidMotion>> motions;
+
+    if (indoorMapData.moverDefinitions.empty() || pIndoorMapDeltaData == nullptr)
+    {
+        return motions;
+    }
+
+    motions.resize(indoorMapData.faces.size());
+
+    for (const MapDeltaDoor &door : pIndoorMapDeltaData->doors)
+    {
+        const IndoorMoverDefinition *pMover = findIndoorMoverDefinition(indoorMapData, door.doorId);
+
+        if (pMover == nullptr || !pMover->rotation)
+        {
+            continue;
+        }
+
+        RuntimeMechanismState mechanism = {};
+        mechanism.state = door.state;
+        mechanism.timeSinceTriggeredMs = static_cast<float>(door.timeSinceTriggered);
+        mechanism.currentDistance = calculateMechanismDistance(door, mechanism);
+
+        if (pEventRuntimeState != nullptr)
+        {
+            const auto iterator = pEventRuntimeState->mechanisms.find(door.doorId);
+
+            if (iterator != pEventRuntimeState->mechanisms.end())
+            {
+                mechanism = iterator->second;
+            }
+        }
+
+        const std::optional<IndoorRigidMotion> motion =
+            indoorRotatingMoverMotion(door, pMover, mechanism.currentDistance, mechanism.rotationDirection);
+
+        for (uint16_t faceId : door.faceIds)
+        {
+            if (faceId < motions.size())
+            {
+                motions[faceId] = motion;
+            }
+        }
+    }
+
+    return motions;
 }
 
 bx::Vec3 indoorVertexToWorld(const IndoorVertex &vertex)
@@ -2352,5 +2418,34 @@ std::optional<DecorationWallContact> findIndoorDecorationWall(
     constexpr float Reach = 64.0f;
     return findIndoorWallContact(indoorMapData, indoorMapData.vertices,
         {float(x), float(y), float(z) + height * 0.5f}, Reach);
+}
+
+bool indoorMoverFaceKeepsStoredTexels(
+    std::span<const IndoorProjectedFacePoint> geometryTexels,
+    std::span<const IndoorProjectedFacePoint> storedTexels
+)
+{
+    if (geometryTexels.size() != storedTexels.size() || geometryTexels.empty())
+    {
+        return false;
+    }
+
+    float minDifferenceU = std::numeric_limits<float>::max();
+    float maxDifferenceU = std::numeric_limits<float>::lowest();
+    float minDifferenceV = std::numeric_limits<float>::max();
+    float maxDifferenceV = std::numeric_limits<float>::lowest();
+
+    for (size_t index = 0; index < geometryTexels.size(); ++index)
+    {
+        const float differenceU = storedTexels[index].x - geometryTexels[index].x;
+        const float differenceV = storedTexels[index].y - geometryTexels[index].y;
+        minDifferenceU = std::min(minDifferenceU, differenceU);
+        maxDifferenceU = std::max(maxDifferenceU, differenceU);
+        minDifferenceV = std::min(minDifferenceV, differenceV);
+        maxDifferenceV = std::max(maxDifferenceV, differenceV);
+    }
+
+    return maxDifferenceU - minDifferenceU > IndoorMoverFaceTexelTolerance
+        || maxDifferenceV - minDifferenceV > IndoorMoverFaceTexelTolerance;
 }
 }

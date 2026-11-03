@@ -21,6 +21,35 @@ struct PartitionPlane
     double distance = 0;
 };
 
+// The face's plane from a Newell normal summed in double precision over its integer vertices. The shared float
+// normal of the face geometry cache rounds its products once coordinates and edges are large (a long, thin triangle
+// at x -3700, y 7900 is off its own float plane by 0.3), which would reject planar faces and skew partitions.
+PartitionPlane facePlane(const Game::IndoorMapData &geometry, uint16_t faceId)
+{
+    const std::vector<uint16_t> &vertexIds = geometry.faces[faceId].vertexIndices;
+    double normalX = 0;
+    double normalY = 0;
+    double normalZ = 0;
+    for (size_t index = 0; index < vertexIds.size(); ++index)
+    {
+        const Game::IndoorVertex &current = geometry.vertices[vertexIds[index]];
+        const Game::IndoorVertex &next = geometry.vertices[vertexIds[(index + 1) % vertexIds.size()]];
+        normalX += (double(current.y) - next.y) * (double(current.z) + next.z);
+        normalY += (double(current.z) - next.z) * (double(current.x) + next.x);
+        normalZ += (double(current.x) - next.x) * (double(current.y) + next.y);
+    }
+    const double length = std::sqrt(normalX * normalX + normalY * normalY + normalZ * normalZ);
+    if (length <= 0)
+    {
+        return {};
+    }
+    const Game::IndoorVertex &point = geometry.vertices[vertexIds.front()];
+    normalX /= length;
+    normalY /= length;
+    normalZ /= length;
+    return {normalX, normalY, normalZ, -(normalX * point.x + normalY * point.y + normalZ * point.z)};
+}
+
 // 0 is coplanar, 1 front, 2 back, 3 crossing. Distances are in native map units.
 int classifyFace(const Game::IndoorMapData &geometry, uint16_t faceId, const PartitionPlane &plane)
 {
@@ -212,10 +241,7 @@ bool generateIndoorDerivedGeometry(
             errorMessage = "indoor derived geometry requires a non-degenerate face: " + std::to_string(faceId);
             return false;
         }
-        const bx::Vec3 &normal = pFace->normal;
-        const bx::Vec3 &point = pFace->vertices.front();
-        planes.push_back({normal.x, normal.y, normal.z,
-            -(double(normal.x) * point.x + double(normal.y) * point.y + double(normal.z) * point.z)});
+        planes.push_back(facePlane(geometry, uint16_t(faceId)));
         if (classifyFace(geometry, uint16_t(faceId), planes.back()) != 0)
         {
             errorMessage = "indoor native face is non-planar after coordinate quantization: " + std::to_string(faceId);

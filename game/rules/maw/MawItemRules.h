@@ -119,6 +119,7 @@ public:
     // potion's power, the Meditation bonus, Transcendence's step.
     std::optional<std::string> itemDescription(const InventoryItem &item, const Character *pViewer) const override;
     std::optional<uint32_t> nameColor(const InventoryItem &item) const override;
+    bool glowsItemRarity() const override;
     std::vector<ItemInspectLine> inspectLines(
         const InventoryItem &item,
         const ItemDefinition &itemDefinition,

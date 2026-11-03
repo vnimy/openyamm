@@ -3229,13 +3229,14 @@ bool buildOutdoorMapStateFromScene(
     outdoorMapData.triggerVolumes.clear();
     outdoorMapData.mm9NpcGreetings = sceneData.mm9NpcGreetings;
 
+    // Typed BModel mechanisms (doors, lifts, switches) work on both profiles. Destructibles and trigger volumes
+    // remain BModel-world content.
     if (sceneData.sceneProfile == OutdoorSceneProfile::ClassicOdm
-        && (!sceneData.mechanisms.empty()
-            || !sceneData.destructibles.empty()
+        && (!sceneData.destructibles.empty()
             || !sceneData.destructibleReceivers.empty()
             || !sceneData.triggerVolumes.empty()))
     {
-        errorMessage = "outdoor mechanisms and triggers require scene_profile bmodel_world";
+        errorMessage = "outdoor destructibles and trigger volumes require scene_profile bmodel_world";
         return false;
     }
 

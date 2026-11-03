@@ -546,6 +546,12 @@ std::string serializeIndoorGeometryMetadata(const EditorIndoorGeometryMetadata &
             emitStringSequence(emitter, mechanism.sourceNodeNames);
         }
 
+        if (!mechanism.extraRoomIds.empty())
+        {
+            emitter << YAML::Key << "extra_rooms" << YAML::Value;
+            emitStringSequence(emitter, mechanism.extraRoomIds);
+        }
+
         if (!mechanism.triggerSurfaceIds.empty())
         {
             emitter << YAML::Key << "trigger_surfaces" << YAML::Value;
@@ -1073,6 +1079,7 @@ std::optional<EditorIndoorGeometryMetadata> loadIndoorGeometryMetadataFromText(
                     "trigger_surfaces",
                     mechanism.triggerSurfaceIds,
                     errorMessage)
+                || !readStringSequenceNode(mechanismNode, "extra_rooms", mechanism.extraRoomIds, errorMessage)
                 || !readOptionalSizeNode(
                     mechanismNode,
                     "runtime_door_index",

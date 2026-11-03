@@ -10,7 +10,7 @@ SetMapMetadata({
     },
     contextActions = {
     [2] = { kind = "enter_house", source = "opcode", houseId = 35, targetName = "Knight's Paradise" },
-    [4] = { kind = "enter_house", source = "opcode", houseId = 73, targetName = "Armorworks " },
+    [4] = { kind = "enter_house", source = "opcode", houseId = 73, targetName = "Armorworks" },
     [6] = { kind = "enter_house", source = "opcode", houseId = 104, targetName = "Unusual Enchantments" },
     [8] = { kind = "enter_house", source = "opcode", houseId = 477, targetName = "King's Highway" },
     [10] = { kind = "enter_house", source = "opcode", houseId = 1591, targetName = "Lone Tree Training" },
@@ -68,11 +68,11 @@ end, "Knight's Paradise")
 
 RegisterEvent(3, "Knight's Paradise", nil, "Knight's Paradise")
 
-RegisterEvent(4, "Armorworks ", function()
+RegisterEvent(4, "Armorworks", function()
     evt.EnterHouse(73) -- Armorworks
-end, "Armorworks ")
+end, "Armorworks")
 
-RegisterEvent(5, "Armorworks ", nil, "Armorworks ")
+RegisterEvent(5, "Armorworks", nil, "Armorworks")
 
 RegisterEvent(6, "Unusual Enchantments", function()
     evt.EnterHouse(104) -- Unusual Enchantments

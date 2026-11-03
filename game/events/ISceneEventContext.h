@@ -9,6 +9,7 @@ namespace OpenYAMM::Game
 {
 struct MapDeltaData;
 struct GameplayMonsterSpawnRequest;
+struct InventoryItem;
 
 // evt.FireMissile: a world missile (a monster_projectiles.yml token) from one point to another, over flightSeconds
 // (0: at its object's speed). It passes the party, whose damage the event deals itself, and bursts at the target, or on
@@ -110,6 +111,24 @@ public:
         uint32_t count,
         bool randomRotate
     ) = 0;
+
+    // evt.SummonRandomItem: one generated item (with its enchantments) on the ground, thrown like evt.SummonItem.
+    virtual bool summonEventInventoryItem(
+        const InventoryItem &item,
+        int32_t x,
+        int32_t y,
+        int32_t z,
+        int32_t speed,
+        bool randomRotate)
+    {
+        (void)item;
+        (void)x;
+        (void)y;
+        (void)z;
+        (void)speed;
+        (void)randomRotate;
+        return false;
+    }
 
     // evt.SummonGold: a gold heap of the amount on the ground (the small heap up to 200, else the large one).
     virtual bool summonEventGold(uint32_t amount, int32_t x, int32_t y, int32_t z, int32_t speed)

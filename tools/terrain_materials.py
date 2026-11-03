@@ -58,6 +58,9 @@ TILE_TABLES = {"mm6": "terrain_tile_data_3.txt", "mm7": "terrain_tile_data_2.txt
 MAP_CELLS = 128
 DIRECT_TILE_BASES = [0, 450, 630]
 LIQUIDS = ROOT / "assets_dev/engine/liquids/liquids.yml"
+# The asset root whose worlds the weights and edges commands read and write (--assets): assets_dev, or an isolated
+# review root that mirrors it.
+ASSETS = ROOT / "assets_dev"
 # game/render/WaterCoverage.h WaterCoverageSize, and the tile flags of game/maps/TerrainTileData.h.
 EDGE_MASK_SIZE = 128
 TILE_FLAG_LIQUID = 0x0001 | 0x0002
@@ -292,8 +295,23 @@ def rgb_to_lab(rgb):
                     axis=-1)
 
 
+def world_terrain_config(world):
+    return load_yaml(ASSETS / "worlds" / world / "terrain_materials/world.yml")
+
+
+def tile_table_name(world):
+    """The world's tile table: MM6-MM8 by name, another world names it in its world.yml (`tile_table`)."""
+    return TILE_TABLES[world] if world in TILE_TABLES else world_terrain_config(world)["tile_table"]
+
+
+def tile_art_directory(world):
+    """The native tile art: the world's own, or that of the world whose tile table it shares (`tile_art_world`)."""
+    art_world = world if world in TILE_TABLES else world_terrain_config(world)["tile_art_world"]
+    return ROOT / "assets_source/worlds" / art_world / "terrain_x2"
+
+
 def tile_pixels(world, name):
-    path = ROOT / "assets_source/worlds" / world / "terrain_x2" / f"{name}.png"
+    path = tile_art_directory(world) / f"{name}.png"
     with Image.open(path) as source:
         pixels = np.asarray(source.convert("RGBA"), dtype=np.float64) / 255.0
     return pixels
@@ -308,7 +326,7 @@ def matching_rule(rules, name):
 
 def map_terrain(world, map_name):
     """The map's raw tile id per cell and its 256 resolved tile descriptors (table rows; None for invalid ids)."""
-    source = ROOT / "assets_dev/worlds" / world / "maps" / map_name
+    source = ASSETS / "worlds" / world / "maps" / map_name
     native = parse_odm_file(source)["payload"]
     environment = load_yaml(source.with_suffix(".scene.yml"))["environment"]
     # The map's scene overlay may correct the terrain (Shadowspire's master tile), as it does in the engine.
@@ -317,7 +335,7 @@ def map_terrain(world, map_name):
         environment = {**environment, **(load_yaml(overlay).get("environment") or {})}
     lookups = environment["tile_set_lookup_indices"]
     master = int(environment.get("master_tile", 0))
-    table = ROOT / "assets_dev/engine/data_tables" / TILE_TABLES[world]
+    table = ASSETS / "engine/data_tables" / tile_table_name(world)
     with open(table) as handle:
         descriptors = list(csv.DictReader(handle, delimiter="\t"))
     tiles = []
@@ -403,7 +421,7 @@ def liquid_edge_tiles(world, map_name, liquids):
 def write_liquid_edge(world, name):
     """The liquid's coverage of an edge tile: 255 minus the alpha (the engine's magenta and teal keys transparent),
     box-averaged to EDGE_MASK_SIZE as game/render/WaterCoverage.h waterCoverageFromOverlay."""
-    rgba = np.asarray(Image.open(ROOT / "assets_source/worlds" / world / "terrain_x2" / f"{name}.png").convert("RGBA"))
+    rgba = np.asarray(Image.open(tile_art_directory(world) / f"{name}.png").convert("RGBA"))
     size = rgba.shape[0]
     if rgba.shape[1] != size or size % EDGE_MASK_SIZE:
         raise SystemExit(f"{world} tile {name} is {rgba.shape[1]}x{size}, not a multiple of {EDGE_MASK_SIZE} square")
@@ -414,14 +432,14 @@ def write_liquid_edge(world, name):
     count = factor * factor
     blocks = coverage.reshape(EDGE_MASK_SIZE, factor, EDGE_MASK_SIZE, factor).sum(axis=(1, 3))
     mask = ((blocks + count // 2) // count).astype(np.uint8)
-    target = ROOT / "assets_dev/worlds" / world / "terrain_materials/liquid_edges" / f"{name}.png"
+    target = ASSETS / "worlds" / world / "terrain_materials/liquid_edges" / f"{name}.png"
     target.parent.mkdir(exist_ok=True)
     Image.fromarray(mask, "L").save(target, optimize=True)
     return target
 
 
 def edges(world):
-    directory = ROOT / "assets_dev/worlds" / world / "terrain_materials"
+    directory = ASSETS / "worlds" / world / "terrain_materials"
     liquids = load_yaml(LIQUIDS)["liquids"]
     maps = sorted(path.stem + ".odm" for path in directory.glob("*.yml") if path.name != "world.yml")
     used = set()
@@ -537,7 +555,7 @@ def water_floors(world, map_name, liquids, mask, texels):
     sinks under them instead of the beach rising through them. Fountains, wells and pools above the ground keep
     the terrain under them."""
     floors = np.zeros(mask.shape, dtype=bool)
-    native = parse_odm_file(ROOT / "assets_dev/worlds" / world / "maps" / map_name)["payload"]
+    native = parse_odm_file(ASSETS / "worlds" / world / "maps" / map_name)["payload"]
     heights = np.array(native["height_map"], dtype=np.float64).reshape(MAP_CELLS, MAP_CELLS) * 32.0
     units = 512.0 / texels
     for bmodel in native["bmodels"]:
@@ -593,7 +611,7 @@ def shore_distance(mask, texels):
 
 
 def weights(world, map_name, texels, preview):
-    directory = ROOT / "assets_dev/worlds" / world / "terrain_materials"
+    directory = ASSETS / "worlds" / world / "terrain_materials"
     config = load_yaml(directory / "world.yml")
     for key, keys in (config.get("maps") or {}).get(map_name, {}).items():
         if key in ("shore", "slope"):
@@ -765,6 +783,7 @@ def weights(world, map_name, texels, preview):
 
 
 def main():
+    global ASSETS
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest="command", required=True)
     prepare_parser = commands.add_parser("prepare")
@@ -781,9 +800,13 @@ def main():
     weights_parser.add_argument("--map", required=True)
     weights_parser.add_argument("--texels-per-cell", type=int, default=16)
     weights_parser.add_argument("--preview", type=Path)
+    weights_parser.add_argument("--assets", type=Path, help="asset root to read the map from and write into")
     edges_parser = commands.add_parser("edges")
     edges_parser.add_argument("--world", required=True)
+    edges_parser.add_argument("--assets", type=Path, help="asset root to read the maps from and write into")
     args = parser.parse_args()
+    if getattr(args, "assets", None) is not None:
+        ASSETS = args.assets.resolve()
     if args.command == "prepare":
         prepare(args.ids)
     elif args.command == "cook":

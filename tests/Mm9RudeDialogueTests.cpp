@@ -338,6 +338,34 @@ TEST_CASE("MM9 RUDE ordinary rows apply all key groups while service payloads re
     CHECK_FALSE(party.hasQuestBit(92073));
 }
 
+TEST_CASE("MM9 RUDE hire and dismiss rows apply their quest key columns")
+{
+    // NPC2.rude line 13 (Forad's "Welcome Aboard.") hires with c16-c17 = 29, 371; a dismissal removes its hire key.
+    OpenYAMM::Game::Mm9RudeDialogueTable table;
+    const std::string text = rudeRowWithFields(2, 2, 1, "Welcome Aboard.", "asdf", -10, {{16, 29}, {17, 371}})
+        + rudeRowWithFields(2, 2, 2, "You're fired.", "Fine", -11, {{7, 455}, {26, 455}})
+        + rudeRowWithFields(2, 2, 3, "Passage", "Alright!", -5, {{16, 5017}});
+    REQUIRE(table.loadDialogueText("NPC2.rude", text));
+
+    OpenYAMM::Game::Party party;
+    const OpenYAMM::Game::Mm9RudeRow *pHire = findVisibleRow(table, 2, 2, party, "Welcome Aboard.");
+    REQUIRE(pHire != nullptr);
+    OpenYAMM::Game::applyMm9RudeRowActions(*pHire, party);
+    CHECK(party.hasQuestBit(90029));
+    CHECK(party.hasQuestBit(90371));
+
+    party.setQuestBit(90455, true);
+    const OpenYAMM::Game::Mm9RudeRow *pDismiss = findVisibleRow(table, 2, 2, party, "You're fired.");
+    REQUIRE(pDismiss != nullptr);
+    OpenYAMM::Game::applyMm9RudeRowActions(*pDismiss, party);
+    CHECK_FALSE(party.hasQuestBit(90455));
+
+    const OpenYAMM::Game::Mm9RudeRow *pTravel = findVisibleRow(table, 2, 2, party, "Passage");
+    REQUIRE(pTravel != nullptr);
+    OpenYAMM::Game::applyMm9RudeRowActions(*pTravel, party);
+    CHECK_FALSE(party.hasQuestBit(95017));
+}
+
 TEST_CASE("MM9 RUDE skill trainer payloads map ranks and expand composite core skills")
 {
     OpenYAMM::Game::Mm9RudeDialogueTable table;
@@ -467,6 +495,56 @@ TEST_CASE("MM9 RUDE composite trainer topics use one atomic mastery transaction"
     CHECK(party.activeMember()->findSkill("Axe")->mastery == OpenYAMM::Game::SkillMastery::Normal);
     CHECK(party.gold() == 3000);
     CHECK(uiController.statusBar().eventText == "Trainer Test is now a Expert in Blade.");
+}
+
+TEST_CASE("MM9 actor activation opens the RUDE dialogue with the actor as its source")
+{
+    OpenYAMM::Game::Mm9RudeDialogueTable table;
+    REQUIRE(table.loadDialogueText("NPC90.rude", rudeRow(90, 90, 1, "Hello", "Well met.", -1)));
+
+    OpenYAMM::Game::Character member = {};
+    member.name = "Dialogue Test";
+    member.maxHealth = 10;
+    member.health = 10;
+    OpenYAMM::Game::PartySeed seed = {};
+    seed.members.push_back(member);
+    OpenYAMM::Game::Party party;
+    party.seed(seed);
+    OpenYAMM::Game::GameplayUiController uiController;
+    OpenYAMM::Game::EventRuntimeState eventRuntimeState;
+    OpenYAMM::Game::EventDialogContent dialog = {};
+    size_t selectionIndex = 0;
+    OpenYAMM::Game::GameplayDialogController::Context context = {
+        .uiController = uiController,
+        .eventRuntimeState = eventRuntimeState,
+        .activeEventDialog = dialog,
+        .selectionIndex = selectionIndex,
+        .pParty = &party,
+        .pMm9RudeDialogueTable = &table,
+    };
+    const OpenYAMM::Game::GameplayDialogController controller;
+    int presented = 0;
+    OpenYAMM::Game::GameplayDialogController::Mm9ActorDialogueActivation activation = {};
+    activation.rudeId = 90;
+    activation.actorIndex = 7;
+    activation.sourceObjectIndex = 68;
+
+    CHECK(controller.activateMm9ActorDialogue(
+        context,
+        activation,
+        [](size_t) { FAIL("no SCR entry event ran"); },
+        [&presented]() { ++presented; }));
+    CHECK(presented == 1);
+    CHECK(dialog.isActive);
+    CHECK(dialog.presentation == OpenYAMM::Game::EventDialogPresentation::Mm9Rude);
+    CHECK(dialog.sourceActorIndex == std::optional<uint32_t>(7));
+    CHECK(eventRuntimeState.lastActivationResult == "MM9 RUDE 90 engaged");
+
+    dialog = {};
+    activation.rudeId = 91;
+    CHECK_FALSE(controller.activateMm9ActorDialogue(context, activation, [](size_t) {}, [&presented]() { ++presented; }));
+    CHECK_FALSE(dialog.isActive);
+    CHECK(eventRuntimeState.lastActivationResult == "MM9 RUDE 91 failed");
 }
 
 TEST_CASE("MM9 RUDE quest-key actions queue shared quest presentation when an overlay row appears")
@@ -1563,7 +1641,7 @@ TEST_CASE("MM9 world data loads transitions trainers and source monster gameplay
     const OpenYAMM::Game::MonsterEntry *pPresentation =
         dataLoader.getMonsterTable().findById(9097);
     REQUIRE(pPresentation != nullptr);
-    CHECK_EQ(pPresentation->internalName, "MM9 97 Troglodyte Wren");
+    CHECK_EQ(pPresentation->internalName, "MM9 Troglodyte B");
 
     const OpenYAMM::Game::MonsterProjectileEntry *pAxe =
         dataLoader.getMonsterProjectileTable().findByToken("MM9Axe");

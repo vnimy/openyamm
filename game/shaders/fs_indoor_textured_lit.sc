@@ -1,10 +1,27 @@
-$input v_texcoord0, v_worldPosition, v_texcoord1, v_screenspace, v_flowInfo, v_color0
+// INDOOR_TRANSLUCENT: a translucent face (devdocs/INDOOR_TRANSLUCENT_FACES.md), alpha-blended after the opaque
+// scene: its lit colour times the tint, at the texture's alpha times the opacity.
+// INDOOR_BAKED: a face of a map with baked lighting (devdocs/INDOOR_BAKED_LIGHTING.md) takes its static light from
+// its lightmap page instead of the vertex bake and room ambient; the dynamic lights add on top as before.
+// INDOOR_FOG: a map with scene fog (devdocs/INDOOR_FOG.md): the finished colour fades into the fog colour between two
+// distances from the eye; sky faces stay clear. Only those maps load these programs.
+// v_gradientU, v_gradientV: the face's texture gradients for surface materials (SURFACE_MATERIALS,
+// surface_material.sh); the vertex shaders always pass them, and bgfx links only matching varyings.
+// v_lightmapUv: read only by INDOOR_BAKED, but declared by every variant: shaderc keeps the $input lines of both
+// branches of an #if and takes the last, so Metal and SPIR-V lost it; vs_indoor_textured_lit passes zero.
+$input v_texcoord0, v_worldPosition, v_texcoord1, v_screenspace, v_flowInfo, v_color0, v_lightmapUv, v_gradientU, v_gradientV
 
 #include "common.sh"
 #include "world_clip.sh"
 #include "light_grid.sh"
+#if SURFACE_MATERIALS
+#include "surface_material.sh"
+#endif
 
 SAMPLER2D(s_texColor, 0);
+#if INDOOR_BAKED
+// RGBM4 lighting in the renderer's units (the texture colour's multiplier).
+SAMPLER2D(s_texLightmap, 1);
+#endif
 
 uniform vec4 u_indoorLightPositions[12];
 uniform vec4 u_indoorLightColors[12];
@@ -14,6 +31,15 @@ uniform vec4 u_indoorFaceGrid;
 uniform vec4 u_secretPulseParams;
 uniform vec4 u_indoorSkyParams;
 uniform vec4 u_indoorSkyProjectionParams;
+#if INDOOR_TRANSLUCENT
+// rgb: tint, a: opacity.
+uniform vec4 u_indoorTranslucency;
+#endif
+#if INDOOR_FOG
+// rgb: fog colour; x, y: near and far distance.
+uniform vec4 u_fogColor;
+uniform vec4 u_fogDistances;
+#endif
 
 // The dynamic lights' response to the face's angle. Faces turned toward the light keep their old (angle-free) light;
 // grazing faces lose only a little (a torch-lit frame is at most about 5 % darker than without N.L), and the
@@ -25,9 +51,21 @@ float indoorFaceFacing(vec3 normal, vec3 toLight)
     return smoothstep(0.0, 0.08, facing) * (0.86 + 0.14 * sqrt(facing));
 }
 
-vec3 getIndoorLighting(vec3 worldPosition, vec3 vertexLighting)
+// The static light: the room ambient plus the vertex bake of the static lights, or the face's lightmap. The helpers
+// take the varyings from main: Metal and HLSL see them only there.
+vec3 indoorStaticLight(vec3 vertexLighting, vec2 lightmapUv)
 {
-    vec3 lighting = u_indoorLightParams.yzw + vertexLighting * 2.0;
+#if INDOOR_BAKED
+    vec4 baked = texture2D(s_texLightmap, lightmapUv);
+    return baked.rgb * (baked.a * 4.0);
+#else
+    return u_indoorLightParams.yzw + vertexLighting * 2.0;
+#endif
+}
+
+vec3 getIndoorLighting(vec3 worldPosition, vec3 vertexLighting, vec2 lightmapUv)
+{
+    vec3 lighting = indoorStaticLight(vertexLighting, lightmapUv);
     // BLV faces are flat: the normal from the position derivatives, turned toward the camera.
     vec3 normal = cross(dFdx(worldPosition), dFdy(worldPosition));
     normal *= inversesqrt(max(dot(normal, normal), 0.000001));
@@ -84,6 +122,66 @@ vec3 getIndoorLighting(vec3 worldPosition, vec3 vertexLighting)
     return clamp(lighting, vec3(0.0, 0.0, 0.0), vec3(2.0, 2.0, 2.0));
 }
 
+#if SURFACE_MATERIALS
+// A face with material maps: the static (baked vertex) light darkened by occlusion, the dynamic lights relit for the
+// detailed normal with their highlights, the room's light reflected by smooth and metal surfaces, and glow (glass is
+// lit from outside, so it glows at any hour). Display-space result like getIndoorLighting's product.
+vec3 surfaceIndoorColor(vec3 displayColor, SurfacePoint material, vec3 faceNormal, vec3 toCamera, float distance,
+    vec3 vertexLighting, vec3 worldPosition, vec2 lightmapUv)
+{
+    vec3 view = toCamera / max(distance, 0.001);
+    vec3 albedo = pow(max(displayColor, vec3_splat(0.0)), vec3_splat(2.2));
+    vec3 f0 = mix(vec3_splat(0.04), albedo, material.metal);
+    vec3 room = indoorStaticLight(vertexLighting, lightmapUv);
+    vec3 lighting = room * material.occlusion;
+    vec3 specular = vec3_splat(0.0);
+    if (u_indoorFaceGrid.x > 0.5)
+    {
+        vec3 diffuse;
+        vec3 highlights;
+        surfacePointLights(worldPosition, material, faceNormal, view, f0, u_indoorFaceGrid.yz, true, diffuse,
+            highlights);
+        lighting += diffuse;
+        specular += highlights;
+    }
+    else
+    {
+        for (int i = 0; i < 12; ++i)
+        {
+            if (float(i) >= u_indoorLightParams.x)
+            {
+                break;
+            }
+            vec3 toLight = u_indoorLightPositions[i].xyz - worldPosition;
+            vec3 direction = toLight * inversesqrt(max(dot(toLight, toLight), 0.0001));
+            vec3 light = u_indoorLightColors[i].rgb * (u_indoorLightColors[i].w
+                * lightGridAttenuation(u_indoorLightPositions[i], worldPosition)
+                * indoorFaceFacing(faceNormal, toLight));
+            lighting += light * surfaceRelight(material.normal, faceNormal, direction);
+            specular += light * surfaceSpecular(material.normal, view, direction, material.roughness, f0);
+        }
+    }
+    vec3 linearLighting = pow(clamp(lighting, vec3_splat(0.0), vec3_splat(2.0)), vec3_splat(2.2));
+    vec3 color = albedo * (1.0 - SURFACE_METAL_DIFFUSE_LOSS * material.metal) * linearLighting
+        + specular * (SURFACE_PI * u_surfaceMaterial.z * material.occlusion);
+    float nv = max(dot(material.normal, view), 0.001);
+    float specularOcclusion = clamp(pow(nv + material.occlusion, exp2(-16.0 * material.roughness - 1.0)) - 1.0
+        + material.occlusion, 0.0, 1.0);
+    // The room as an environment: its own light, dimmer toward the floor.
+    vec3 reflected = reflect(-view, material.normal);
+    vec3 roomRadiance = pow(clamp(room, vec3_splat(0.0), vec3_splat(2.0)), vec3_splat(2.2))
+        * (reflected.z >= 0.0 ? 0.45 : 0.25);
+    // Only smooth and metal surfaces show the room: the painted colours already hold rough surfaces' faint sheen.
+    float reflection = max(material.metal, 1.0 - smoothstep(0.3, 0.7, material.roughness));
+    roomRadiance = surfaceTracedReflection(roomRadiance, worldPosition, reflected, faceNormal, material.roughness,
+        reflection);
+    color += roomRadiance * surfaceEnvironmentResponse(f0, material.roughness, nv)
+        * (specularOcclusion * reflection * u_surfaceMaterial.w);
+    color += surfaceGlowColor(albedo) * (material.glow * SURFACE_GLOW_SCALE);
+    return pow(max(color, vec3_splat(0.0)), vec3_splat(1.0 / 2.2));
+}
+#endif
+
 void main()
 {
     clipWorldPosition(v_worldPosition);
@@ -135,6 +233,16 @@ void main()
         texcoord += delta;
     }
 
+#if SURFACE_MATERIALS
+    vec3 toCamera = mul(u_invView, vec4(0.0, 0.0, 0.0, 1.0)).xyz - v_worldPosition;
+    float cameraDistance = length(toCamera);
+    vec3 faceNormal = surfaceFlatNormal(v_worldPosition, toCamera);
+    vec3 gradientU = v_gradientU;
+    vec3 gradientV = v_gradientV;
+    texcoord = surfaceParallax(texcoord, 0.0, 1.0, toCamera, cameraDistance, faceNormal, gradientU, gradientV);
+    SurfacePoint material = surfacePoint(texture2D(s_surfaceNormal, texcoord), texture2D(s_surfaceDetail, texcoord),
+        faceNormal, gradientU, gradientV, u_surfaceMaterial.y);
+#endif
     vec4 textureColor = texture2D(s_texColor, texcoord);
 
     if (textureColor.a <= 0.001)
@@ -142,7 +250,12 @@ void main()
         discard;
     }
 
-    vec3 color = textureColor.rgb * getIndoorLighting(v_worldPosition, v_color0.rgb);
+#if SURFACE_MATERIALS
+    vec3 color = surfaceIndoorColor(textureColor.rgb, material, faceNormal, toCamera, cameraDistance, v_color0.rgb,
+        v_worldPosition, v_lightmapUv);
+#else
+    vec3 color = textureColor.rgb * getIndoorLighting(v_worldPosition, v_color0.rgb, v_lightmapUv);
+#endif
 
     if (v_texcoord1.x > 0.5 && u_secretPulseParams.x > 0.5)
     {
@@ -151,5 +264,21 @@ void main()
         color = secretTint;
     }
 
+#if INDOOR_TRANSLUCENT
+    color *= u_indoorTranslucency.rgb;
+#endif
+#if INDOOR_FOG
+    if (v_flowInfo.w >= -1.5)
+    {
+        float fogDistance = length(mul(u_invView, vec4(0.0, 0.0, 0.0, 1.0)).xyz - v_worldPosition);
+        color = mix(color, u_fogColor.rgb, clamp((fogDistance - u_fogDistances.x)
+            / max(u_fogDistances.y - u_fogDistances.x, 1.0), 0.0, 1.0));
+    }
+#endif
+
+#if INDOOR_TRANSLUCENT
+    gl_FragColor = vec4(color, textureColor.a * u_indoorTranslucency.a);
+#else
     gl_FragColor = vec4(color, textureColor.a);
+#endif
 }

@@ -274,6 +274,7 @@ private:
     void cancelLoadingOverlay();
     void closeTransientGameplayUiForMapMove();
     std::filesystem::path settingsFilePath() const;
+    bool saveSettings(const GameSettings &settings, std::string &error) const;
     void loadOrCreateSettings();
     void applyCurrentSettingsToActiveRuntime();
     void applyStartupDebugSettingsToActiveRuntime();

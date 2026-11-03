@@ -23,6 +23,8 @@ public:
     static bool isHardened(bool hardenedFlag, const ItemDefinition &itemDefinition);
     static std::optional<std::string> classRestriction(const ItemDefinition &itemDefinition);
     static std::optional<std::string> raceRestriction(const ItemDefinition &itemDefinition);
+    // Who may wear a class- or race-gated item, as the popup and a refused equip say it ("Knights only").
+    static std::optional<std::string> wearRequirementText(const ItemDefinition &itemDefinition);
     static bool characterMeetsClassRestriction(const Character &character, const ItemDefinition &itemDefinition);
     static bool characterMeetsRaceRestriction(const Character &character, const ItemDefinition &itemDefinition);
     static bool canCharacterIdentifyItem(const Character &character, const ItemDefinition &itemDefinition);
