@@ -20,6 +20,9 @@ bool applyWorldItemPolicyActions(
     const ItemTable &itemTable);
 std::string formatWorldItemPickupStatusText(const InventoryItem &item, const ItemTable &itemTable);
 
+// 拾取金币堆的状态栏文案，带上随从分走的那份。
+std::string formatFoundGoldStatusText(int gold, int followerShare);
+
 // Where an item the party picked up or looted (ground, chest Take All, corpses) went: a member's bag tagged for it
 // (ItemRules::bagTag, MAW's crafting bag), else the inventory as Party::tryGrantInventoryItem gives it.
 struct StoredPickup

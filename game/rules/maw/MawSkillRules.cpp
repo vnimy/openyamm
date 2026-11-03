@@ -745,8 +745,9 @@ std::string MawSkillRules::statTooltip(
 
             if (leech.ranged != 0)
             {
-                text += "\n\n" + leechLine("Physical Leech", leech.ranged)
-                    + UiText::translate("\nLeech done with bow is halved.\n") + leechNotes;
+                text += UiText::translateTemplate(
+                    "{line}\n\nLeech done with bow is halved.\n{notes}",
+                    {{"{line}", leechLine("Physical Leech", leech.ranged)}, {"{notes}", leechNotes}});
             }
 
             return text;

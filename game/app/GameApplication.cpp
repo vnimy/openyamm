@@ -3919,7 +3919,8 @@ void GameApplication::registerDebugConsoleCommands()
                     request);
                 if (!result.succeeded())
                 {
-                    return commandResult(false, "Spell cast failed: " + result.statusText);
+                    return commandResult(false, UiText::translateTemplate(
+            "Spell cast failed: {reason}", {{"{reason}", result.statusText}}));
                 }
                 pWorld->applyPendingSpellCastWorldEffects(result);
                 return commandResult(true, "Spell cast.");
@@ -7440,7 +7441,8 @@ void GameApplication::updatePendingInputPrompt()
         }
     }
 
-    const std::string statusText = "Answer: " + m_pendingInputText + "_";
+    const std::string statusText = UiText::translateTemplate(
+        "Answer: {answer}_", {{"{answer}", m_pendingInputText}});
 
     if (statusText != m_pendingInputStatusText)
     {
@@ -10214,7 +10216,7 @@ bool GameApplication::processPendingQuickSaveInput()
         if (warning && (!m_quickLoadWarnedTicks || now - *m_quickLoadWarnedTicks > WarningWindowTicks))
         {
             m_quickLoadWarnedTicks = now;
-            m_gameSession.gameplayScreenRuntime().setStatusBarEvent(*warning + " Press again to load.");
+            m_gameSession.gameplayScreenRuntime().setStatusBarEvent(*warning + UiText::translate(" Press again to load."));
             return false;
         }
 
@@ -10228,7 +10230,7 @@ bool GameApplication::processPendingQuickSaveInput()
 
         if (!quickSave())
         {
-            m_gameSession.gameplayScreenRuntime().setStatusBarEvent("You can't save here!");
+            m_gameSession.gameplayScreenRuntime().setStatusBarEvent(UiText::translate("You can't save here!"));
             return false;
         }
 
@@ -10338,7 +10340,7 @@ bool GameApplication::quickSaveToPath(
 
         if (isQuickSavePath(path))
         {
-            m_gameSession.gameplayScreenRuntime().setStatusBarEvent("Quick save failed!");
+            m_gameSession.gameplayScreenRuntime().setStatusBarEvent(UiText::translate("Quick save failed!"));
         }
 
         return false;
@@ -12887,7 +12889,7 @@ bool GameApplication::processPendingDimensionDoorOverlay()
 
     if (!screenRuntime.ensureDimensionDoorDestinationsLoaded())
     {
-        screenRuntime.setStatusBarEvent("Dimension Door destinations unavailable");
+        screenRuntime.setStatusBarEvent(UiText::translate("Dimension Door destinations unavailable"));
         return false;
     }
 
@@ -12898,7 +12900,7 @@ bool GameApplication::processPendingDimensionDoorOverlay()
         spellIdValue(SpellId::TownPortal),
         casterMemberIndex);
     screenRuntime.resetUtilitySpellOverlayInteractionState();
-    screenRuntime.setStatusBarEvent("You feel high magic presence here.", 4.0f);
+    screenRuntime.setStatusBarEvent(UiText::translate("You feel high magic presence here."), 4.0f);
     return true;
 }
 

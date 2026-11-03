@@ -26,6 +26,11 @@ std::string translate(const std::string &text);
 std::string translateTemplate(const std::string &text,
                               std::initializer_list<std::pair<std::string, std::string>> params);
 
+// 带语境的翻译：先查 "<context>: <原文>"，取不到再退回裸键。
+// 同一个英文词在不同界面有不同官方译法时（法术 Shield=护体神盾 vs 物品类型 Shield=盾牌），
+// 靠这个把语境显式带进键里，避免一个键承担两种含义。
+std::string translateInContext(const std::string &context, const std::string &text);
+
 // 覆盖表是否包含条目（加载过文件且非空）。
 bool hasOverrides();
 

@@ -1101,7 +1101,7 @@ bool tryOpenAdventurersInnOverlay(GameplayDialogController::Context &context, ui
 
     if (context.pParty->adventurersInnMembers().empty())
     {
-        context.uiController.setStatusBarEvent("The Adventurer's Inn is empty.");
+        context.uiController.setStatusBarEvent(UiText::translate("The Adventurer's Inn is empty."));
         return true;
     }
 
@@ -1837,7 +1837,7 @@ NpcProfessionActionExecution executeNpcFollowerProfessionAction(
     }
 
     markNpcProfessionActionUsed(context.eventRuntimeState, npcId, context.pWorldRuntime, context.pParty);
-    context.eventRuntimeState.messages.push_back("Done!");
+    context.eventRuntimeState.messages.push_back(UiText::translate("Done!"));
     return execution;
 }
 
@@ -2196,14 +2196,14 @@ GameplayDialogController::Result GameplayDialogController::executeActiveDialogAc
         if (pRoute == nullptr || pRoute->canonicalId != action.argument
             || !mm9TransportRouteConditionsSatisfied(*pRoute, *context.pParty))
         {
-            context.uiController.setStatusBarEvent("That route is not available.");
+            context.uiController.setStatusBarEvent(UiText::translate("That route is not available."));
             return result;
         }
 
         const int price = mm9TransportPrice(*pRoute, *context.pParty, context);
         if (context.pParty->gold() < price)
         {
-            context.uiController.setStatusBarEvent("You don't have enough gold.");
+            context.uiController.setStatusBarEvent(UiText::translate("You don't have enough gold."));
             playSpeechReaction(context, context.pParty->activeMemberIndex(), SpeechId::NotEnoughGold, true);
             return result;
         }
@@ -2285,7 +2285,7 @@ GameplayDialogController::Result GameplayDialogController::executeActiveDialogAc
             || pRow->nodeId != context.activeEventDialog.dialogueNodeId
             || !trainerTopic)
         {
-            context.uiController.setStatusBarEvent("MM9 skill trainer topic is no longer valid.");
+            context.uiController.setStatusBarEvent(UiText::translate("MM9 skill trainer topic is no longer valid."));
             return result;
         }
         const SkillMasteryGroupTrainingRequest trainingRequest = {
@@ -2327,7 +2327,7 @@ GameplayDialogController::Result GameplayDialogController::executeActiveDialogAc
 
             EventDialogAction backAction = {};
             backAction.kind = EventDialogActionKind::Mm9RudeSkillTrainerBack;
-            backAction.label = "Back";
+            backAction.label = UiText::translate("Back");
             context.activeEventDialog.actions.push_back(std::move(backAction));
             context.selectionIndex = 0;
             return result;
@@ -2335,7 +2335,7 @@ GameplayDialogController::Result GameplayDialogController::executeActiveDialogAc
 
         if (trainerSkillIndex != 0)
         {
-            context.uiController.setStatusBarEvent("MM9 skill trainer topic is no longer valid.");
+            context.uiController.setStatusBarEvent(UiText::translate("MM9 skill trainer topic is no longer valid."));
             return result;
         }
 
@@ -2395,7 +2395,7 @@ GameplayDialogController::Result GameplayDialogController::executeActiveDialogAc
             action.id);
         if (pRow == nullptr || pRow->nodeId != context.activeEventDialog.dialogueNodeId)
         {
-            context.uiController.setStatusBarEvent("MM9 dialogue row is no longer valid.");
+            context.uiController.setStatusBarEvent(UiText::translate("MM9 dialogue row is no longer valid."));
             return result;
         }
 
@@ -2521,7 +2521,7 @@ GameplayDialogController::Result GameplayDialogController::executeActiveDialogAc
 
                 EventDialogAction backAction = {};
                 backAction.kind = EventDialogActionKind::Mm9RudeTransportBack;
-                backAction.label = "Back";
+                backAction.label = UiText::translate("Back");
                 context.activeEventDialog.actions.push_back(std::move(backAction));
                 context.selectionIndex = 0;
                 return result;
@@ -2534,7 +2534,7 @@ GameplayDialogController::Result GameplayDialogController::executeActiveDialogAc
         else if (selection.kind == Mm9RudeSelectionKind::Unresolved)
         {
             context.activeEventDialog.actions.clear();
-            context.uiController.setStatusBarEvent("MM9 dialogue action 0 is unresolved.");
+            context.uiController.setStatusBarEvent(UiText::translate("MM9 dialogue action 0 is unresolved."));
         }
 
         return result;

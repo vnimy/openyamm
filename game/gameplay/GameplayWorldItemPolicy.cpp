@@ -1,5 +1,7 @@
 #include "game/gameplay/GameplayWorldItemPolicy.h"
 
+#include "game/ui/UiText.h"
+
 #include "game/items/InventoryBags.h"
 #include "game/items/ItemGenerator.h"
 #include "game/items/ItemRuntime.h"
@@ -106,7 +108,16 @@ std::string formatWorldItemPickupStatusText(const InventoryItem &item, const Ite
 {
     const ItemDefinition *pDefinition = itemTable.get(item.objectDescriptionId);
     const std::string itemName = pDefinition != nullptr ? ItemRuntime::foundItemName(*pDefinition) : "item";
-    return "You found an item (" + itemName + ")!";
+    return UiText::translateTemplate("You found an item ({item})!", {{"{item}", itemName}});
+}
+
+std::string formatFoundGoldStatusText(int gold, int followerShare)
+{
+    return followerShare > 0
+        ? UiText::translateTemplate(
+              "You found {gold} gold (followers take {share})!",
+              {{"{gold}", std::to_string(gold)}, {"{share}", std::to_string(followerShare)}})
+        : UiText::translateTemplate("You found {gold} gold!", {{"{gold}", std::to_string(gold)}});
 }
 
 std::optional<StoredPickup> storePickedUpItem(Party &party, const InventoryItem &item, const ItemTable *pItemTable)

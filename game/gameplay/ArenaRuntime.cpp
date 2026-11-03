@@ -201,7 +201,8 @@ bool interactWithArena(IGameplayWorldRuntime &world, uint32_t npcId)
     pParty->addGold(reward);
     pParty->addEventVariableValue(uint16_t(EvtVariable::ArenaWinsPage) + difficulty - 1, 1);
     pParty->addAward(45 + difficulty);
-    pState->messages.push_back("Congratulations! You have won " + std::to_string(reward) + " gold.");
+    pState->messages.push_back(UiText::translateTemplate(
+            "Congratulations! You have won {gold} gold.", {{"{gold}", std::to_string(reward)}}));
     EventRuntimeState::PendingSound sound = {};
     sound.soundId = 14060;
     pState->pendingSounds.push_back(sound);

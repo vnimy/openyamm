@@ -928,7 +928,8 @@ HouseActionOption makeOption(
 {
     HouseActionOption option = {};
     option.id = actionId;
-    option.label = label;
+    // 各调用点传进来的都是英文原文；已 translate 过的文案再翻一次是幂等的，因此这里统一兜底。
+    option.label = UiText::translate(label);
     option.enabled = isHouseOpenNow;
     option.disabledReason = isHouseOpenNow ? std::string {} : closedReason;
     return option;
@@ -1120,13 +1121,14 @@ std::vector<std::string> buildHouseServiceInfoLines(
         && menuId == DialogueMenuId::None
         && !hasGuildMembership(houseEntry, pParty, nullptr))
     {
-        lines.push_back("You must be a member of this guild to study here.");
+        lines.push_back(UiText::translate("You must be a member of this guild to study here."));
         return lines;
     }
 
     if (serviceType == HouseServiceType::Bank && menuId == DialogueMenuId::None)
     {
-        lines.push_back("Balance: " + std::to_string(pParty != nullptr ? pParty->bankGold() : 0));
+        lines.push_back(UiText::translateTemplate("Balance: {gold}",
+            {{"{gold}", std::to_string(pParty != nullptr ? pParty->bankGold() : 0)}}));
         return lines;
     }
 
@@ -1135,7 +1137,7 @@ std::vector<std::string> buildHouseServiceInfoLines(
         if (collectLearnableSkills(houseEntry, pParty, pClassSkillTable).empty())
         {
             lines.push_back(std::string {});
-            lines.push_back("No skills are available here for this character.");
+            lines.push_back(UiText::translate("No skills are available here for this character."));
         }
     }
     else if (menuId == DialogueMenuId::TavernArcomage)
@@ -1144,7 +1146,7 @@ std::vector<std::string> buildHouseServiceInfoLines(
 
         if (partyCanPlayArcomageInHouse(houseEntry, pParty))
         {
-            lines.push_back("Choose an Arcomage option.");
+            lines.push_back(UiText::translate("Choose an Arcomage option."));
         }
         else
         {
@@ -1664,7 +1666,7 @@ std::vector<HouseActionOption> buildHouseActionOptions(
         {
             HouseActionOption noRoute = {};
             noRoute.id = HouseActionId::TransportRoute;
-            noRoute.label = "Sorry, come back another day";
+            noRoute.label = UiText::translate("Sorry, come back another day");
             noRoute.enabled = false;
             noRoute.disabledReason = "Sorry, come back another day";
             options.push_back(std::move(noRoute));
@@ -1815,7 +1817,7 @@ HouseActionResult performHouseAction(
         {
             if (!houseEntry.templeCanHeal)
             {
-                result.messages.push_back("Healing is not offered here.");
+                result.messages.push_back(UiText::translate("Healing is not offered here."));
                 return result;
             }
 
@@ -1823,7 +1825,7 @@ HouseActionResult performHouseAction(
 
             if (pMember == nullptr)
             {
-                result.messages.push_back("No character is selected.");
+                result.messages.push_back(UiText::translate("No character is selected."));
                 return result;
             }
 
@@ -1871,7 +1873,7 @@ HouseActionResult performHouseAction(
         {
             if (!houseEntry.templeCanDonate)
             {
-                result.messages.push_back("Donations are not accepted here.");
+                result.messages.push_back(UiText::translate("Donations are not accepted here."));
                 return result;
             }
 
@@ -1916,7 +1918,7 @@ HouseActionResult performHouseAction(
                 }
             }
 
-            result.messages.push_back("Thank You");
+            result.messages.push_back(UiText::translate("Thank You"));
             result.succeeded = true;
             return result;
         }
@@ -1950,7 +1952,7 @@ HouseActionResult performHouseAction(
 
             if (party.food() >= foodTarget)
             {
-                result.messages.push_back("Your packs are already full enough.");
+                result.messages.push_back(UiText::translate("Your packs are already full enough."));
                 result.speechId = SpeechId::TavernPacksFull;
                 return result;
             }
@@ -1992,7 +1994,7 @@ HouseActionResult performHouseAction(
             }
 
             party.addGold(-DrinkPrice);
-            result.messages.push_back("Refreshing!");
+            result.messages.push_back(UiText::translate("Refreshing!"));
             result.succeeded = true;
             result.speechId = SpeechId::TavernDrink;
 
@@ -2020,7 +2022,7 @@ HouseActionResult performHouseAction(
             }
 
             party.addGold(-TipPrice);
-            result.messages.push_back("Thank You");
+            result.messages.push_back(UiText::translate("Thank You"));
             result.succeeded = true;
             result.speechId = SpeechId::TavernTip;
             result.additionalSpeechIds.push_back(SpeechId::ThankYou);
@@ -2075,7 +2077,7 @@ HouseActionResult performHouseAction(
 
             if (fine <= 0)
             {
-                result.messages.push_back("You do not owe a fine.");
+                result.messages.push_back(UiText::translate("You do not owe a fine."));
                 return result;
             }
 
@@ -2090,7 +2092,7 @@ HouseActionResult performHouseAction(
 
             party.addGold(-fine);
             party.clearFineGold();
-            result.messages.push_back("Your fine has been paid.");
+            result.messages.push_back(UiText::translate("Your fine has been paid."));
             result.succeeded = true;
             return result;
         }
@@ -2099,7 +2101,7 @@ HouseActionResult performHouseAction(
         {
             if (pWorldRuntime == nullptr)
             {
-                result.messages.push_back("The bounty office is unavailable right now.");
+                result.messages.push_back(UiText::translate("The bounty office is unavailable right now."));
                 return result;
             }
 
@@ -2114,7 +2116,7 @@ HouseActionResult performHouseAction(
         {
             if (party.fineGold() <= 0)
             {
-                result.messages.push_back("You do not owe a fine.");
+                result.messages.push_back(UiText::translate("You do not owe a fine."));
                 return result;
             }
 
@@ -2129,7 +2131,7 @@ HouseActionResult performHouseAction(
                 party.advanceTimedStates(PrisonSentenceMinutes * 60.0f);
             }
 
-            result.messages.push_back("You have served one year in prison.");
+            result.messages.push_back(UiText::translate("You have served one year in prison."));
             result.succeeded = true;
             result.speechId = SpeechId::InPrison;
             return result;
@@ -2141,7 +2143,7 @@ HouseActionResult performHouseAction(
 
             if (pMember == nullptr)
             {
-                result.messages.push_back("No character is selected for training.");
+                result.messages.push_back(UiText::translate("No character is selected for training."));
                 return result;
             }
 
@@ -2187,7 +2189,7 @@ HouseActionResult performHouseAction(
                     newLevel,
                     skillPointsEarned))
             {
-                result.messages.push_back("Training is not available right now.");
+                result.messages.push_back(UiText::translate("Training is not available right now."));
                 result.soundType = HouseSoundType::TrainingCantTrain;
                 return result;
             }
@@ -2233,7 +2235,7 @@ HouseActionResult performHouseAction(
         {
             if (action.argument.empty() || pClassSkillTable == nullptr)
             {
-                result.messages.push_back("That lesson is not available.");
+                result.messages.push_back(UiText::translate("That lesson is not available."));
                 return result;
             }
 
@@ -2241,7 +2243,7 @@ HouseActionResult performHouseAction(
 
             if (pMember == nullptr)
             {
-                result.messages.push_back("No character is selected.");
+                result.messages.push_back(UiText::translate("No character is selected."));
                 return result;
             }
 
@@ -2260,7 +2262,7 @@ HouseActionResult performHouseAction(
 
             if (party.gold() < price)
             {
-                result.messages.push_back("You don't have enough gold.");
+                result.messages.push_back(UiText::translate("You don't have enough gold."));
                 result.soundType = HouseSoundType::GeneralNotEnoughGold;
                 result.speechId = SpeechId::NotEnoughGold;
                 return result;
@@ -2268,7 +2270,7 @@ HouseActionResult performHouseAction(
 
             if (!party.learnActiveMemberSkill(action.argument))
             {
-                result.messages.push_back("That lesson is not available.");
+                result.messages.push_back(UiText::translate("That lesson is not available."));
                 return result;
             }
 
@@ -2287,7 +2289,7 @@ HouseActionResult performHouseAction(
         case HouseActionId::ShopRepair:
         case HouseActionId::GuildBuySpellbooks:
         {
-            result.messages.push_back("This service is not implemented yet.");
+            result.messages.push_back(UiText::translate("This service is not implemented yet."));
             return result;
         }
 
@@ -2297,13 +2299,13 @@ HouseActionResult performHouseAction(
 
             if (pRoute == nullptr)
             {
-                result.messages.push_back("That route is not available.");
+                result.messages.push_back(UiText::translate("That route is not available."));
                 return result;
             }
 
             if (pWorldRuntime == nullptr)
             {
-                result.messages.push_back("Travel is unavailable right now.");
+                result.messages.push_back(UiText::translate("Travel is unavailable right now."));
                 return result;
             }
 
@@ -2311,7 +2313,7 @@ HouseActionResult performHouseAction(
 
             if (pEventRuntimeState == nullptr)
             {
-                result.messages.push_back("Travel is unavailable right now.");
+                result.messages.push_back(UiText::translate("Travel is unavailable right now."));
                 return result;
             }
 
@@ -2320,13 +2322,13 @@ HouseActionResult performHouseAction(
 
             if (!routeQBitSatisfied(route, pWorldRuntime))
             {
-                result.messages.push_back("That route is not available.");
+                result.messages.push_back(UiText::translate("That route is not available."));
                 return result;
             }
 
             if (!routeAvailableToday(route, pWorldRuntime->gameMinutes()))
             {
-                result.messages.push_back("Sorry, come back another day");
+                result.messages.push_back(UiText::translate("Sorry, come back another day"));
                 return result;
             }
 
@@ -2338,7 +2340,7 @@ HouseActionResult performHouseAction(
 
             if (party.gold() < price)
             {
-                result.messages.push_back("You don't have enough gold.");
+                result.messages.push_back(UiText::translate("You don't have enough gold."));
                 result.soundType = HouseSoundType::TransportNotEnoughGold;
                 result.speechId = SpeechId::NotEnoughGold;
                 return result;
@@ -2430,7 +2432,7 @@ HouseActionResult performHouseAction(
 
         case HouseActionId::TavernArcomagePlay:
         {
-            result.messages.push_back("Arcomage play is not implemented yet.");
+            result.messages.push_back(UiText::translate("Arcomage play is not implemented yet."));
             return result;
         }
 
@@ -2449,7 +2451,7 @@ HouseActionResult performHouseAction(
 
             if (depositedGold <= 0)
             {
-                result.messages.push_back("You are not carrying any gold.");
+                result.messages.push_back(UiText::translate("You are not carrying any gold."));
                 return result;
             }
 
@@ -2465,7 +2467,7 @@ HouseActionResult performHouseAction(
 
             if (withdrawnGold <= 0)
             {
-                result.messages.push_back("You do not have any gold in the bank.");
+                result.messages.push_back(UiText::translate("You do not have any gold in the bank."));
                 return result;
             }
 

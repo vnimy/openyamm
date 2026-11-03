@@ -55,7 +55,7 @@ std::vector<CompareLine> itemLines(const GameplayScreenRuntime &context, const I
     // Like the inspect popup, an unidentified item tells nothing beyond its generic name.
     if (!item.identified && ItemRuntime::requiresIdentification(*pDefinition))
     {
-        lines.push_back({"Not identified", WarningTextColor});
+        lines.push_back({UiText::translate("Not identified"), WarningTextColor});
         return lines;
     }
 
@@ -64,12 +64,15 @@ std::vector<CompareLine> itemLines(const GameplayScreenRuntime &context, const I
     {
         if (stats->maximumDamage > 0)
         {
-            lines.push_back({"Damage " + std::to_string(stats->minimumDamage) + "-"
-                + std::to_string(stats->maximumDamage)});
+            lines.push_back({UiText::translateTemplate(
+                "Damage {min}-{max}",
+                {{"{min}", std::to_string(stats->minimumDamage)},
+                 {"{max}", std::to_string(stats->maximumDamage)}})});
         }
         else if (stats->armorClass > 0)
         {
-            lines.push_back({"Armour " + std::to_string(stats->armorClass)});
+            lines.push_back({UiText::translateTemplate(
+                "Armour {armor}", {{"{armor}", std::to_string(stats->armorClass)}})});
         }
     }
 
@@ -86,16 +89,19 @@ std::vector<CompareLine> itemLines(const GameplayScreenRuntime &context, const I
     if (pPotion != nullptr && pPotion->charges > 1)
     {
         const int uses = item.currentCharges > 0 ? int(item.currentCharges) : pPotion->charges;
-        lines.push_back({"Uses " + std::to_string(uses)});
+        lines.push_back({UiText::translateTemplate("Uses {uses}", {{"{uses}", std::to_string(uses)}})});
     }
 
     if (item.rulesetFields.qualityPercent > 0)
     {
-        lines.push_back({"Quality +" + std::to_string(item.rulesetFields.qualityPercent) + " %"});
+        lines.push_back({UiText::translateTemplate(
+            "Quality +{percent} %", {{"{percent}", std::to_string(item.rulesetFields.qualityPercent)}})});
     }
 
-    lines.push_back({"Value " + std::to_string(itemRules.itemValue(item, *pDefinition,
-        context.standardItemEnchantTable(), context.specialItemEnchantTable(), 1))});
+    lines.push_back({UiText::translateTemplate(
+        "Value {value}",
+        {{"{value}", std::to_string(itemRules.itemValue(item, *pDefinition,
+              context.standardItemEnchantTable(), context.specialItemEnchantTable(), 1))}})});
     return lines;
 }
 
@@ -159,7 +165,7 @@ void GameplayCraftingBenchRenderer::render(GameplayScreenRuntime &context, const
     const GameplayUiController::CraftingBenchState &state = context.characterScreenReadOnly().alchemyBench.crafting;
     const ItemRules &itemRules = gameRulesFor(context.partyReadOnly()).items;
 
-    painter.label("CraftingBenchItemHeader", "Equipment");
+    painter.label("CraftingBenchItemHeader", UiText::translate("Equipment"));
     painter.label("CraftingBenchItemCount", UiText::translateTemplate("{count} items",
         {{"{count}", std::to_string(model->targets.size())}}));
     painter.chip("CraftingBenchItemFilterAll", "All", state.targetFilter == TargetFilter::All);
@@ -481,7 +487,7 @@ void GameplayCraftingBenchRenderer::render(GameplayScreenRuntime &context, const
         state.target.has_value() || state.material.has_value());
     painter.button("CraftingBenchCloseButton", "Close", true);
 
-    painter.label("CraftingBenchMaterialHeader", "Materials");
+    painter.label("CraftingBenchMaterialHeader", UiText::translate("Materials"));
     // With a gem chosen, the hint says what Merge does with it.
     const CraftingRules &craftingRules = GameplayCraftingBenchView::rules(context);
     const int mergeFromTier = pMaterial != nullptr ? craftingRules.gemTier(pMaterial->key.itemId) : 0;

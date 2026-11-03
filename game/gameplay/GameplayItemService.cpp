@@ -382,7 +382,7 @@ bool tryUseConnectorStone(GameplayScreenRuntime &runtime, GameplayUiController::
     characterScreen.dollJewelryOverlayOpen = false;
     characterScreen.adventurersInnRosterOverlayOpen = false;
     runtime.closeInventoryNestedOverlay();
-    runtime.setStatusBarEvent("The connector stone calls Verdant.");
+    runtime.setStatusBarEvent(UiText::translate("The connector stone calls Verdant."));
     return true;
 }
 
@@ -642,7 +642,7 @@ bool GameplayItemService::tryUseHeldItemOnPartyMember(
 
             if (pSpellTable == nullptr)
             {
-                runtime.setStatusBarEvent("Spell data missing");
+                runtime.setStatusBarEvent(UiText::translate("Spell data missing"));
                 return true;
             }
 
@@ -650,7 +650,7 @@ bool GameplayItemService::tryUseHeldItemOnPartyMember(
 
             if (pSpellEntry == nullptr)
             {
-                runtime.setStatusBarEvent("Unknown scroll spell");
+                runtime.setStatusBarEvent(UiText::translate("Unknown scroll spell"));
                 return true;
             }
 
@@ -834,14 +834,14 @@ bool GameplayItemService::useQuickItemSlot(GameplayScreenRuntime &runtime, size_
 
     if (pDefinition == nullptr)
     {
-        runtime.setStatusBarEvent("Empty slot");
+        runtime.setStatusBarEvent(UiText::translate("Empty slot"));
         return false;
     }
 
     // The slot hands its item over as a held item; one the player holds already would be lost.
     if (heldItem.active)
     {
-        runtime.setStatusBarEvent("Put down the held item first");
+        runtime.setStatusBarEvent(UiText::translate("Put down the held item first"));
         return false;
     }
 
@@ -859,7 +859,7 @@ bool GameplayItemService::useQuickItemSlot(GameplayScreenRuntime &runtime, size_
         || !InventoryBags::takeFromBag(*pParty, carrierIndex, location->bag, bagCount, location->gridX,
             location->gridY, item))
     {
-        runtime.setStatusBarEvent("No " + pDefinition->name + " left");
+        runtime.setStatusBarEvent("No " + pDefinition->name + UiText::translate(" left"));
         return false;
     }
 
@@ -1023,7 +1023,10 @@ void GameplayItemService::learnRecipeScroll(
     if (learned)
     {
         const ItemDefinition *pPotion = tables.itemTable.get(*potionItemId);
-        runtime.setStatusBarEvent("Learned recipe: " + (pPotion != nullptr ? pPotion->name : std::string("potion")));
+        runtime.setStatusBarEvent(UiText::translateTemplate(
+            "Learned recipe: {recipe}",
+            {{"{recipe}", pPotion != nullptr ? UiText::translate(pPotion->name)
+                                            : UiText::translate("potion")}}));
     }
 }
 
@@ -1145,7 +1148,7 @@ bool GameplayItemService::openWorkbenchForHeldMaterial(GameplayScreenRuntime &ru
     if (!pParty->tryAutoPlaceItemInMemberInventory(target.memberIndex, heldItem.item)
         && !pParty->tryGrantInventoryItem(heldItem.item))
     {
-        runtime.setStatusBarEvent("No room to put the material down");
+        runtime.setStatusBarEvent(UiText::translate("No room to put the material down"));
         return true;
     }
 
@@ -1183,7 +1186,7 @@ bool GameplayItemService::applyCraft(GameplayScreenRuntime &runtime, bool all)
 
     if (!done)
     {
-        runtime.setStatusBarEvent(applied.result.reason.empty() ? "Nothing happens." : applied.result.reason);
+        runtime.setStatusBarEvent(applied.result.reason.empty() ? UiText::translate("Nothing happens.") : applied.result.reason);
 
         if (runtime.audioSystem() != nullptr)
         {
@@ -1257,7 +1260,7 @@ bool GameplayItemService::combineGems(GameplayScreenRuntime &runtime, bool all)
 
     if (!CraftingRuntime::combine(*pParty, plan, rules, m_session.data().itemTable()))
     {
-        runtime.setStatusBarEvent("Not enough gems to combine");
+        runtime.setStatusBarEvent(UiText::translate("Not enough gems to combine"));
         return false;
     }
 
@@ -1383,7 +1386,7 @@ bool GameplayItemService::mixAlchemyBench(GameplayScreenRuntime &runtime, bool m
 
     if (!lastResult.handled)
     {
-        runtime.setStatusBarEvent("Nothing happens.");
+        runtime.setStatusBarEvent(UiText::translate("Nothing happens."));
 
         if (runtime.audioSystem() != nullptr)
         {
@@ -1399,20 +1402,24 @@ bool GameplayItemService::mixAlchemyBench(GameplayScreenRuntime &runtime, bool m
 
     if (bottleOverflow)
     {
-        lastResult.statusText = "No room for the empty bottle.";
+        lastResult.statusText = UiText::translate("No room for the empty bottle.");
     }
     else if (discovery)
     {
-        lastResult.statusText = "Discovered: " + brewedName + "!";
+        lastResult.statusText = UiText::translateTemplate(
+            "Discovered: {item}!", {{"{item}", brewedName}});
     }
     else if (mixedCount > 1)
     {
-        lastResult.statusText = "Brewed " + std::to_string(mixedCount) + " x " + brewedName;
+        lastResult.statusText = UiText::translateTemplate(
+            "Brewed {count} x {item}",
+            {{"{count}", std::to_string(mixedCount)}, {"{item}", brewedName}});
     }
     else if (lastResult.success)
     {
-        lastResult.statusText = "Brewed " + brewedName + " (power " + std::to_string(brewedItem.standardEnchantPower)
-            + ")";
+        lastResult.statusText = UiText::translateTemplate(
+            "Brewed {item} (power {power})",
+            {{"{item}", brewedName}, {"{power}", std::to_string(brewedItem.standardEnchantPower)}});
     }
 
     // The slots keep the mixed pair, faded once the party runs out, and the result slot shows what was brewed.
@@ -1496,20 +1503,27 @@ bool GameplayItemService::brewAlchemyChain(GameplayScreenRuntime &runtime, bool 
         heldItem.item = *outcome.lastMix.overflowItem;
         pParty->setHeldItemForQueries(heldItem.item);
         bench.active = false;
-        result.statusText = "No room for the empty bottle.";
+        result.statusText = UiText::translate("No room for the empty bottle.");
     }
     else if (outcome.brewedCount == 0)
     {
-        result.statusText = "Brewing stopped after " + steps + ".";
+        result.statusText = UiText::translateTemplate("Brewing stopped after {steps}.", {{"{steps}", steps}});
     }
     else if (outcome.brewedCount > 1)
     {
-        result.statusText = "Brewed " + std::to_string(outcome.brewedCount) + " x " + brewedName + " (" + steps + ")";
+        result.statusText = UiText::translateTemplate(
+            "Brewed {count} x {item} ({steps})",
+            {{"{count}", std::to_string(outcome.brewedCount)},
+             {"{item}", brewedName},
+             {"{steps}", steps}});
     }
     else
     {
-        result.statusText = "Brewed " + brewedName + " (power "
-            + std::to_string(outcome.lastBrewed.standardEnchantPower) + ", " + steps + ")";
+        result.statusText = UiText::translateTemplate(
+            "Brewed {item} (power {power}, {steps})",
+            {{"{item}", brewedName},
+             {"{power}", std::to_string(outcome.lastBrewed.standardEnchantPower)},
+             {"{steps}", steps}});
     }
 
     bench.clearBrewResult();

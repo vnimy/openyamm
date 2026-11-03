@@ -386,7 +386,7 @@ std::string displaySkillName(const std::string &skillName)
 
     if (rulesetIt != RulesetDisplaySkillNames.end())
     {
-        return rulesetIt->second;
+        return UiText::translate(rulesetIt->second);
     }
     const std::unordered_map<std::string, std::string>::const_iterator displayIt =
         DisplaySkillNames.find(canonicalName);

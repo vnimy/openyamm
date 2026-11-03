@@ -221,7 +221,7 @@ void appendNpcBtbAction(
     action.id = topicId;
     action.secondaryId = accepts ? successTextId : failTextId;
     action.argument = accepts ? "accepted" : "rejected";
-    action.label = topic && !topic->topic.empty() ? topic->topic : "Talk";
+    action.label = topic && !topic->topic.empty() ? topic->topic : UiText::translate("Talk");
     if (topicId == NpcBribeTopicId && cost != 0)
     {
         action.label = UiText::translateTemplate(
@@ -1191,14 +1191,13 @@ EventDialogContent buildEventDialogContent(
         if (pTransition != nullptr && pTransition->has_value() && (*pTransition)->travelDays > 0)
         {
             const int travelDays = hiredNpcWalkingTravelDays((*pTransition)->travelDays, eventRuntimeState);
-            dialog.lines.push_back(
-                "It will take "
-                + std::to_string(travelDays)
-                + " day"
-                + (travelDays == 1 ? "" : "s")
-                + " to travel to "
-                + dialog.title
-                + ".");
+            // 天数单独成句，中文才好写「5 天」而不是「5 days」。
+            const std::string travelDaysText = UiText::translateTemplate(
+                travelDays == 1 ? "{count} day" : "{count} days",
+                {{"{count}", std::to_string(travelDays)}});
+            dialog.lines.push_back(UiText::translateTemplate(
+                "It will take {days} to travel to {destination}.",
+                {{"{days}", travelDaysText}, {"{destination}", UiText::translate(dialog.title)}}));
         }
 
         if (pTransitionText != nullptr && !pTransitionText->description.empty())
@@ -1207,19 +1206,22 @@ EventDialogContent buildEventDialogContent(
         }
         else if (leavingCurrentDungeon)
         {
-            dialog.lines.push_back("Do you wish to leave " + dialog.title + "?");
+            dialog.lines.push_back(UiText::translateTemplate(
+                "Do you wish to leave {place}?", {{"{place}", UiText::translate(dialog.title)}}));
         }
         else if (context.transitionMapMove.has_value() && !context.boundaryTravel)
         {
-            dialog.lines.push_back("Do you wish to enter " + dialog.title + "?");
+            dialog.lines.push_back(UiText::translateTemplate(
+                "Do you wish to enter {place}?", {{"{place}", UiText::translate(dialog.title)}}));
         }
         else if (pCurrentMap != nullptr && !pCurrentMap->name.empty())
         {
-            dialog.lines.push_back("Do you wish to leave " + pCurrentMap->name + "?");
+            dialog.lines.push_back(UiText::translateTemplate(
+                "Do you wish to leave {place}?", {{"{place}", UiText::translate(pCurrentMap->name)}}));
         }
         else
         {
-            dialog.lines.push_back("Do you wish to leave this area?");
+            dialog.lines.push_back(UiText::translate("Do you wish to leave this area?"));
         }
 
         EventDialogAction confirmAction = {};
@@ -1236,13 +1238,13 @@ EventDialogContent buildEventDialogContent(
             dialog.lines.push_back(*resetOffer);
             EventDialogAction resetAction = {};
             resetAction.kind = EventDialogActionKind::MapTransitionReset;
-            resetAction.label = "Reset";
+            resetAction.label = UiText::translate("Reset");
             dialog.actions.push_back(std::move(resetAction));
         }
 
         EventDialogAction cancelAction = {};
         cancelAction.kind = EventDialogActionKind::MapTransitionCancel;
-        cancelAction.label = "Close";
+        cancelAction.label = UiText::translate("Close");
         dialog.actions.push_back(std::move(cancelAction));
     }
     else if (context.kind == DialogueContextKind::HouseService)
@@ -1356,7 +1358,7 @@ EventDialogContent buildEventDialogContent(
                 EventDialogAction action = {};
                 action.kind = EventDialogActionKind::HouseService;
                 action.id = static_cast<uint32_t>(HouseActionId::ThroneServeSentence);
-                action.label = "Serve Sentence";
+                action.label = UiText::translate("Serve Sentence");
                 dialog.actions.push_back(std::move(action));
             }
 
@@ -1602,7 +1604,7 @@ EventDialogContent buildEventDialogContent(
                     EventDialogAction joinAction = {};
                     joinAction.kind = EventDialogActionKind::GeneratedMercenaryJoinOffer;
                     joinAction.id = dialog.sourceId;
-                    joinAction.label = "Join";
+                    joinAction.label = UiText::translate("Join");
                     dialog.actions.push_back(std::move(joinAction));
                 }
 
@@ -1728,7 +1730,7 @@ EventDialogContent buildEventDialogContent(
                         action.id = pNpc->professionId;
                         const std::optional<FollowerHireRefusal> hireRefusal =
                             gameRulesFor(pParty).classes.followerHireRefusal(context.hostHouseId);
-                        action.label = hireRefusal ? hireRefusal->topic : "Join";
+                        action.label = hireRefusal ? hireRefusal->topic : UiText::translate("Join");
                         action.enabled = npcRuntimeState.hiredNpcFollowers.size() < MaxNpcFollowerCount;
                         action.disabledReason = action.enabled ? std::string() : "You already have enough followers.";
                         dialog.actions.push_back(std::move(action));
@@ -1739,7 +1741,7 @@ EventDialogContent buildEventDialogContent(
                             infoAction.kind = EventDialogActionKind::NpcProfessionDescription;
                             infoAction.id = pNpc->professionId;
                             infoAction.secondaryId = pProfession->descriptionTextId;
-                            infoAction.label = "More Info";
+                            infoAction.label = UiText::translate("More Info");
                             dialog.actions.push_back(std::move(infoAction));
                         }
                     }
@@ -1774,7 +1776,7 @@ EventDialogContent buildEventDialogContent(
                             action.kind = EventDialogActionKind::NpcProfessionDescription;
                             action.id = pNpc->professionId;
                             action.secondaryId = pProfession->descriptionTextId;
-                            action.label = "More Info";
+                            action.label = UiText::translate("More Info");
                             dialog.actions.push_back(std::move(action));
                         }
 
@@ -1783,7 +1785,7 @@ EventDialogContent buildEventDialogContent(
                             EventDialogAction action = {};
                             action.kind = EventDialogActionKind::NpcDismiss;
                             action.id = pNpc->professionId;
-                            action.label = "Dismiss";
+                            action.label = UiText::translate("Dismiss");
                             dialog.actions.push_back(std::move(action));
                         }
                     }
@@ -1953,7 +1955,7 @@ EventDialogContent buildEventDialogContent(
 
         if (!dialog.isHouseDialog && !allowEmptyNpcTalkDialog)
         {
-            dialog.lines.push_back("NPC interaction UI is not implemented yet.");
+            dialog.lines.push_back(UiText::translate("NPC interaction UI is not implemented yet."));
         }
     }
 

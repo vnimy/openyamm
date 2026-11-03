@@ -87,7 +87,8 @@ std::vector<GameplayPotionEffectLine> gameplayPotionEffectLines(const Character 
 
     if (!immunities.empty())
     {
-        lines.push_back({UiText::translate("Immune to ") + immunities, immunitySeconds});
+        lines.push_back({UiText::translateTemplate("Immune to {effects}", {{"{effects}", immunities}}),
+                    immunitySeconds});
     }
 
     return lines;

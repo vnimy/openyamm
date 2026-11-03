@@ -3783,7 +3783,7 @@ void GameplayPartyOverlayInputController::handleCharacterOverlayInput(
                 {
                     const ItemDefinition *pHeld =
                         context.itemTable()->get(context.heldInventoryItem().item.objectDescriptionId);
-                    context.setStatusBarEvent(pHeld == nullptr || pHeld->equipStat != "Implant"
+                    context.setStatusBarEvent(pHeld == nullptr || pHeld->equipStat != UiText::translate("Implant")
                             ? UiText::translate("Only an implant fits there")
                             : UiText::translate("Cybernetics has not opened that socket"));
                     return;

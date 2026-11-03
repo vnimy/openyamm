@@ -5757,7 +5757,7 @@ bool Party::tryIdentifyMemberInventoryItem(
 
     if (pItemDefinition == nullptr)
     {
-        statusText = "Unavailable.";
+        statusText = UiText::translate("Unavailable.");
         logItemInteractionResult(
             "identify",
             pInspector,
@@ -5853,7 +5853,7 @@ bool Party::tryRepairMemberInventoryItem(
 
     if (pItemDefinition == nullptr)
     {
-        statusText = "Unavailable.";
+        statusText = UiText::translate("Unavailable.");
         logItemInteractionResult(
             "repair",
             pInspector,
@@ -5947,7 +5947,7 @@ bool Party::identifyMemberInventoryItem(
 
     if (pItemDefinition == nullptr)
     {
-        statusText = "Unavailable.";
+        statusText = UiText::translate("Unavailable.");
         logItemInteractionResult(
             "identify",
             nullptr,
@@ -6012,7 +6012,7 @@ bool Party::repairMemberInventoryItem(
 
     if (pItemDefinition == nullptr)
     {
-        statusText = "Unavailable.";
+        statusText = UiText::translate("Unavailable.");
         logItemInteractionResult(
             "repair",
             nullptr,
@@ -6081,7 +6081,7 @@ bool Party::tryIdentifyEquippedItem(
 
     if (pItemDefinition == nullptr)
     {
-        statusText = "Unavailable.";
+        statusText = UiText::translate("Unavailable.");
         logItemInteractionResult(
             "identify",
             pInspector,
@@ -6177,7 +6177,7 @@ bool Party::tryRepairEquippedItem(
 
     if (pItemDefinition == nullptr)
     {
-        statusText = "Unavailable.";
+        statusText = UiText::translate("Unavailable.");
         logItemInteractionResult(
             "repair",
             pInspector,
@@ -6268,7 +6268,7 @@ bool Party::identifyEquippedItem(size_t memberIndex, EquipmentSlot slot, std::st
 
     if (pItemDefinition == nullptr)
     {
-        statusText = "Unavailable.";
+        statusText = UiText::translate("Unavailable.");
         logItemInteractionResult(
             "identify",
             nullptr,
@@ -6330,7 +6330,7 @@ bool Party::repairEquippedItem(size_t memberIndex, EquipmentSlot slot, std::stri
 
     if (pItemDefinition == nullptr)
     {
-        statusText = "Unavailable.";
+        statusText = UiText::translate("Unavailable.");
         logItemInteractionResult(
             "repair",
             nullptr,

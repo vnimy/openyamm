@@ -558,7 +558,7 @@ std::optional<MasteryTeacherEvaluation> evaluateSkillMasteryTraining(
 
     if (!pCharacter->hasSkill(evaluation.skillName))
     {
-        evaluation.displayText = npcTextOrFallback(npcDialogTable, 132, "This character does not know that skill.");
+        evaluation.displayText = npcTextOrFallback(npcDialogTable, 132, UiText::translate("This character does not know that skill."));
         return evaluation;
     }
 
@@ -611,7 +611,7 @@ std::optional<MasteryTeacherEvaluation> evaluateSkillMasteryTraining(
 
     if (party.gold() < evaluation.cost)
     {
-        evaluation.displayText = npcTextOrFallback(npcDialogTable, 125, "You do not have enough gold.");
+        evaluation.displayText = npcTextOrFallback(npcDialogTable, 125, UiText::translate("You do not have enough gold."));
         return evaluation;
     }
 

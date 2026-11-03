@@ -1519,7 +1519,7 @@ void GameplayScreenRuntime::openRestOverlay(bool enforceWorldRestrictions)
 
     if (turnBasedCombatRuntime().active())
     {
-        setStatusBarEvent("You can't rest in turn-based mode!");
+        setStatusBarEvent(UiText::translate("You can't rest in turn-based mode!"));
         playCantRestHereReaction();
         return;
     }
@@ -1565,7 +1565,7 @@ void GameplayScreenRuntime::beginRestAction(
     // A new action during a running one would restart the full duration on top of the minutes already passed.
     if (restScreen.mode != GameplayUiController::RestMode::None)
     {
-        setStatusBarEvent("You are already resting.");
+        setStatusBarEvent(UiText::translate("You are already resting."));
         return;
     }
 
@@ -1589,7 +1589,7 @@ void GameplayScreenRuntime::beginRestAction(
 
         if (currentParty.food() < foodRequired)
         {
-            setStatusBarEvent("You don't have enough food to rest.");
+            setStatusBarEvent(UiText::translate("You don't have enough food to rest."));
             playSpeechReaction(currentParty.activeMemberIndex(), SpeechId::Hungry, true);
             return;
         }
@@ -1758,7 +1758,7 @@ void GameplayScreenRuntime::closeCharacterScreen()
         }
         else
         {
-            setStatusBarEvent("Pack is Full!");
+            setStatusBarEvent(UiText::translate("Pack is Full!"));
         }
     }
 #endif
@@ -2545,7 +2545,7 @@ bool GameplayScreenRuntime::tryAutoPlaceHeldInventoryItemOnPartyMember(size_t me
     {
         if (showFailureStatus)
         {
-            setStatusBarEvent(failureStatus.empty() ? "Pack is Full!" : failureStatus);
+            setStatusBarEvent(failureStatus.empty() ? UiText::translate("Pack is Full!") : failureStatus);
         }
 
         playSpeechReaction(memberIndex, SpeechId::InventoryRoom, true);
@@ -2579,7 +2579,7 @@ bool GameplayScreenRuntime::tryStowHeldInventoryItemInParty()
         }
     }
 
-    setStatusBarEvent(failureStatus.empty() ? "Pack is Full!" : failureStatus);
+    setStatusBarEvent(failureStatus.empty() ? UiText::translate("Pack is Full!") : failureStatus);
     playSpeechReaction(firstIndex, SpeechId::InventoryRoom, true);
     return false;
 }
@@ -2680,7 +2680,7 @@ bool GameplayScreenRuntime::toggleTurnBasedMode()
 
     if (!turnBasedCombatRuntime().toggle(*pParty, worldRuntime()))
     {
-        setStatusBarEvent("Cannot leave turn-based mode now.");
+        setStatusBarEvent(UiText::translate("Cannot leave turn-based mode now."));
         return false;
     }
 
@@ -4481,7 +4481,7 @@ bool GameplayScreenRuntime::openDimensionDoorOverlay(
 
     if (!ensureDimensionDoorDestinationsLoaded())
     {
-        setStatusBarEvent("Dimension Door destinations unavailable");
+        setStatusBarEvent(UiText::translate("Dimension Door destinations unavailable"));
         return false;
     }
 

@@ -202,6 +202,18 @@ std::string UiText::translate(const std::string &text)
     return text;
 }
 
+std::string UiText::translateInContext(const std::string &context, const std::string &text)
+{
+    if (context.empty() || text.empty())
+    {
+        return translate(text);
+    }
+
+    const std::string key = context + ": " + text;
+    const std::string translated = translate(key);
+    return translated != key ? translated : translate(text);
+}
+
 std::string UiText::translateTemplate(
     const std::string &text, std::initializer_list<std::pair<std::string, std::string>> params)
 {

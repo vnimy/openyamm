@@ -334,8 +334,10 @@ std::vector<std::string> MawCraftingRules::craftOutlook(
         return lines;
     }
 
-    lines.push_back(UiText::translate("Item Bonus Power: ") + std::to_string(target.rulesetFields.itemPower) + "/"
-        + std::to_string(std::min(context.ownerLevel / 5, ItemPowerCap)));
+    lines.push_back(UiText::translateTemplate(
+        "Item Bonus Power: {power}/{cap}",
+        {{"{power}", std::to_string(target.rulesetFields.itemPower)},
+         {"{cap}", std::to_string(std::min(context.ownerLevel / 5, ItemPowerCap))}}));
 
     // The strongest gem's reach on each base enchantment.
     const int topTier = m_rules.craftingData().gemTiers();

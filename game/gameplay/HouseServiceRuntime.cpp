@@ -2208,7 +2208,7 @@ bool HouseServiceRuntime::tryIdentifyInventoryItem(
     }
 
     party.addGold(-price);
-    statusText = "Done!";
+    statusText = UiText::translate("Done!");
 
     if (pResult != nullptr)
     {

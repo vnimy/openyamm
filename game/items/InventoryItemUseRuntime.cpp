@@ -1365,7 +1365,7 @@ InventoryItemUseResult InventoryItemUseRuntime::useItemOnMember(
             pTargetMember->techPoints += techPoints;
             result.handled = true;
             result.consumed = true;
-            result.statusText = "+" + std::to_string(techPoints) + " Tech Points!";
+            result.statusText = "+" + std::to_string(techPoints) + UiText::translate(" Tech Points!");
             result.soundId = SoundId::Quest;
             result.speechId = SpeechId::QuestGot;
             return result;

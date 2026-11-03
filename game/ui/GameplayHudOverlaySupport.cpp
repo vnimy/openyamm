@@ -856,28 +856,32 @@ void GameplayHudOverlaySupport::updateCharacterInspectOverlay(
                     grandmasterDescription = ruled.masteryLines[3];
                 }
 
-                overlay.normal.text = UiText::translate("Normal: ") + normalDescription;
+                overlay.normal.text = UiText::translateTemplate(
+                    "Normal: {text}", {{"{text}", normalDescription}});
                 overlay.normal.availability = skillMasteryAvailability(
                     context.classSkillTable(),
                     pCharacter,
                     row.canonicalName,
                     SkillMastery::Normal);
                 overlay.normal.visible = !normalDescription.empty();
-                overlay.expert.text = UiText::translate("Expert: ") + expertDescription;
+                overlay.expert.text = UiText::translateTemplate(
+                    "Expert: {text}", {{"{text}", expertDescription}});
                 overlay.expert.availability = skillMasteryAvailability(
                     context.classSkillTable(),
                     pCharacter,
                     row.canonicalName,
                     SkillMastery::Expert);
                 overlay.expert.visible = !expertDescription.empty();
-                overlay.master.text = UiText::translate("Master: ") + masterDescription;
+                overlay.master.text = UiText::translateTemplate(
+                    "Master: {text}", {{"{text}", masterDescription}});
                 overlay.master.availability = skillMasteryAvailability(
                     context.classSkillTable(),
                     pCharacter,
                     row.canonicalName,
                     SkillMastery::Master);
                 overlay.master.visible = !masterDescription.empty();
-                overlay.grandmaster.text = UiText::translate("Grandmaster: ") + grandmasterDescription;
+                overlay.grandmaster.text = UiText::translateTemplate(
+                    "Grandmaster: {text}", {{"{text}", grandmasterDescription}});
                 overlay.grandmaster.availability = skillMasteryAvailability(
                     context.classSkillTable(),
                     pCharacter,
@@ -1033,7 +1037,7 @@ void GameplayHudOverlaySupport::updateBuffInspectOverlay(
             if (definition.presentation == panel)
             {
                 const PartyBuffState &buff = *pParty->partyBuff(id);
-                appendPopupBodyLine(overlay.body, UiText::translate(definition.pName) + " - "
+                appendPopupBodyLine(overlay.body, UiText::translateInContext("SpellName", definition.pName) + " - "
                     + formatBuffDuration(*pParty, buff.spellId, buff.remainingSeconds, formatRemainingDuration));
             }
         }
@@ -1066,7 +1070,8 @@ void GameplayHudOverlaySupport::updateBuffInspectOverlay(
         overlay.body = formatBuffDuration(*pParty, pBuff->spellId, pBuff->remainingSeconds, formatRemainingDuration);
         if (pBuff->power > 0)
         {
-            appendPopupBodyLine(overlay.body, UiText::translate("Power: ") + std::to_string(pBuff->power));
+            appendPopupBodyLine(overlay.body, UiText::translateTemplate(
+            "Power: {power}", {{"{power}", std::to_string(pBuff->power)}}));
         }
         anchor(inspected->rect);
     }

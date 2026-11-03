@@ -875,7 +875,7 @@ void activateJournalAuraTarget(
                 && spells.castAura(*pParty, *pShown->holder, pShown->spellId) == AuraCastResult::Released)
             {
                 spells.updateAuras(*pParty, 0.0f);
-                context.setStatusBarEvent(spellName(context, pShown->spellId) + " released");
+                context.setStatusBarEvent(spellName(context, pShown->spellId) + UiText::translate(" released"));
             }
 
             break;

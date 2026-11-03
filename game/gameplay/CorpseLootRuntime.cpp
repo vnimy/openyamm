@@ -638,7 +638,7 @@ GameplayCorpseAutoLootResult autoLootActiveCorpseView(
     }
     else if (result.blockedByInventory)
     {
-        result.statusText = party.lastStatus().empty() || party.lastStatus() == "inventory full"
+        result.statusText = party.lastStatus().empty() || party.lastStatus() == UiText::translate("inventory full")
             ? "Pack is Full!"
             : party.lastStatus();
     }
