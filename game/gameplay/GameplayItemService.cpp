@@ -1,3 +1,4 @@
+#include "game/ui/UiText.h"
 #include "game/gameplay/GameplayItemService.h"
 
 #include "game/app/GameSession.h"
@@ -77,7 +78,7 @@ bool applyLootOperation(
 
     if (pItemDefinition == nullptr)
     {
-        statusText = "Unavailable.";
+        statusText = UiText::translate("Unavailable.");
         return false;
     }
 
@@ -86,18 +87,19 @@ bool applyLootOperation(
         case ActiveLootOperation::ForceIdentify:
             if (lootItem.item.identified || !ItemRuntime::requiresIdentification(*pItemDefinition))
             {
-                statusText = "Already identified.";
+                statusText = UiText::translate("Already identified.");
                 return false;
             }
 
             lootItem.item.identified = true;
-            statusText = "Identified " + ItemRuntime::displayName(lootItem.item, *pItemDefinition) + ".";
+            statusText = UiText::translateTemplate("Identified {item}.",
+                                       {{"{item}", ItemRuntime::displayName(lootItem.item, *pItemDefinition)}});
             return true;
 
         case ActiveLootOperation::IdentifyWithSkill:
             if (lootItem.item.identified || !ItemRuntime::requiresIdentification(*pItemDefinition))
             {
-                statusText = "Already identified.";
+                statusText = UiText::translate("Already identified.");
                 return false;
             }
 
@@ -108,14 +110,15 @@ bool applyLootOperation(
             }
 
             lootItem.item.identified = true;
-            statusText = "Identified " + ItemRuntime::displayName(lootItem.item, *pItemDefinition) + ".";
+            statusText = UiText::translateTemplate("Identified {item}.",
+                                       {{"{item}", ItemRuntime::displayName(lootItem.item, *pItemDefinition)}});
             return true;
 
         case ActiveLootOperation::RepairWithSkill:
         {
             if (!lootItem.item.broken)
             {
-                statusText = "Nothing to repair.";
+                statusText = UiText::translate("Nothing to repair.");
                 return false;
             }
 
@@ -127,7 +130,8 @@ bool applyLootOperation(
 
             lootItem.item.broken = false;
             lootItem.item.identified = true;
-            statusText = "Repaired " + ItemRuntime::displayName(lootItem.item, *pItemDefinition) + ".";
+            statusText = UiText::translateTemplate("Repaired {item}.",
+                                       {{"{item}", ItemRuntime::displayName(lootItem.item, *pItemDefinition)}});
             return true;
         }
     }
@@ -324,7 +328,7 @@ bool tryUseConnectorStone(GameplayScreenRuntime &runtime, GameplayUiController::
 
     if (itemId == DischargedConnectorStoneItemId)
     {
-        runtime.setStatusBarEvent("The connector stone is recharging.");
+        runtime.setStatusBarEvent(UiText::translate("The connector stone is recharging."));
         return true;
     }
 

@@ -1,11 +1,14 @@
 #include "game/ui/GameplayHudCommon.h"
 
+#include "engine/TextLayout.h"
+
 #include "engine/AssetScaleTier.h"
 #include "engine/ImageAssetLoader.h"
 #include "engine/ParallelFor.h"
 #include "game/maps/MapIdentity.h"
 #include "game/render/TextureFiltering.h"
 #include "game/StringUtils.h"
+#include "game/ui/UiText.h"
 
 #include <yaml-cpp/yaml.h>
 
@@ -242,21 +245,28 @@ std::optional<GameplayHudFontData> buildColumnSeparatedHudFont(
 
     GameplayHudFontData font = {};
     font.fontName = toLowerCopy(fontName);
-    font.firstChar = 32;
-    font.lastChar = LastPrintableCharacter;
     font.fontHeight = image.height;
     font.atlasCellWidth = atlasCellWidth;
     font.atlasWidth = atlasWidth;
     font.atlasHeight = atlasHeight;
 
     const int defaultAdvance = glyphRuns[DefaultAdvanceGlyphIndex].width + 1;
-    font.glyphMetrics[32].rightSpacing = std::max(1, defaultAdvance / 2);
+    Engine::FontGlyph spaceGlyph;
+    spaceGlyph.metrics.rightSpacing = std::max(1, defaultAdvance / 2);
+    spaceGlyph.cellHeight = image.height;
+    font.glyphs[' '] = spaceGlyph;
 
     for (int character = FirstPrintableCharacter; character <= LastPrintableCharacter; ++character)
     {
         const ColumnSeparatedGlyphRun &run = glyphRuns[character - FirstPrintableCharacter];
-        font.glyphMetrics[character].width = run.width;
-        font.glyphMetrics[character].rightSpacing = 1;
+        Engine::FontGlyph glyph;
+        glyph.metrics.width = run.width;
+        glyph.metrics.rightSpacing = 1;
+        glyph.cellX = (character % 16) * atlasCellWidth;
+        glyph.cellY = (character / 16) * image.height;
+        glyph.cellWidth = run.width;
+        glyph.cellHeight = image.height;
+        font.glyphs[static_cast<uint32_t>(character)] = glyph;
 
         const int targetX = (character % 16) * atlasCellWidth;
         const int targetY = (character / 16) * image.height;
@@ -1740,37 +1750,41 @@ bool GameplayHudCommon::readTextColorCode(const std::string &text, size_t index,
     return true;
 }
 
-float GameplayHudCommon::measureHudTextWidth(const GameplayHudFontData &font, const std::string &text)
+float GameplayHudCommon::measureHudTextWidth(const GameplayHudFontData &font, const std::string &rawText)
 {
+    // 汉化：宽度按译文算，否则中文会溢出原英文的框。
+    const std::string text = UiText::translate(rawText);
     float widthPixels = 0.0f;
-    uint8_t previous = 0;
+    uint32_t previous = 0;
     std::optional<uint32_t> ignoredColor;
+    size_t index = 0;
 
-    for (size_t index = 0; index < text.size(); ++index)
+    while (index < text.size())
     {
-        const unsigned char character = static_cast<unsigned char>(text[index]);
+        // Colour codes take no room.
+        if (readTextColorCode(text, index, ignoredColor))
+        {
+            index += TextColorCodeLength;
+            continue;
+        }
 
-        if (character == '\r' || character == '\n')
+        const uint32_t codePoint = Engine::decodeUtf8(text, index);
+
+        if (codePoint == '\r' || codePoint == '\n')
         {
             break;
         }
 
-        // Colour codes take no room.
-        if (readTextColorCode(text, index, ignoredColor))
-        {
-            index += TextColorCodeLength - 1;
-            continue;
-        }
+        const Engine::FontGlyph *pGlyph = font.glyph(codePoint);
 
-        if (character < font.firstChar || character > font.lastChar)
+        if (pGlyph == nullptr)
         {
             widthPixels += static_cast<float>(font.atlasCellWidth);
             continue;
         }
 
-        const GameplayHudFontGlyphMetricsData &glyphMetrics = font.glyphMetrics[character];
-        widthPixels += font.kerning(previous, character) + glyphMetrics.advance();
-        previous = character;
+        widthPixels += font.kerning(previous, codePoint) + pGlyph->metrics.advance();
+        previous = codePoint;
     }
 
     return std::max(0.0f, widthPixels);
@@ -1781,11 +1795,20 @@ std::string GameplayHudCommon::clampHudTextToWidth(
     const std::string &text,
     float maxWidth)
 {
-    std::string clampedText = text;
+    // 汉化：先译再截，中文字宽才算得准（调用方随后也是按译文绘制）。
+    std::string clampedText = UiText::translate(text);
 
     while (!clampedText.empty() && measureHudTextWidth(font, clampedText) > maxWidth)
     {
-        clampedText.pop_back();
+        // Drop one UTF-8 code point, never half of a sequence.
+        size_t cut = clampedText.size() - 1;
+
+        while (cut > 0 && (static_cast<unsigned char>(clampedText[cut]) & 0xc0) == 0x80)
+        {
+            --cut;
+        }
+
+        clampedText.resize(cut);
     }
 
     return clampedText;
@@ -1793,9 +1816,12 @@ std::string GameplayHudCommon::clampHudTextToWidth(
 
 std::vector<std::string> GameplayHudCommon::wrapHudTextToWidth(
     const GameplayHudFontData &font,
-    const std::string &text,
+    const std::string &rawText,
     float maxWidth)
 {
+    // 汉化：整段先翻译再断行，中文按 isWideBreakable 逐字断，标点不吃行首。
+    const std::string text = UiText::translate(rawText);
+
     if (text.empty())
     {
         return {""};
@@ -1808,68 +1834,95 @@ std::vector<std::string> GameplayHudCommon::wrapHudTextToWidth(
 
     std::vector<std::string> lines;
     std::string currentLine;
-    std::string currentWord;
+    // A space only separates: it never opens a line, so it waits for the next token.
+    bool spacePending = false;
 
-    const auto flushLine =
-        [&lines, &currentLine]()
+    const auto appendToken =
+        [&](const std::string &token, bool allowOverflow)
+        {
+            const std::string separator = spacePending && !currentLine.empty() ? " " : "";
+
+            if (!currentLine.empty() && !allowOverflow
+                && measureHudTextWidth(font, currentLine + separator + token) > maxWidth)
+            {
+                lines.push_back(currentLine);
+                currentLine = token;
+                spacePending = false;
+                return;
+            }
+
+            currentLine += separator + token;
+            spacePending = false;
+        };
+
+    size_t index = 0;
+
+    while (index < text.size())
+    {
+        std::optional<uint32_t> colorCode;
+
+        // Colour codes travel with the neighbouring text and take no room.
+        if (readTextColorCode(text, index, colorCode))
+        {
+            currentLine += text.substr(index, TextColorCodeLength);
+            index += TextColorCodeLength;
+            continue;
+        }
+
+        const size_t start = index;
+        const uint32_t codePoint = Engine::decodeUtf8(text, index);
+
+        if (codePoint == '\r')
+        {
+            continue;
+        }
+
+        if (codePoint == '\n')
         {
             lines.push_back(currentLine);
             currentLine.clear();
-        };
-
-    const auto appendWord =
-        [&font, &currentLine, &flushLine, maxWidth](const std::string &word)
-        {
-            if (word.empty())
-            {
-                return;
-            }
-
-            if (currentLine.empty())
-            {
-                currentLine = word;
-                return;
-            }
-
-            const std::string candidate = currentLine + " " + word;
-
-            if (measureHudTextWidth(font, candidate) <= maxWidth)
-            {
-                currentLine = candidate;
-            }
-            else
-            {
-                flushLine();
-                currentLine = word;
-            }
-        };
-
-    for (char character : text)
-    {
-        if (character == '\r')
-        {
+            spacePending = false;
             continue;
         }
 
-        if (character == '\n')
+        if (codePoint == ' ')
         {
-            appendWord(currentWord);
-            currentWord.clear();
-            flushLine();
+            spacePending = !currentLine.empty();
             continue;
         }
 
-        if (character == ' ')
+        if (Engine::isWideBreakable(codePoint))
         {
-            appendWord(currentWord);
-            currentWord.clear();
+            // Chinese has no spaces: every character may break, but closing punctuation stays with its line.
+            appendToken(std::string(text, start, index - start), Engine::isLineLeadingProhibited(codePoint));
             continue;
         }
 
-        currentWord.push_back(character);
+        // Latin words stay whole.
+        size_t wordEnd = index;
+
+        while (wordEnd < text.size())
+        {
+            std::optional<uint32_t> ignoredColor;
+
+            if (readTextColorCode(text, wordEnd, ignoredColor))
+            {
+                break;
+            }
+
+            const size_t probe = wordEnd;
+            const uint32_t next = Engine::decodeUtf8(text, wordEnd);
+
+            if (next == ' ' || next == '\r' || next == '\n' || Engine::isWideBreakable(next))
+            {
+                wordEnd = probe;
+                break;
+            }
+        }
+
+        appendToken(std::string(text, start, wordEnd - start), false);
+        index = wordEnd;
     }
-
-    appendWord(currentWord);
 
     if (!currentLine.empty() || lines.empty())
     {
@@ -1906,7 +1959,7 @@ void GameplayHudCommon::carryTextColorsAcrossLines(std::vector<std::string> &lin
 void GameplayHudCommon::renderHudFontLayer(
     const GameplayHudFontData &font,
     const GameplayHudFontLayer &layer,
-    const std::string &text,
+    const std::string &rawText,
     float textX,
     float textY,
     float fontScale,
@@ -1917,48 +1970,52 @@ void GameplayHudCommon::renderHudFontLayer(
         return;
     }
 
+    // 汉化：字形逐层提交的这个位置是所有游戏内文案的必经之路，覆盖表查不到就原样返回。
+    const std::string text = UiText::translate(rawText);
+
     float penX = textX;
-    uint8_t previous = 0;
+    uint32_t previous = 0;
     // Colour codes recolour the main layer through the tint atlas; the shadow stays as it is.
     const bool shadow = layer.textureHandle.idx == font.shadowTextureHandle.idx;
     std::optional<uint32_t> runColor;
+    const float atlasLogicalWidth = static_cast<float>(font.atlasWidth) / static_cast<float>(font.atlasScale);
+    const float atlasLogicalHeight = static_cast<float>(font.atlasHeight) / static_cast<float>(font.atlasScale);
+    size_t index = 0;
 
-    for (size_t index = 0; index < text.size(); ++index)
+    while (index < text.size())
     {
-        const unsigned char character = static_cast<unsigned char>(text[index]);
+        if (readTextColorCode(text, index, runColor))
+        {
+            index += TextColorCodeLength;
+            continue;
+        }
 
-        if (character == '\r' || character == '\n')
+        const uint32_t codePoint = Engine::decodeUtf8(text, index);
+
+        if (codePoint == '\r' || codePoint == '\n')
         {
             break;
         }
 
-        if (readTextColorCode(text, index, runColor))
-        {
-            index += TextColorCodeLength - 1;
-            continue;
-        }
+        const Engine::FontGlyph *pGlyph = font.glyph(codePoint);
 
-        if (character < font.firstChar || character > font.lastChar)
+        if (pGlyph == nullptr)
         {
             penX += static_cast<float>(font.atlasCellWidth) * fontScale;
             continue;
         }
 
-        const GameplayHudFontGlyphMetricsData &glyphMetrics = font.glyphMetrics[character];
-        penX += (font.kerning(previous, character) + glyphMetrics.leftSpacing) * fontScale;
+        const GameplayHudFontGlyphMetricsData &glyphMetrics = pGlyph->metrics;
+        penX += (font.kerning(previous, codePoint) + glyphMetrics.leftSpacing) * fontScale;
 
         if (glyphMetrics.width > 0)
         {
-            const int cellX = (character % 16) * (font.atlasCellWidth + 2 * font.atlasPadding);
-            const int cellY = (character / 16) * (font.fontHeight + 2 * font.atlasPadding);
-            const float u0 = static_cast<float>(cellX) / static_cast<float>(font.atlasWidth / font.atlasScale);
-            const float v0 = static_cast<float>(cellY) / static_cast<float>(font.atlasHeight / font.atlasScale);
-            const float u1 = static_cast<float>(cellX + glyphMetrics.width + 2 * font.atlasPadding)
-                / static_cast<float>(font.atlasWidth / font.atlasScale);
-            const float v1 = static_cast<float>(cellY + font.fontHeight + 2 * font.atlasPadding)
-                / static_cast<float>(font.atlasHeight / font.atlasScale);
-            const float glyphWidth = static_cast<float>(glyphMetrics.width + 2 * font.atlasPadding) * fontScale;
-            const float glyphHeight = static_cast<float>(font.fontHeight + 2 * font.atlasPadding) * fontScale;
+            const float u0 = static_cast<float>(pGlyph->cellX) / atlasLogicalWidth;
+            const float v0 = static_cast<float>(pGlyph->cellY) / atlasLogicalHeight;
+            const float u1 = static_cast<float>(pGlyph->cellX + pGlyph->cellWidth) / atlasLogicalWidth;
+            const float v1 = static_cast<float>(pGlyph->cellY + pGlyph->cellHeight) / atlasLogicalHeight;
+            const float glyphWidth = static_cast<float>(pGlyph->cellWidth) * fontScale;
+            const float glyphHeight = static_cast<float>(pGlyph->cellHeight) * fontScale;
 
             const bool recolored = runColor && !shadow && bgfx::isValid(font.tintTextureHandle);
             submitTexturedQuad(
@@ -1976,17 +2033,22 @@ void GameplayHudCommon::renderHudFontLayer(
         }
 
         penX += (glyphMetrics.advance() - glyphMetrics.leftSpacing) * fontScale;
-        previous = character;
+        previous = codePoint;
     }
 }
 
 void GameplayHudCommon::renderLayoutLabel(
     const UiLayoutManager::LayoutElement &layout,
     const GameplayResolvedHudLayoutElement &resolved,
-    const std::string &label,
+    const std::string &rawLabel,
     const FindHudFontFn &findHudFontFn,
     const RenderHudFontLayerFn &renderHudFontLayerFn)
 {
+    UiText::reportUnresolvedUiText(rawLabel);
+
+    // 汉化：先查覆盖表再测量、截断和断行，译文才能按中文宽度排版。
+    const std::string label = UiText::translate(rawLabel);
+
     if (label.empty())
     {
         return;

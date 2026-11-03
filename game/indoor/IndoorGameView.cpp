@@ -238,14 +238,7 @@ constexpr const char *MiscSkillNames[] = {
 
 std::string skillPageMasteryDisplayName(SkillMastery mastery)
 {
-    const std::string displayName = masteryDisplayName(mastery);
-
-    if (displayName == "Grandmaster")
-    {
-        return "Grand";
-    }
-
-    return displayName;
+    return localizedSkillPageMasteryName(mastery);
 }
 
 void appendCharacterSkillUiRows(

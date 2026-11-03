@@ -7,6 +7,7 @@
 #include "game/tables/MergedBaseTables.h"
 #include "game/ui/GameplayAlchemyBenchView.h"
 #include "game/ui/GameplayBenchPainter.h"
+#include "game/ui/UiText.h"
 #include "game/ui/GameplayCraftingBenchView.h"
 
 #include <SDL3/SDL.h>
@@ -159,7 +160,8 @@ void GameplayCraftingBenchRenderer::render(GameplayScreenRuntime &context, const
     const ItemRules &itemRules = gameRulesFor(context.partyReadOnly()).items;
 
     painter.label("CraftingBenchItemHeader", "Equipment");
-    painter.label("CraftingBenchItemCount", std::to_string(model->targets.size()) + " items");
+    painter.label("CraftingBenchItemCount", UiText::translateTemplate("{count} items",
+        {{"{count}", std::to_string(model->targets.size())}}));
     painter.chip("CraftingBenchItemFilterAll", "All", state.targetFilter == TargetFilter::All);
     painter.chip("CraftingBenchItemFilterWorn", "Worn", state.targetFilter == TargetFilter::Worn);
     painter.chip("CraftingBenchItemFilterPacks", "Packs", state.targetFilter == TargetFilter::Packs);
@@ -228,7 +230,7 @@ void GameplayCraftingBenchRenderer::render(GameplayScreenRuntime &context, const
                 if (level > 1)
                 {
                     painter.text("AlchemyBenchRowCount", {area.x, area.y + 3 * s, area.width - 4 * s, area.height, s},
-                        "L" + std::to_string(level), color);
+                        UiText::translateTemplate("L{level}", {{"{level}", std::to_string(level)}}), color);
                 }
             }
         }
@@ -460,13 +462,19 @@ void GameplayCraftingBenchRenderer::render(GameplayScreenRuntime &context, const
     {
         painter.button("CraftingBenchApplyButton", "Merge", true);
         painter.button("CraftingBenchApplyManyButton",
-            state.mergePending ? "Confirm" : "Merge x" + std::to_string(merges), merges > 1, state.mergePending);
+            state.mergePending
+                ? "Confirm"
+                : UiText::translateTemplate("Merge x{count}", {{"{count}", std::to_string(merges)}}),
+            merges > 1, state.mergePending);
     }
     else
     {
         painter.button("CraftingBenchApplyButton", confirming ? "Confirm" : "Apply", possible, confirming);
         painter.button("CraftingBenchApplyManyButton",
-            batchUseful ? "Apply x" + std::to_string(batchCount) : "Apply All", batchUseful);
+            batchUseful
+                ? UiText::translateTemplate("Apply x{count}", {{"{count}", std::to_string(batchCount)}})
+                : "Apply All",
+            batchUseful);
     }
 
     painter.button("CraftingBenchClearButton", confirming || state.mergePending ? "Cancel" : "Clear",

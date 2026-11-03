@@ -1,5 +1,6 @@
 #include "game/gameplay/GameplayScreenRuntime.h"
 #include "game/ui/GameplayHudCommon.h"
+#include "game/ui/UiText.h"
 
 #include "game/app/GameSession.h"
 #include "game/audio/SoundIds.h"
@@ -32,6 +33,8 @@
 #include <array>
 #include <cassert>
 #include <cmath>
+#include <iostream>
+#include <unordered_set>
 #include <optional>
 
 namespace OpenYAMM::Game
@@ -196,17 +199,17 @@ std::optional<std::string> restWorldRestrictionStatusText(const IGameplayWorldRu
 {
     if (pWorldRuntime != nullptr && !pWorldRuntime->allowsRest())
     {
-        return "You can't rest here!";
+        return UiText::translate("You can't rest here!");
     }
 
     if (pWorldRuntime != nullptr && pWorldRuntime->partyIsAirborneForRest())
     {
-        return "You can't rest here!";
+        return UiText::translate("You can't rest here!");
     }
 
     if (partyHasHostileActorInRestRange(pWorldRuntime))
     {
-        return "There are hostile enemies near!";
+        return UiText::translate("There are hostile enemies near!");
     }
 
     return std::nullopt;
@@ -2676,7 +2679,8 @@ bool GameplayScreenRuntime::toggleTurnBasedMode()
     }
 
     playCommonUiSound(wasTurnBasedActive ? SoundId::EndTurnBasedMode : SoundId::StartTurnBasedMode);
-    setStatusBarEvent(turnBasedCombatRuntime().active() ? "Turn-based mode" : "Realtime mode");
+    setStatusBarEvent(turnBasedCombatRuntime().active() ? UiText::translate("Turn-based mode")
+                                                       : UiText::translate("Realtime mode"));
     return true;
 }
 
@@ -3275,7 +3279,7 @@ void GameplayScreenRuntime::triggerSpellFailureFeedback(size_t casterMemberIndex
         }
     }
 
-    setStatusBarEvent(statusText.empty() ? "Spell failed" : statusText);
+    setStatusBarEvent(statusText.empty() ? UiText::translate("Spell failed") : statusText);
 }
 
 void GameplayScreenRuntime::resetUtilitySpellOverlayInteractionState()

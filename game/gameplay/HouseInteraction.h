@@ -137,7 +137,7 @@ float innRestDurationMinutes(uint32_t houseId, float currentGameMinutes);
 std::string buildClosedStatusText(const HouseEntry &houseEntry);
 bool isBoatHouse(const HouseEntry &houseEntry);
 uint32_t arcomageDeckItemId();
-const char *arcomageDeckRequiredMessage();
+std::string arcomageDeckRequiredMessage();
 bool partyHasArcomageDeck(const Party *pParty);
 bool houseRequiresArcomageDeck(const HouseEntry &houseEntry);
 bool partyCanPlayArcomageInHouse(const HouseEntry &houseEntry, const Party *pParty);

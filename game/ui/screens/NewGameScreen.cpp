@@ -1,5 +1,7 @@
 #include "game/ui/screens/NewGameScreen.h"
 
+#include "engine/TextLayout.h"
+
 #include "game/audio/GameAudioSystem.h"
 #include "game/debug/GameplayDebugTrace.h"
 #include "game/gameplay/GameMechanics.h"
@@ -9,6 +11,7 @@
 #include "game/rules/maw/MawRules.h"
 #include "game/rules/maw/MawRulesFactory.h"
 #include "game/ui/GameplayUiSkin.h"
+#include "game/ui/UiText.h"
 
 #include <algorithm>
 #include <array>
@@ -552,6 +555,76 @@ bool isPrintableNameCharacter(char character)
         || character == '-';
 }
 
+// UTF-8 序列的预期宽度（首字节非法时返回 0）。
+size_t utf8SequenceWidth(unsigned char lead)
+{
+    if (lead < 0x80)
+    {
+        return 1;
+    }
+    if ((lead & 0xE0) == 0xC0)
+    {
+        return 2;
+    }
+    if ((lead & 0xF0) == 0xE0)
+    {
+        return 3;
+    }
+    if ((lead & 0xF8) == 0xF0)
+    {
+        return 4;
+    }
+    return 0;
+}
+
+// 名字按码点计数（MaximumNameLength 的语义），多字节字符整体计入一个码点。
+size_t utf8CodePointCount(const std::string &text)
+{
+    size_t count = 0;
+    for (size_t i = 0; i < text.size();)
+    {
+        const size_t width = std::max<size_t>(utf8SequenceWidth(static_cast<unsigned char>(text[i])), 1);
+        ++count;
+        i += width;
+    }
+    return count;
+}
+
+// 把输入事件携带的 UTF-8 文本追加进名字缓冲：ASCII 可打印字符或 U+00A0 起的完整多字节
+// 序列都允许（支持中文输入），长度按码点受 MaximumNameLength 约束。
+void appendNameTextInput(std::string &buffer, const char *text)
+{
+    for (size_t i = 0; text[i] != '\0';)
+    {
+        const unsigned char lead = static_cast<unsigned char>(text[i]);
+        const size_t width = utf8SequenceWidth(lead);
+
+        if (width == 0)
+        {
+            ++i; // 非法首字节，丢弃后重同步
+            continue;
+        }
+
+        bool complete = true;
+        for (size_t j = 1; j < width; ++j)
+        {
+            complete = complete && (static_cast<unsigned char>(text[i + j]) & 0xC0) == 0x80;
+        }
+        if (!complete)
+        {
+            ++i;
+            continue;
+        }
+
+        const bool printable = width == 1 ? isPrintableNameCharacter(static_cast<char>(lead)) : lead >= 0xC2;
+        if (printable && utf8CodePointCount(buffer) < MaximumNameLength)
+        {
+            buffer.append(text + i, width);
+        }
+        i += width;
+    }
+}
+
 std::string characterCreationSkillDisplayName(const std::string &skillName)
 {
     const std::string canonicalName = canonicalSkillName(skillName);
@@ -668,14 +741,7 @@ void NewGameScreen::handleSdlEvent(const SDL_Event &event)
             return;
         }
 
-        for (size_t i = 0; pText[i] != '\0' && m_state.nameEditBuffer.size() < MaximumNameLength; ++i)
-        {
-            if (isPrintableNameCharacter(pText[i]))
-            {
-                m_state.nameEditBuffer.push_back(pText[i]);
-            }
-        }
-
+        appendNameTextInput(m_state.nameEditBuffer, pText);
         return;
     }
 
@@ -1159,7 +1225,13 @@ void NewGameScreen::deleteNameEditCharacter()
 {
     if (m_state.nameEditing && !m_state.nameEditBuffer.empty())
     {
-        m_state.nameEditBuffer.pop_back();
+        // 退格删除一个完整 UTF-8 序列：回退到当前末尾字符的首字节再截断。
+        size_t start = m_state.nameEditBuffer.size() - 1;
+        while (start > 0 && (static_cast<unsigned char>(m_state.nameEditBuffer[start]) & 0xC0) == 0x80)
+        {
+            --start;
+        }
+        m_state.nameEditBuffer.resize(start);
     }
 }
 
@@ -1417,62 +1489,62 @@ std::vector<std::string> NewGameScreen::wrapTextToWidth(
         else
         {
             std::string currentLine;
-            size_t wordStart = 0;
+            bool spacePending = false;
+            size_t index = 0;
 
-            while (wordStart < paragraph.size())
-            {
-                while (wordStart < paragraph.size() && paragraph[wordStart] == ' ')
+            const auto appendToken =
+                [&](const std::string &token)
                 {
-                    ++wordStart;
-                }
+                    const std::string separator = spacePending && !currentLine.empty() ? " " : "";
+                    const std::string candidate = currentLine + separator + token;
 
-                if (wordStart >= paragraph.size())
-                {
-                    break;
-                }
-
-                size_t wordEnd = paragraph.find(' ', wordStart);
-
-                if (wordEnd == std::string::npos)
-                {
-                    wordEnd = paragraph.size();
-                }
-
-                std::string word = paragraph.substr(wordStart, wordEnd - wordStart);
-
-                while (!word.empty() && measureTextWidth(fontName, word, scale) > maxWidth)
-                {
-                    size_t splitLength = 1;
-
-                    while (splitLength < word.size()
-                        && measureTextWidth(fontName, word.substr(0, splitLength + 1), scale) <= maxWidth)
+                    if (!currentLine.empty() && measureTextWidth(fontName, candidate, scale) > maxWidth)
                     {
-                        ++splitLength;
+                        lines.push_back(currentLine);
+                        currentLine = token;
+                    }
+                    else
+                    {
+                        currentLine = candidate;
                     }
 
-                    lines.push_back(word.substr(0, splitLength));
-                    word.erase(0, splitLength);
-                }
+                    spacePending = false;
+                };
 
-                if (word.empty())
+            while (index < paragraph.size())
+            {
+                const size_t start = index;
+                const uint32_t codePoint = Engine::decodeUtf8(paragraph, index);
+
+                if (codePoint == ' ')
                 {
-                    wordStart = wordEnd + 1;
+                    spacePending = !currentLine.empty();
                     continue;
                 }
 
-                const std::string candidate = currentLine.empty() ? word : currentLine + " " + word;
-
-                if (!currentLine.empty() && measureTextWidth(fontName, candidate, scale) > maxWidth)
+                if (Engine::isWideBreakable(codePoint))
                 {
-                    lines.push_back(currentLine);
-                    currentLine = word;
-                }
-                else
-                {
-                    currentLine = candidate;
+                    // Chinese breaks between characters; a closing mark stays with the line it ends.
+                    appendToken(paragraph.substr(start, index - start));
+                    continue;
                 }
 
-                wordStart = wordEnd + 1;
+                size_t wordEnd = index;
+
+                while (wordEnd < paragraph.size())
+                {
+                    const size_t probe = wordEnd;
+                    const uint32_t next = Engine::decodeUtf8(paragraph, wordEnd);
+
+                    if (next == ' ' || Engine::isWideBreakable(next))
+                    {
+                        wordEnd = probe;
+                        break;
+                    }
+                }
+
+                appendToken(paragraph.substr(start, wordEnd - start));
+                index = wordEnd;
             }
 
             if (!currentLine.empty())
@@ -1735,7 +1807,7 @@ void NewGameScreen::playVoicePreview()
 
 void NewGameScreen::showCreationCompletionError()
 {
-    m_state.statusMessage = CreationCompletionErrorText;
+    m_state.statusMessage = UiText::translate(CreationCompletionErrorText);
 }
 
 const GameRules &NewGameScreen::creationRules()
@@ -1794,7 +1866,7 @@ std::vector<std::pair<std::string, uint32_t>> NewGameScreen::creationSkillMatrix
     {
         if (!skillsByCap[size_t(mastery)].empty())
         {
-            lines.emplace_back(masteryDisplayName(mastery) + ": " + skillsByCap[size_t(mastery)], 0xffffffffu);
+            lines.emplace_back(localizedMasteryName(mastery) + ": " + skillsByCap[size_t(mastery)], 0xffffffffu);
         }
     }
 
@@ -2165,13 +2237,17 @@ constexpr uint32_t RulesDetailEdge = 0xff6396acu;
 constexpr uint32_t RulesDivider = 0x2b648680u;
 constexpr uint32_t SwitchFill = 0x8c14160bu;
 constexpr uint32_t SwitchOutline = 0xff5f818cu;
-const std::string ContinentHint = "Choose a continent to create your party.";
+const std::string ContinentHint = UiText::translate("Choose a continent to create your party.");
 
+// 只把 ASCII 小写转大写：表头先查译文再套用，中文字节不受影响（std::toupper 依赖 locale，不可靠）。
 std::string upperCopy(std::string text)
 {
     for (char &character : text)
     {
-        character = char(std::toupper(static_cast<unsigned char>(character)));
+        if (character >= 'a' && character <= 'z')
+        {
+            character = char(character - 'a' + 'A');
+        }
     }
     return text;
 }
@@ -2183,7 +2259,10 @@ std::string rulesetOptionsSummary(const RulesetOptions &options)
     const std::string progression(rulesetProgressionName(options.progression));
     if (options.challengeMode == RulesetChallengeMode::None && !options.randomizer)
     {
-        return difficulty + " difficulty · " + progression + " progression";
+        return UiText::translateTemplate("{difficulty} difficulty · {progression} progression",
+                                         {{"{difficulty}", UiText::translate(difficulty).c_str()},
+                                          {"{progression}", UiText::translate(progression).c_str()}});
+
     }
     std::string summary = difficulty + " · " + progression;
     if (options.challengeMode != RulesetChallengeMode::None)
@@ -2335,7 +2414,8 @@ float NewGameScreen::drawRulesSetting(const std::string &id, const std::string &
     label("RulesetRulesSettingName", name, enabled ? 0 : RulesDisabledText, top - m_rulesScroll);
     if (select)
     {
-        activated = selectBox(id, rulesRect("RulesetRulesSettingSelect", top), value, enabled);
+        // 下拉值由数据表给出（Regular、Doom…），这里先查一遍译文，避免绘制层不同路径下漏译。
+        activated = selectBox(id, rulesRect("RulesetRulesSettingSelect", top), UiText::translate(value), enabled);
     }
     else
     {
@@ -2364,8 +2444,11 @@ void NewGameScreen::drawRulesPanel()
     loadDesign("gameplay/ruleset_rules");
     beginDesign("RulesetRules");
     drawDesign();
-    label("RulesetRulesTitle", panel.title.empty() ? ruleset.name + " Rules" : panel.title);
-    label("RulesetRulesStep", panel.subtitle);
+    label("RulesetRulesTitle", panel.title.empty()
+                                   ? UiText::translateTemplate("{ruleset_name} Rules",
+                                                               {{"{ruleset_name}", UiText::translate(ruleset.name).c_str()}})
+                                   : UiText::translate(panel.title));
+    label("RulesetRulesStep", UiText::translate(panel.subtitle));
 
     // A quiet link to the ruleset's player's guide, when it has one.
     if (!ruleset.guideUrl.empty())
@@ -2384,10 +2467,14 @@ void NewGameScreen::drawRulesPanel()
     // Doom, Road to Insanity and Beyond Madness set the difficulty; Austerity keeps the chosen one.
     const bool challengeDifficulty = rulesetChallengeModeDifficulty(draft.challengeMode).has_value();
     label("RulesetRulesNote",
-          challengeDifficulty ? challengeName + " sets the difficulty for the whole adventure; preferences can change."
+          challengeDifficulty
+              ? UiText::translateTemplate(
+                    "{challenge_name} sets the difficulty for the whole adventure; preferences can change.",
+                    {{"{challenge_name}", challengeName.c_str()}})
           : draft.difficultyLocked()
-              ? std::string(rulesetDifficultyName(draft.difficulty))
-                    + " cannot be lowered later; progression and preferences can change."
+              ? UiText::translateTemplate(
+                    "{difficulty} cannot be lowered later; progression and preferences can change.",
+                    {{"{difficulty}", UiText::translate(std::string(rulesetDifficultyName(draft.difficulty))).c_str()}})
               : "Difficulty, progression and preferences can change during play.");
     if (action("RulesetRulesBackButton") || (m_escapePressed && !modalOpen()))
     {
@@ -2414,7 +2501,11 @@ void NewGameScreen::drawRulesPanel()
 
     // Left column: the difficulty table, the chosen level's rules and the credits.
     label("RulesetRulesDifficultyLabel", "DIFFICULTY", 0, -m_rulesScroll);
-    label("RulesetRulesDifficultyNote", challengeDifficulty ? "Fixed by " + challengeName : "", 0, -m_rulesScroll);
+    label("RulesetRulesDifficultyNote",
+          challengeDifficulty
+              ? UiText::translateTemplate("Fixed by {name}", {{"{name}", UiText::translate(challengeName).c_str()}})
+              : "",
+          0, -m_rulesScroll);
     label("RulesetRulesColumnLevel", "LEVEL", 0, -m_rulesScroll);
     std::vector<Rect> columns;
     for (size_t column = 0; column < panel.difficultyColumns.size(); ++column)
@@ -2424,7 +2515,7 @@ void NewGameScreen::drawRulesPanel()
         {
             break;
         }
-        label(id, upperCopy(panel.difficultyColumns[column]), 0, -m_rulesScroll);
+        label(id, upperCopy(UiText::translate(panel.difficultyColumns[column])), 0, -m_rulesScroll);
         columns.push_back(designRect(id));
     }
     const UiLayoutManager::LayoutElement *pValue = m_designLayouts.findElement("RulesetRulesRowValue");
@@ -2484,15 +2575,17 @@ void NewGameScreen::drawRulesPanel()
     std::string credits;
     for (const std::string &credit : ruleset.credits)
     {
-        credits += (credits.empty() ? "Credits: " : "; ") + credit;
+        credits += (credits.empty() ? "" : "; ") + UiText::translate(credit);
     }
+    credits = UiText::translateTemplate("Credits: {credits}", {{"{credits}", credits.c_str()}});
     const float creditsY = detailY + detailHeight + 12 * RulesPixel;
     const float leftBottom = creditsY + drawRulesText("RulesetRulesCredits", credits, creditsY);
 
     // Right column: progression, the challenge and the preferences, one under another.
+    // 分节标题在界面上是全大写，因此先查译文再转大写，中文才能落在表里。
     const auto section = [this](const std::string &name, const std::string &note, float y)
     {
-        label("RulesetRulesSectionLabel", upperCopy(name), 0, y - m_rulesScroll);
+        label("RulesetRulesSectionLabel", upperCopy(UiText::translate(name)), 0, y - m_rulesScroll);
         label("RulesetRulesSectionNote", note, 0, y - m_rulesScroll);
         return y + 26 * RulesPixel;
     };
@@ -2500,7 +2593,11 @@ void NewGameScreen::drawRulesPanel()
     const std::optional<RulesetProgression> forcedProgression = rulesetChallengeModeProgression(draft.challengeMode);
     if (!choices.progressions.empty())
     {
-        y = section("Progression", forcedProgression ? "Set by " + challengeName : "", y);
+        y = section("Progression",
+                    forcedProgression
+                        ? UiText::translateTemplate("Set by {challenge_name}", {{"{challenge_name}", challengeName.c_str()}})
+                        : "",
+                    y);
         std::vector<std::string> names;
         size_t selected = 0;
         for (size_t index = 0; index < choices.progressions.size(); ++index)
@@ -2653,9 +2750,9 @@ void NewGameScreen::drawContinentSelection(float deltaSeconds)
         // Cards draw their pictures and lettering above their blank selectable skin.
         const UiLayoutManager::LayoutElement *pImage = m_designLayouts.findElement(prefix + "Illustration");
         drawTexture(pImage->primaryAsset, designRect(prefix + "Illustration"));
-        label(prefix + "Name", name);
-        label(prefix + "Game", m_designLayouts.findElement(prefix + "Game")->labelText);
-        label(prefix + "Start", m_designLayouts.findElement(prefix + "Start")->labelText);
+        label(prefix + "Name", UiText::translate(name));
+        label(prefix + "Game", UiText::translate(m_designLayouts.findElement(prefix + "Game")->labelText));
+        label(prefix + "Start", UiText::translate(m_designLayouts.findElement(prefix + "Start")->labelText));
     }
     if (action("ContinentSelectionCancelButton") || m_escapePressed)
     {
@@ -2705,7 +2802,8 @@ void NewGameScreen::drawScreen(float deltaSeconds)
     continentKey[0] = char(std::toupper(continentKey[0]));
     const UiLayoutManager::LayoutElement *pStart =
         m_designLayouts.findElement("ContinentSelection" + continentKey + "Start");
-    label("CharacterCreationContinent", m_selectedContinent.name + " - " + pStart->labelText);
+    label("CharacterCreationContinent",
+          UiText::translate(m_selectedContinent.name) + " - " + UiText::translate(pStart->labelText));
     const Rect nameRect = designRect("CharacterCreationNameField");
     if (m_state.nameEditing && (keyPressed(SDL_SCANCODE_TAB) || (leftMouseJustPressed() && !pointerInside(nameRect))))
     {
@@ -2837,7 +2935,9 @@ void NewGameScreen::drawScreen(float deltaSeconds)
         }
     }
     label("CharacterCreationVoiceValue",
-          "Voice " + std::to_string(m_state.selectedVoiceId) + " - " + selectedCandidate().raceName);
+          UiText::translateTemplate("Voice {voice_number} - {race_name}",
+                                    {{"{voice_number}", std::to_string(m_state.selectedVoiceId).c_str()},
+                                     {"{race_name}", UiText::translate(selectedCandidate().raceName).c_str()}}));
     // The race card (MAW: the race's skill bonuses, resistances and immunities).
     if (rightMouseDown() && !modalOpen()
         && (pointerInside(designRect("CharacterCreationPortraitImage"))
@@ -2891,9 +2991,12 @@ void NewGameScreen::drawScreen(float deltaSeconds)
     }
     const bool grantedSkills = isGodLichSelected();
     label("CharacterCreationBonusPoolValue",
-          grantedSkills ? "Preset" : std::to_string(currentBonusPool()) + " points left");
+          grantedSkills ? UiText::translate("Preset")
+                        : UiText::translateTemplate("{bonus_points} points left",
+                                                    {{"{bonus_points}", std::to_string(currentBonusPool()).c_str()}}));
     label("CharacterCreationAttributeHelp",
-          grantedSkills ? "Attributes are fixed for this preset." : "Spend all bonus points before beginning.");
+          grantedSkills ? UiText::translate("Attributes are fixed for this preset.")
+                        : UiText::translate("Spend all bonus points before beginning."));
     for (size_t index = 0; index < size_t(StatId::Count); ++index)
     {
         label(StatValueLayoutIds[index],
@@ -2949,15 +3052,18 @@ void NewGameScreen::drawScreen(float deltaSeconds)
     if (!grantedSkills)
     {
         label("CharacterCreationSubsection0",
-              required == 0   ? "No additional skills to choose"
-              : required == 1 ? "Choose one more"
-                              : "Choose two more",
+              required == 0   ? UiText::translate("No additional skills to choose")
+              : required == 1 ? UiText::translate("Choose one more")
+                              : UiText::translate("Choose two more"),
               0, skillOffset / designScale());
         if (required > 0)
         {
             label("CharacterCreationSkillCount",
-                  std::to_string(m_state.selectedOptionalSkills.size()) + " / " + std::to_string(required), 0,
-                  skillOffset / designScale());
+                  UiText::translateTemplate("{selected_count} / {required_count}",
+                                            {{"{selected_count}",
+                                              std::to_string(m_state.selectedOptionalSkills.size()).c_str()},
+                                             {"{required_count}", std::to_string(required).c_str()}}),
+                  0, skillOffset / designScale());
         }
     }
     for (size_t index = 0; !grantedSkills && index < m_state.optionalSkills.size(); ++index)
@@ -3023,12 +3129,17 @@ void NewGameScreen::drawScreen(float deltaSeconds)
     Rect summary = designRect("CharacterCreationPartySummary");
     const Rect lastSlot = designRect(PartySlotButtonLayoutIds[std::min(m_partySize, size_t(4))]);
     summary.x = lastSlot.x + lastSlot.width + 15 * designScale();
-    textInRect(summary, std::to_string(m_partySize) + " / 5 adventurers\n" + std::to_string(ready) + " ready",
+    textInRect(summary,
+               UiText::translateTemplate("{party_count} / {party_capacity} adventurers",
+                                         {{"{party_count}", std::to_string(m_partySize).c_str()},
+                                          {"{party_capacity}", "5"}}) +
+                   "\n" +
+                   UiText::translateTemplate("{ready_count} ready", {{"{ready_count}", std::to_string(ready).c_str()}}),
                "menu_lucida", 9.6f, 0xffa6b9b7u);
     label("CharacterCreationReadiness", m_state.statusMessage.empty()
                                             ? ready == m_partySize
-                                                  ? "Your party is ready."
-                                                  : "Assign bonus points and starting skills to each adventurer."
+                                                  ? UiText::translate("Your party is ready.")
+                                                  : UiText::translate("Assign bonus points and starting skills to each adventurer.")
                                             : m_state.statusMessage);
     if (action("CharacterCreationCancelButton"))
     {

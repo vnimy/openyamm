@@ -2934,6 +2934,29 @@ std::string ScenarioRuntimeDriver::activeDialogSummary() const
         stream << ']';
     }
 
+    // 对话正文本身不进摘要的话，汉化补丁没法用无头场景确认数据表是否真的生效。
+    if (!dialog.lines.empty())
+    {
+        std::string body;
+
+        for (const std::string &line : dialog.lines)
+        {
+            if (!body.empty())
+            {
+                body += " / ";
+            }
+
+            body += line;
+        }
+
+        if (body.size() > 120)
+        {
+            body = body.substr(0, 120) + "…";
+        }
+
+        stream << " text=\"" << body << '"';
+    }
+
     return stream.str();
 }
 

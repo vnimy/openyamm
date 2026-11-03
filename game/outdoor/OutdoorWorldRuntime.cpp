@@ -1,3 +1,4 @@
+#include "game/ui/UiText.h"
 #include "game/outdoor/OutdoorWorldRuntime.h"
 #include "game/gameplay/ActorVocalizationRules.h"
 #include "game/audio/ActorAudioRules.h"
@@ -16166,7 +16167,7 @@ bool OutdoorWorldRuntime::tryStealFromActor(size_t actorIndex, uint32_t successR
     {
         if (m_pInteractionView != nullptr)
         {
-            m_pInteractionView->setStatusBarEvent("You need Stealing skill.");
+            m_pInteractionView->setStatusBarEvent(UiText::translate("You need Stealing skill."));
         }
 
         return true;
@@ -16205,7 +16206,8 @@ bool OutdoorWorldRuntime::tryStealFromActor(size_t actorIndex, uint32_t successR
 
         if (m_pInteractionView != nullptr)
         {
-            m_pInteractionView->setStatusBarEvent("You found " + std::to_string(std::max(0, stolenGold)) + " gold!");
+            m_pInteractionView->setStatusBarEvent(UiText::translateTemplate(
+            "You found {gold} gold!", {{ "{gold}", std::to_string(std::max(0, stolenGold)) }}));
         }
 
         return true;
@@ -16237,7 +16239,7 @@ bool OutdoorWorldRuntime::tryStealFromActor(size_t actorIndex, uint32_t successR
     {
         if (m_pInteractionView != nullptr)
         {
-            m_pInteractionView->setStatusBarEvent("Pack is Full!");
+            m_pInteractionView->setStatusBarEvent(UiText::translate("Pack is Full!"));
         }
 
         return true;
@@ -16251,7 +16253,8 @@ bool OutdoorWorldRuntime::tryStealFromActor(size_t actorIndex, uint32_t successR
             m_pItemTable != nullptr ? m_pItemTable->get(inventoryItem.objectDescriptionId) : nullptr;
         const std::string itemName =
             pDefinition != nullptr ? ItemRuntime::foundItemName(*pDefinition) : "item";
-        m_pInteractionView->setStatusBarEvent("You found an item (" + itemName + ")!");
+        m_pInteractionView->setStatusBarEvent(
+            UiText::translateTemplate("You found an item ({item})!", {{ "{item}", itemName }}));
     }
 
     return true;

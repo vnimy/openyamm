@@ -396,6 +396,7 @@ add_executable(openyamm_unit_tests
     ../game/tables/LiquidTable.cpp
     ../game/tables/TextureFrameTable.cpp
     ../game/ui/GameplayUiController.cpp
+    ../game/ui/UiText.cpp
     ../game/ui/GameplayMapProgressText.cpp
     ../game/ui/HouseShopLayout.cpp
     ../game/ui/SpellbookUiLayout.cpp
@@ -456,16 +457,23 @@ target_include_directories(openyamm_unit_tests
         "${CMAKE_BINARY_DIR}/_deps/ffmpeg-install/include"
 )
 
-target_link_libraries(openyamm_unit_tests
-    PRIVATE
-        "${CMAKE_BINARY_DIR}/_deps/ffmpeg-install/lib/libavformat.a"
-        "${CMAKE_BINARY_DIR}/_deps/ffmpeg-install/lib/libavcodec.a"
-        "${CMAKE_BINARY_DIR}/_deps/ffmpeg-install/lib/libswresample.a"
-        "${CMAKE_BINARY_DIR}/_deps/ffmpeg-install/lib/libswscale.a"
-        "${CMAKE_BINARY_DIR}/_deps/ffmpeg-install/lib/libavutil.a"
-)
+if (OPENYAMM_HOUSE_VIDEOS)
+    target_link_libraries(openyamm_unit_tests
+        PRIVATE
+            "${CMAKE_BINARY_DIR}/_deps/ffmpeg-install/lib/libavformat.a"
+            "${CMAKE_BINARY_DIR}/_deps/ffmpeg-install/lib/libavcodec.a"
+            "${CMAKE_BINARY_DIR}/_deps/ffmpeg-install/lib/libswresample.a"
+            "${CMAKE_BINARY_DIR}/_deps/ffmpeg-install/lib/libswscale.a"
+            "${CMAKE_BINARY_DIR}/_deps/ffmpeg-install/lib/libavutil.a"
+    )
 
-add_dependencies(openyamm_unit_tests openyamm_ffmpeg_build)
+    add_dependencies(openyamm_unit_tests openyamm_ffmpeg_build)
+endif()
+
+if (WIN32 AND CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+    # MinGW names the WinHTTP import library; the MSVC build gets it from the SDK's default libraries.
+    target_link_libraries(openyamm_unit_tests PRIVATE winhttp bcrypt)
+endif()
 
 if (UNIX AND NOT APPLE)
     target_link_options(openyamm_unit_tests

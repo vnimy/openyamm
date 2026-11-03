@@ -20,6 +20,7 @@
 #include "game/tables/HouseTable.h"
 #include "game/tables/JournalQuestTable.h"
 #include "game/tables/NpcDialogTable.h"
+#include "game/ui/UiText.h"
 
 #include <algorithm>
 #include <cctype>
@@ -8407,7 +8408,7 @@ int luaStatusText(lua_State *pLuaState)
 {
     EventRuntimeState *pRuntimeState = writableRuntimeState(pLuaState);
     const char *pText = luaL_checkstring(pLuaState, 1);
-    pRuntimeState->statusMessages.push_back(pText);
+    pRuntimeState->statusMessages.push_back(UiText::translate(pText));
     return 0;
 }
 
@@ -9014,7 +9015,9 @@ int luaSetMessage(lua_State *pLuaState)
 
     if (pExecutionContext != nullptr)
     {
-        pExecutionContext->pendingMessageText = luaL_checkstring(pLuaState, 1);
+        // 内容包 lua 里的 evt.SetMessage("...") 是硬编码英文原文（NPC 对话正文、事件提示都走这里），
+        // 只能在这一层过一遍覆盖表；未收录的字符串原样返回。
+        pExecutionContext->pendingMessageText = UiText::translate(luaL_checkstring(pLuaState, 1));
 
         EventRuntimeState *pRuntimeState = pExecutionContext->pRuntimeState;
         const bool isNpcTopicExecution = !pExecutionContext->allowStandaloneMapEventDialogueContext;
@@ -9048,7 +9051,7 @@ int luaSimpleMessage(lua_State *pLuaState)
 
     if (lua_gettop(pLuaState) >= 1 && lua_type(pLuaState, 1) == LUA_TSTRING)
     {
-        pRuntimeState->messages.push_back(lua_tostring(pLuaState, 1));
+        pRuntimeState->messages.push_back(UiText::translate(lua_tostring(pLuaState, 1)));
         return 0;
     }
 

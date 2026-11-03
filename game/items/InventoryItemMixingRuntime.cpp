@@ -1,3 +1,4 @@
+#include "game/ui/UiText.h"
 #include "game/items/InventoryItemMixingRuntime.h"
 
 #include "game/items/ItemEnchantRuntime.h"
@@ -118,7 +119,7 @@ InventoryItemMixResult applyEquipmentPotion(
 
         if (targetItem.hardened)
         {
-            result.statusText = "Item already hardened!";
+            result.statusText = UiText::translate("Item already hardened!");
             return result;
         }
 
@@ -286,7 +287,7 @@ InventoryItemMixResult InventoryItemMixingRuntime::mixItems(
 
         if (newCharges == 0)
         {
-            result.statusText = "Wand already charged!";
+            result.statusText = UiText::translate("Wand already charged!");
             return result;
         }
 
@@ -316,7 +317,7 @@ InventoryItemMixResult InventoryItemMixingRuntime::mixItems(
             result.heldItemConsumed = true;
             result.targetItemChanged = true;
             result.action = InventoryItemMixAction::ReagentBottleMix;
-            result.statusText = "Mixed potion";
+            result.statusText = UiText::translate("Mixed potion");
             return result;
         };
 
@@ -357,7 +358,7 @@ InventoryItemMixResult InventoryItemMixingRuntime::mixItems(
         result.heldItemConsumed = true;
         result.targetItemChanged = true;
         result.returnsBottle = true;
-        result.statusText = "Mixed potion";
+        result.statusText = UiText::translate("Mixed potion");
         return result;
     }
 
@@ -379,7 +380,7 @@ InventoryItemMixResult InventoryItemMixingRuntime::mixItems(
         result.heldItemConsumed = true;
         result.targetItemRemoved = true;
         result.failureDamageLevel = damageLevel;
-        result.statusText = "Ooops";
+        result.statusText = UiText::translate("Ooops");
         return result;
     }
 
@@ -401,7 +402,7 @@ InventoryItemMixResult InventoryItemMixingRuntime::mixItems(
         }
     }
 
-    result.statusText = "Mixed potion";
+    result.statusText = UiText::translate("Mixed potion");
     return result;
 }
 

@@ -10,6 +10,7 @@
 #include "game/items/PriceCalculator.h"
 #include "game/party/SkillData.h"
 #include "game/rules/GameRules.h"
+#include "game/ui/UiText.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -1209,7 +1210,7 @@ std::string buildSellPhrase(
 
     if (itemDefinition.value <= 0)
     {
-        return "Sorry, I'm not interested in that item.";
+        return UiText::translate("Sorry, I'm not interested in that item.");
     }
 
     const int actualPrice = PriceCalculator::itemSellingPrice(
@@ -1232,18 +1233,22 @@ std::string buildSellPhrase(
 
     if (!hasMerchantSkillForPhrase(pActiveMember))
     {
-        return "Hmph. Looks like junk to me. <yawn> I suppose I could give you oh, say, "
-            + std::to_string(actualPrice) + " gold pieces for it.";
+        return UiText::translateTemplate(
+            "Hmph. Looks like junk to me. <yawn> I suppose I could give you oh, say, {price} gold pieces for it.",
+            {{"{price}", std::to_string(actualPrice)}});
     }
 
     if (actualPrice == realValue * std::max(1u, item.quantity))
     {
-        return "Normally, I do my best to buy a " + itemName + " for " + std::to_string(listedPrice)
-            + " gold. But I can see you know it's worth " + std::to_string(actualPrice) + ". Agreed?";
+        return UiText::translateTemplate(
+            "Normally, I do my best to buy a {item} for {listed} gold. "
+            "But I can see you know it's worth {price}. Agreed?",
+            {{"{item}", itemName}, {"{listed}", std::to_string(listedPrice)}, {"{price}", std::to_string(actualPrice)}});
     }
 
-    return "Usually I try to buy something like this " + itemName + " for " + std::to_string(listedPrice)
-        + " gold. I'll give you " + std::to_string(actualPrice) + " for it.";
+    return UiText::translateTemplate(
+        "Usually I try to buy something like this {item} for {listed} gold. I'll give you {price} for it.",
+        {{"{item}", itemName}, {"{listed}", std::to_string(listedPrice)}, {"{price}", std::to_string(actualPrice)}});
 }
 
 std::string buildIdentifyPhrase(
@@ -1262,8 +1267,9 @@ std::string buildIdentifyPhrase(
 
     if (!isShopItemFamilyAllowed(houseEntry, itemDefinition))
     {
-        return "Sorry, I can't identify a " + itemDisplayName(item, itemDefinition)
-            + " because I'm a " + merchantProfessionName(houseEntry) + ". I don't know anything about those.";
+        return UiText::translateTemplate(
+            "Sorry, I can't identify a {item} because I'm a {profession}. I don't know anything about those.",
+            {{"{item}", itemDisplayName(item, itemDefinition)}, {"{profession}", merchantProfessionName(houseEntry)}});
     }
 
     const int actualPrice = PriceCalculator::itemIdentificationPrice(
@@ -1274,7 +1280,9 @@ std::string buildIdentifyPhrase(
         pStandardItemEnchantTable,
         pSpecialItemEnchantTable,
         effectiveReputation);
-    return "I'll tell you what it is for " + std::to_string(actualPrice) + " gold pieces.";
+    return UiText::translateTemplate(
+        "I'll tell you what it is for {price} gold pieces.",
+        {{"{price}", std::to_string(actualPrice)}});
 }
 
 std::string buildRepairPhrase(
@@ -1291,7 +1299,8 @@ std::string buildRepairPhrase(
 
     if (!isShopItemFamilyAllowed(houseEntry, itemDefinition))
     {
-        return "Sorry, I have no idea how to fix a " + itemName + ".";
+        return UiText::translateTemplate(
+            "Sorry, I have no idea how to fix a {item}.", {{"{item}", itemName}});
     }
 
     if (!item.broken)
@@ -1319,19 +1328,24 @@ std::string buildRepairPhrase(
 
     if (!hasMerchantSkillForPhrase(pActiveMember))
     {
-        return "This " + itemName + " is nearly beyond repair. It will take a superhuman effort to fix it! "
-            "I'll have to charge " + std::to_string(actualPrice) + " gold.";
+        return UiText::translateTemplate(
+            "This {item} is nearly beyond repair. It will take a superhuman effort to fix it! "
+            "I'll have to charge {price} gold.",
+            {{"{item}", itemName}, {"{price}", std::to_string(actualPrice)}});
     }
 
     if (actualPrice == realValue)
     {
-        return "Hmmm. Nothing a little glue and polish won't fix, I warrant. My policy is to ask for "
-            + std::to_string(listedPrice) + " gold, but I can go as low as " + std::to_string(actualPrice) + ".";
+        return UiText::translateTemplate(
+            "Hmmm. Nothing a little glue and polish won't fix, I warrant. "
+            "My policy is to ask for {listed} gold, but I can go as low as {price}.",
+            {{"{listed}", std::to_string(listedPrice)}, {"{price}", std::to_string(actualPrice)}});
     }
 
-    return "This " + itemName + " is in bad shape, but it can be fixed. I usually want "
-        + std::to_string(listedPrice) + " gold, but for you I will charge a mere "
-        + std::to_string(actualPrice) + ".";
+    return UiText::translateTemplate(
+        "This {item} is in bad shape, but it can be fixed. I usually want {listed} gold, "
+        "but for you I will charge a mere {price}.",
+        {{"{item}", itemName}, {"{listed}", std::to_string(listedPrice)}, {"{price}", std::to_string(actualPrice)}});
 }
 }
 
@@ -1547,19 +1561,24 @@ std::string HouseServiceRuntime::buildBuyHoverText(
 
     if (!hasMerchantSkillForPhrase(pActiveMember))
     {
-        return "An excellent choice! This " + itemName
-            + " is of the finest quality. I am willing to virtually give it away for "
-            + std::to_string(actualPrice) + " gold.";
+        return UiText::translateTemplate(
+            "An excellent choice! This {item} is of the finest quality. "
+            "I am willing to virtually give it away for {price} gold.",
+            {{"{item}", itemName}, {"{price}", std::to_string(actualPrice)}});
     }
 
     if (actualPrice == realValue)
     {
-        return "I try to sell things like this " + itemName + " for " + std::to_string(listedPrice)
-            + " gold. But we both know it's really worth " + std::to_string(actualPrice) + ". So that's my price.";
+        return UiText::translateTemplate(
+            "I try to sell things like this {item} for {listed} gold. "
+            "But we both know it's really worth {price}. So that's my price.",
+            {{"{item}", itemName}, {"{listed}", std::to_string(listedPrice)}, {"{price}", std::to_string(actualPrice)}});
     }
 
-    return "Ordinarily I sell things like this " + itemName + " for " + std::to_string(listedPrice)
-        + " gold. But you drive a hard bargain-- I'll sell it to you for " + std::to_string(actualPrice) + ".";
+    return UiText::translateTemplate(
+        "Ordinarily I sell things like this {item} for {listed} gold. "
+        "But you drive a hard bargain-- I'll sell it to you for {price}.",
+        {{"{item}", itemName}, {"{listed}", std::to_string(listedPrice)}, {"{price}", std::to_string(actualPrice)}});
 }
 
 std::string HouseServiceRuntime::buildSellHoverText(
@@ -1606,9 +1625,10 @@ std::string HouseServiceRuntime::buildIdentifyHoverText(
 
     if (!supportsIdentify(houseEntry))
     {
-        return "Sorry, I can't identify a "
-            + itemDisplayName(item, *pItemDefinition, &standardItemEnchantTable, &specialItemEnchantTable)
-            + " because I'm a " + merchantProfessionName(houseEntry) + ".";
+        return UiText::translateTemplate(
+            "Sorry, I can't identify a {item} because I'm a {profession}.",
+            {{"{item}", itemDisplayName(item, *pItemDefinition, &standardItemEnchantTable, &specialItemEnchantTable)},
+             {"{profession}", merchantProfessionName(houseEntry)}});
     }
 
     return buildIdentifyPhrase(
@@ -1639,8 +1659,9 @@ std::string HouseServiceRuntime::buildRepairHoverText(
 
     if (!supportsRepair(houseEntry))
     {
-        return "Sorry, I have no idea how to fix a "
-            + itemDisplayName(item, *pItemDefinition, &standardItemEnchantTable, &specialItemEnchantTable) + ".";
+        return UiText::translateTemplate(
+            "Sorry, I have no idea how to fix a {item}.",
+            {{"{item}", itemDisplayName(item, *pItemDefinition, &standardItemEnchantTable, &specialItemEnchantTable)}});
     }
 
     return buildRepairPhrase(
@@ -1684,7 +1705,7 @@ bool HouseServiceRuntime::tryBuyStockItem(
 
     if (pStock == nullptr || slotIndex >= pStock->size() || (*pStock)[slotIndex].objectDescriptionId == 0)
     {
-        statusText = "Nothing is for sale in that slot.";
+        statusText = UiText::translate("Nothing is for sale in that slot.");
 
         if (pResult != nullptr)
         {
@@ -1699,7 +1720,7 @@ bool HouseServiceRuntime::tryBuyStockItem(
 
     if (pItemDefinition == nullptr)
     {
-        statusText = "That item is unavailable.";
+        statusText = UiText::translate("That item is unavailable.");
 
         if (pResult != nullptr)
         {
@@ -1720,7 +1741,7 @@ bool HouseServiceRuntime::tryBuyStockItem(
 
     if (party.gold() < price)
     {
-        statusText = "Not enough gold.";
+        statusText = UiText::translate("Not enough gold.");
 
         if (pResult != nullptr)
         {
@@ -1732,7 +1753,7 @@ bool HouseServiceRuntime::tryBuyStockItem(
 
     if (!party.tryGrantInventoryItemStartingAt(party.activeMemberIndex(), item))
     {
-        statusText = "Inventory full.";
+        statusText = UiText::translate("Inventory full.");
 
         if (pResult != nullptr)
         {
@@ -1744,10 +1765,11 @@ bool HouseServiceRuntime::tryBuyStockItem(
 
     party.addGold(-price);
     (*pStock)[slotIndex] = {};
-    statusText =
-        "Bought "
-        + ItemRuntime::displayName(item, *pItemDefinition, &standardItemEnchantTable, &specialItemEnchantTable)
-        + " for " + std::to_string(price) + " gold.";
+    statusText = UiText::translateTemplate(
+        "Bought {item} for {price} gold.",
+        {{"{item}", ItemRuntime::displayName(
+                         item, *pItemDefinition, &standardItemEnchantTable, &specialItemEnchantTable)},
+         {"{price}", std::to_string(price)}});
 
     if (pResult != nullptr)
     {
@@ -1775,7 +1797,7 @@ bool HouseServiceRuntime::tryRerollStock(
 
     if (party.gold() < *cost)
     {
-        statusText = "Not enough gold.";
+        statusText = UiText::translate("Not enough gold.");
         return false;
     }
 
@@ -1795,7 +1817,8 @@ bool HouseServiceRuntime::tryRerollStock(
         }
     }
 
-    statusText = "New stock for " + std::to_string(*cost) + " gold.";
+    statusText = UiText::translateTemplate(
+        "New stock for {price} gold.", {{"{price}", std::to_string(*cost)}});
     return true;
 }
 
@@ -1833,7 +1856,7 @@ bool HouseServiceRuntime::tryStealStockItem(
 
     if (pStock == nullptr || slotIndex >= pStock->size() || (*pStock)[slotIndex].objectDescriptionId == 0)
     {
-        statusText = "Nothing is for sale in that slot.";
+        statusText = UiText::translate("Nothing is for sale in that slot.");
 
         if (pResult != nullptr)
         {
@@ -1849,7 +1872,7 @@ bool HouseServiceRuntime::tryStealStockItem(
 
     if (pItemDefinition == nullptr || pMember == nullptr)
     {
-        statusText = "That item is unavailable.";
+        statusText = UiText::translate("That item is unavailable.");
 
         if (pResult != nullptr)
         {
@@ -1872,7 +1895,7 @@ bool HouseServiceRuntime::tryStealStockItem(
 
     if (!stealResult.handled)
     {
-        statusText = "You need Stealing skill to steal that.";
+        statusText = UiText::translate("You need Stealing skill to steal that.");
 
         if (pResult != nullptr)
         {
@@ -1886,7 +1909,7 @@ bool HouseServiceRuntime::tryStealStockItem(
 
     if (stealResult.outcome == StealingOutcomeKind::NoInventoryRoom)
     {
-        statusText = "Inventory full.";
+        statusText = UiText::translate("Inventory full.");
 
         if (pResult != nullptr)
         {
@@ -1900,7 +1923,7 @@ bool HouseServiceRuntime::tryStealStockItem(
     {
         if (!party.tryGrantInventoryItemStartingAt(party.activeMemberIndex(), item))
         {
-            statusText = "Inventory full.";
+            statusText = UiText::translate("Inventory full.");
 
             if (pResult != nullptr)
             {
@@ -1911,7 +1934,7 @@ bool HouseServiceRuntime::tryStealStockItem(
         }
 
         (*pStock)[slotIndex] = {};
-        statusText = "Stole "
+        statusText = UiText::translate("Stole ")
             + ItemRuntime::displayName(item, *pItemDefinition, &standardItemEnchantTable, &specialItemEnchantTable)
             + ".";
 
@@ -1925,7 +1948,7 @@ bool HouseServiceRuntime::tryStealStockItem(
 
     if (stealResult.caught)
     {
-        statusText = "Caught stealing.";
+        statusText = UiText::translate("Caught stealing.");
 
         if (EventRuntimeState *pEventRuntimeState = worldRuntime.eventRuntimeState())
         {
@@ -1944,7 +1967,7 @@ bool HouseServiceRuntime::tryStealStockItem(
         return false;
     }
 
-    statusText = "You failed to steal it.";
+    statusText = UiText::translate("You failed to steal it.");
 
     if (pResult != nullptr)
     {
@@ -1984,7 +2007,7 @@ bool HouseServiceRuntime::trySellInventoryItem(
 
     if (pItem == nullptr)
     {
-        statusText = "No item there.";
+        statusText = UiText::translate("No item there.");
 
         if (pResult != nullptr)
         {
@@ -1996,7 +2019,7 @@ bool HouseServiceRuntime::trySellInventoryItem(
 
     if (!canSellItemToHouse(itemTable, houseEntry, *pItem))
     {
-        statusText = "That item cannot be sold.";
+        statusText = UiText::translate("That item cannot be sold.");
 
         if (pResult != nullptr)
         {
@@ -2010,7 +2033,7 @@ bool HouseServiceRuntime::trySellInventoryItem(
 
     if (pItemDefinition == nullptr)
     {
-        statusText = "That item is unavailable.";
+        statusText = UiText::translate("That item is unavailable.");
 
         if (pResult != nullptr)
         {
@@ -2044,7 +2067,7 @@ bool HouseServiceRuntime::trySellInventoryItem(
 
     if (!party.takeItemFromMemberInventoryCell(memberIndex, pItem->gridX, pItem->gridY, removedItem))
     {
-        statusText = "Could not take the item.";
+        statusText = UiText::translate("Could not take the item.");
 
         if (pResult != nullptr)
         {
@@ -2056,9 +2079,11 @@ bool HouseServiceRuntime::trySellInventoryItem(
 
     party.addGold(price);
     party.rules().items.itemSold(party, removedItem);
-    statusText = "Sold "
-        + itemDisplayName(removedItem, *pItemDefinition, &standardItemEnchantTable, &specialItemEnchantTable)
-        + " for " + std::to_string(price) + " gold.";
+    statusText = UiText::translateTemplate(
+        "Sold {item} for {price} gold.",
+        {{"{item}", itemDisplayName(
+                         removedItem, *pItemDefinition, &standardItemEnchantTable, &specialItemEnchantTable)},
+         {"{price}", std::to_string(price)}});
 
     if (pResult != nullptr)
     {
@@ -2099,7 +2124,7 @@ bool HouseServiceRuntime::tryIdentifyInventoryItem(
 
     if (pItem == nullptr)
     {
-        statusText = "No item there.";
+        statusText = UiText::translate("No item there.");
 
         if (pResult != nullptr)
         {
@@ -2113,7 +2138,7 @@ bool HouseServiceRuntime::tryIdentifyInventoryItem(
 
     if (pItemDefinition == nullptr)
     {
-        statusText = "That item is unavailable.";
+        statusText = UiText::translate("That item is unavailable.");
 
         if (pResult != nullptr)
         {
@@ -2158,7 +2183,7 @@ bool HouseServiceRuntime::tryIdentifyInventoryItem(
 
     if (party.gold() < price)
     {
-        statusText = "You don't have enough gold";
+        statusText = UiText::translate("You don't have enough gold");
 
         if (pResult != nullptr)
         {
@@ -2172,7 +2197,7 @@ bool HouseServiceRuntime::tryIdentifyInventoryItem(
 
     if (!party.identifyMemberInventoryItem(memberIndex, gridX, gridY, identifyStatus))
     {
-        statusText = identifyStatus.empty() ? "Identify Failed" : identifyStatus;
+        statusText = identifyStatus.empty() ? UiText::translate("Identify Failed") : identifyStatus;
 
         if (pResult != nullptr)
         {
@@ -2224,7 +2249,7 @@ bool HouseServiceRuntime::tryRepairInventoryItem(
 
     if (pItem == nullptr)
     {
-        statusText = "No item there.";
+        statusText = UiText::translate("No item there.");
 
         if (pResult != nullptr)
         {
@@ -2238,7 +2263,7 @@ bool HouseServiceRuntime::tryRepairInventoryItem(
 
     if (pItemDefinition == nullptr)
     {
-        statusText = "That item is unavailable.";
+        statusText = UiText::translate("That item is unavailable.");
 
         if (pResult != nullptr)
         {
@@ -2283,7 +2308,7 @@ bool HouseServiceRuntime::tryRepairInventoryItem(
 
     if (party.gold() < price)
     {
-        statusText = "You don't have enough gold";
+        statusText = UiText::translate("You don't have enough gold");
 
         if (pResult != nullptr)
         {
@@ -2297,7 +2322,7 @@ bool HouseServiceRuntime::tryRepairInventoryItem(
 
     if (!party.repairMemberInventoryItem(memberIndex, gridX, gridY, repairStatus))
     {
-        statusText = repairStatus.empty() ? "Repair Failed" : repairStatus;
+        statusText = repairStatus.empty() ? UiText::translate("Repair Failed") : repairStatus;
 
         if (pResult != nullptr)
         {
@@ -2308,7 +2333,7 @@ bool HouseServiceRuntime::tryRepairInventoryItem(
     }
 
     party.addGold(-price);
-    statusText = "Good as New!";
+    statusText = UiText::translate("Good as New!");
 
     if (pResult != nullptr)
     {

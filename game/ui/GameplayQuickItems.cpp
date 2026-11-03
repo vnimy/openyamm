@@ -16,6 +16,7 @@
 #include "game/ui/GameplayHudCommon.h"
 #include "game/ui/GameplayUiRuntime.h"
 #include "game/ui/GameplayUiSkin.h"
+#include "game/ui/UiText.h"
 
 #include <SDL3/SDL.h>
 
@@ -405,17 +406,19 @@ std::string hubState(GameplayScreenRuntime &context, const Party &party, size_t 
 
     if (GameMechanics::canTakeGameplayAction(*pMember))
     {
-        return "ready";
+        return UiText::translate("ready");
     }
 
     if (!InventoryItemUseRuntime::drinkRecoveryApplies(context.mergedPotionSettingTable()))
     {
-        return "recovering";
+        return UiText::translate("recovering");
     }
 
     const std::optional<size_t> payer = InventoryItemUseRuntime::drinkRecoveryPayer(party, member);
     const Character *pPayer = payer ? party.member(*payer) : nullptr;
-    return pPayer != nullptr ? "next fed by " + pPayer->name : "nobody ready";
+    return pPayer != nullptr
+        ? UiText::translateTemplate("next fed by {name}", {{"{name}", pPayer->name}})
+        : UiText::translate("nobody ready");
 }
 
 void closeRing(GameplayScreenRuntime &context)
@@ -440,7 +443,8 @@ void renderPicker(GameplayScreenRuntime &context, const Party &party, const Char
     const QuickItemSlot &quickSlot = member.quickItemSlots[slot];
     paint.fill(layout.panel, PanelFill);
     paint.frame(layout.panel, std::max(1.0f, u), PanelBorder);
-    paint.text("Fondamento", 18 * u, Label, "Slot " + std::to_string(slot + 1), layout.panel.x + 12 * u,
+    paint.text("Fondamento", 18 * u, Label,
+        UiText::translateTemplate("Slot {slot}", {{"{slot}", std::to_string(slot + 1)}}), layout.panel.x + 12 * u,
         layout.panel.y + 9 * u);
     const std::array<const char *, 2> rules = {"Weakest first", "Strongest first"};
 
@@ -449,7 +453,7 @@ void renderPicker(GameplayScreenRuntime &context, const Party &party, const Char
         const bool on = size_t(quickSlot.bottleRule) == index;
         paint.fill(layout.rules[index], on ? ChipOnFill : ChipFill);
         paint.frame(layout.rules[index], std::max(1.0f, u), on ? ChipOnBorder : ChipBorder);
-        paint.text(TextFont, 11 * u, on ? Ivory : Body, rules[index],
+        paint.text(TextFont, 11 * u, on ? Ivory : Body, UiText::translate(rules[index]),
             layout.rules[index].x + layout.rules[index].width / 2, layout.rules[index].y + 4 * u, 1);
     }
 
@@ -469,7 +473,8 @@ void renderPicker(GameplayScreenRuntime &context, const Party &party, const Char
 
         paint.fill({box.x, box.y + box.height - std::max(1.0f, u), box.width, std::max(1.0f, u)}, RowRule);
         paint.icon(row.icon, {box.x + 2 * u, box.y + 3 * u, 30 * u, box.height - 6 * u}, false);
-        const std::string countText = "x" + std::to_string(row.count);
+        const std::string countText =
+            UiText::translateTemplate("x{count}", {{"{count}", std::to_string(row.count)}});
         const float countWidth = paint.width(TextFont, 13 * u, countText);
         paint.text(TextFont, 13 * u, Ivory,
             paint.fitted(TextFont, 13 * u, row.name, box.width - 46 * u - countWidth - 8 * u), box.x + 38 * u,
@@ -483,7 +488,9 @@ void renderPicker(GameplayScreenRuntime &context, const Party &party, const Char
         }
 
         // The HUD fonts are single-byte: the middle dot is 0xB7.
-        const std::string note = (row.power > 0 ? "strength " + std::to_string(row.power) + "  \xB7  " : std::string())
+        const std::string note = (row.power > 0
+                ? UiText::translateTemplate("strength {power}", {{"{power}", std::to_string(row.power)}}) + "  \xB7  "
+                : std::string())
             + carriers;
         paint.text(TextFont, 10 * u, Muted, paint.fitted(TextFont, 10 * u, note, box.width - 44 * u), box.x + 38 * u,
             box.y + 21 * u);
@@ -491,7 +498,8 @@ void renderPicker(GameplayScreenRuntime &context, const Party &party, const Char
 
     if (rows.empty())
     {
-        paint.text(TextFont, 12 * u, Muted, "Nobody carries a potion or a scroll", layout.list.x + 6 * u,
+        paint.text(TextFont, 12 * u, Muted, UiText::translate("Nobody carries a potion or a scroll"),
+            layout.list.x + 6 * u,
             layout.list.y + 8 * u);
     }
 
@@ -509,8 +517,8 @@ void renderPicker(GameplayScreenRuntime &context, const Party &party, const Char
         paint.frame(box, std::max(1.0f, u), ChipOnBorder);
         paint.text("Fondamento", 14 * u, abgr(0xe8d1a4), pLabel, box.x + box.width / 2, box.y + 3 * u, 1);
     };
-    button(layout.clear, "Clear slot");
-    button(layout.close, "Close");
+    button(layout.clear, UiText::translate("Clear slot").c_str());
+    button(layout.close, UiText::translate("Close").c_str());
 }
 
 // The picker's clicks and wheel: true when the pointer was over it.
@@ -720,7 +728,8 @@ void GameplayQuickItems::renderHud(GameplayScreenRuntime &context, int width, in
     paint.ring(layout->hub, 3.0f, false);
     paint.text("Fondamento", 19 * unit, Label, pMember->name, layout->hub.x, layout->hub.y - 16 * unit, 1);
     const std::string stateText = hubState(context, *pParty, state.quickItemRingMember);
-    paint.text("Lucida", 11 * unit, stateText == "nobody ready" ? Warn : Muted, stateText, layout->hub.x,
+    paint.text("Lucida", 11 * unit, stateText == UiText::translate("nobody ready") ? Warn : Muted, stateText,
+        layout->hub.x,
         layout->hub.y + 8 * unit, 1);
 
     if (state.quickItemPickerSlot && *state.quickItemPickerSlot < QuickItemSlotCount)

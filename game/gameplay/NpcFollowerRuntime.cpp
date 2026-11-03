@@ -1,3 +1,4 @@
+#include "game/ui/UiText.h"
 #include "game/gameplay/NpcFollowerRuntime.h"
 
 #include "game/party/Party.h"
@@ -383,11 +384,14 @@ std::string foundGoldStatusText(const FoundGold &foundGold)
 {
     if (foundGold.followerShare > 0)
     {
-        return "You found " + std::to_string(foundGold.amount) + " gold (followers take "
-            + std::to_string(foundGold.followerShare) + ")!";
+        return UiText::translateTemplate(
+            "You found {gold} gold (followers take {share})!",
+            {{"{gold}", std::to_string(foundGold.amount)},
+             {"{share}", std::to_string(foundGold.followerShare)}});
     }
 
-    return "You found " + std::to_string(foundGold.amount) + " gold!";
+    return UiText::translateTemplate(
+        "You found {gold} gold!", {{"{gold}", std::to_string(foundGold.amount)}});
 }
 
 bool hiredNpcCanRepairItemKind(std::span<const HiredNpcFollower> followers, const std::string &equipStat)

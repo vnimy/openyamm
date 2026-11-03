@@ -8,8 +8,10 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <vector>
 
 namespace
 {
@@ -54,6 +56,33 @@ struct FontFixture
     }
 };
 
+// The CP1252 byte the legacy tables store, as the code point the atlas is keyed by.
+uint32_t cp1252ByteCodePoint(unsigned char byte)
+{
+    static const uint32_t extended[32] = {0x20ac, 0, 0x201a, 0x192, 0x201e, 0x2026, 0x2020, 0x2021, 0x2c6, 0x2030,
+        0x160, 0x2039, 0x152, 0, 0x17d, 0, 0, 0x2018, 0x2019, 0x201c, 0x201d, 0x2022, 0x2013, 0x2014, 0x2dc, 0x2122,
+        0x161, 0x203a, 0x153, 0, 0x17e, 0x178};
+    return byte >= 0x80 && byte < 0xa0 ? extended[byte - 0x80] : uint32_t(byte);
+}
+
+int textWidth(const Engine::FontAtlas &atlas, const std::string &text)
+{
+    int width = 0;
+
+    for (unsigned char character : text)
+    {
+        const uint32_t codePoint = cp1252ByteCodePoint(character);
+        const Engine::FontGlyph *pGlyph = codePoint != 0 ? atlas.glyph(codePoint) : nullptr;
+
+        if (pGlyph != nullptr)
+        {
+            width += pGlyph->metrics.leftSpacing + pGlyph->metrics.width + pGlyph->metrics.rightSpacing;
+        }
+    }
+
+    return width;
+}
+
 int textWidth(const std::array<Engine::FontGlyphMetrics, 256> &metrics, const std::string &text)
 {
     int width = 0;
@@ -94,19 +123,25 @@ TEST_CASE("menu outline fonts load independently of legacy metrics")
         INFO(error);
         REQUIRE(image);
         CHECK(image->atlas.atlasScale == 1);
-        CHECK(image->atlas.glyphMetrics['W'].advance() > image->atlas.glyphMetrics['i'].advance());
-        CHECK(image->atlas.glyphMetrics[' '].advance() > 0);
+        const Engine::FontGlyph *pWide = image->atlas.glyph('W');
+        const Engine::FontGlyph *pNarrow = image->atlas.glyph('i');
+        const Engine::FontGlyph *pSpace = image->atlas.glyph(' ');
+        REQUIRE(pWide);
+        REQUIRE(pNarrow);
+        REQUIRE(pSpace);
+        CHECK(pWide->metrics.advance() > pNarrow->metrics.advance());
+        CHECK(pSpace->metrics.advance() > 0);
         bool fractionalAdvance = false;
-        for (const Engine::FontGlyphMetrics &metrics : image->atlas.glyphMetrics)
+        for (const auto &[codePoint, glyph] : image->atlas.glyphs)
         {
-            fractionalAdvance = fractionalAdvance || metrics.advance() != std::floor(metrics.advance());
+            fractionalAdvance = fractionalAdvance || glyph.metrics.advance() != std::floor(glyph.metrics.advance());
         }
         if (std::string(pName) == "fondamento")
         {
             CHECK(fractionalAdvance);
         }
-        CHECK(textWidth(image->atlas.glyphMetrics, "WWW") > textWidth(image->atlas.glyphMetrics, "iii"));
-        CHECK(textWidth(image->atlas.glyphMetrics, "Begin Adventure") > 0);
+        CHECK(textWidth(image->atlas, "WWW") > textWidth(image->atlas, "iii"));
+        CHECK(textWidth(image->atlas, "Begin Adventure") > 0);
         bool ink = false;
         for (size_t i = 3; i < image->atlas.mainAtlasPixels.size(); i += 4)
             ink = ink || image->atlas.mainAtlasPixels[i] != 0;
@@ -132,13 +167,15 @@ TEST_CASE("menu outline font atlas rasterizes at display size with antialiased "
             const Engine::FontAtlas &font = image->atlas;
             CHECK(font.fontHeight == pixelHeight);
             CHECK(font.atlasScale == 1);
-            const int cellWidth = font.atlasCellWidth + 2 * font.atlasPadding;
-            const int cellHeight = font.fontHeight + 2 * font.atlasPadding;
             for (unsigned char character : std::string("Wil\xc9\xe9"))
             {
                 CAPTURE(character);
-                const int cellX = character % 16 * cellWidth;
-                const int cellY = character / 16 * cellHeight;
+                const Engine::FontGlyph *pGlyph = font.glyph(character);
+                REQUIRE_MESSAGE(pGlyph, "missing glyph for byte " << int(character));
+                const int cellX = pGlyph->cellX;
+                const int cellY = pGlyph->cellY;
+                const int cellWidth = pGlyph->cellWidth;
+                const int cellHeight = pGlyph->cellHeight;
                 size_t ink = 0;
                 size_t antialiased = 0;
                 bool sameShadow = true;
@@ -157,8 +194,7 @@ TEST_CASE("menu outline font atlas rasterizes at display size with antialiased "
                                     font.mainAtlasPixels[offset + 2] == 255;
                         if (alpha > 0)
                         {
-                            contained &= x > 0 && x < font.glyphMetrics[character].width + 2 * font.atlasPadding - 1 &&
-                                         y > 0 && y < cellHeight - 1;
+                            contained &= x > 0 && x < pGlyph->cellWidth - 1 && y > 0 && y < cellHeight - 1;
                         }
                     }
                 }
@@ -187,7 +223,7 @@ TEST_CASE("enemy label font loads its authored semibold weight and rejects inval
         Engine::loadTrueTypeFontAtlas(fixture.assets, "alegreya_semibold", error);
     REQUIRE_MESSAGE(semibold, error);
     CHECK(semibold->atlas.fontHeight == 24);
-    CHECK(textWidth(semibold->atlas.glyphMetrics, "Guardian of VARN 617/617") * 0.42f < 144.0f);
+    CHECK(textWidth(semibold->atlas, "Guardian of VARN 617/617") * 0.42f < 144.0f);
     CHECK(semibold->atlas.mainAtlasPixels.size() < 2 * 1024 * 1024);
 
     const auto writeWeight = [&](int weight)
@@ -261,11 +297,19 @@ TEST_CASE("menu headings fit their layout at the intended font size across displ
             }
             const Engine::FontAtlas &font = sizedFonts.at(pixelHeight);
             float width = 0;
-            uint8_t previous = 0;
-            for (unsigned char character : element.labelText)
+            uint32_t previous = 0;
+            size_t textIndex = 0;
+            while (textIndex < element.labelText.size())
             {
-                width += font.glyphMetrics[character].advance() + font.kerning(previous, character);
-                previous = character;
+                const uint32_t codePoint = Engine::decodeUtf8(element.labelText, textIndex);
+                const Engine::FontGlyph *pGlyph = font.glyph(codePoint);
+
+                if (pGlyph != nullptr)
+                {
+                    width += pGlyph->metrics.advance() + font.kerning(previous, codePoint);
+                }
+
+                previous = codePoint;
             }
             CHECK(width <= (element.width - 2 * element.textPadX) * scale + 0.5f);
         }
@@ -345,19 +389,21 @@ TEST_CASE("font atlas TTF preserves native layout and rasterizes all CP1252 cell
     CHECK(ttf->atlas.atlasScale == 4);
     CHECK(ttf->atlas.atlasWidth == (cellWidth + 10) * 16 * 4);
     CHECK(ttf->atlas.atlasHeight == (height + 10) * 16 * 4);
-    CHECK(ttf->atlas.firstChar == (*bytes)[0]);
-    CHECK(ttf->atlas.lastChar == (*bytes)[1]);
-    for (int character = 0; character < 256; ++character)
+    for (int character = (*bytes)[0]; character <= (*bytes)[1]; ++character)
     {
-        const Engine::FontGlyphMetrics &replacement = ttf->atlas.glyphMetrics[character];
-        CHECK(native[character].leftSpacing == replacement.leftSpacing);
-        CHECK(native[character].width == replacement.width);
-        CHECK(native[character].rightSpacing == replacement.rightSpacing);
+        CAPTURE(character);
+        const uint32_t codePoint = cp1252ByteCodePoint(static_cast<unsigned char>(character));
+        const uint32_t lookup = codePoint != 0 ? codePoint : 0xe000 + uint32_t(character);
+        const Engine::FontGlyph *pGlyph = ttf->atlas.glyph(lookup);
+        REQUIRE_MESSAGE(pGlyph, "missing legacy glyph slot " << character);
+        CHECK(native[size_t(character)].leftSpacing == pGlyph->metrics.leftSpacing);
+        CHECK(native[size_t(character)].width == pGlyph->metrics.width);
+        CHECK(native[size_t(character)].rightSpacing == pGlyph->metrics.rightSpacing);
     }
     for (const std::string &text : {"Welcome to New Sorpigal, traveller!", "Illusion, magic & adventure.",
         "A very long conversation about goblins and dragons.", "\x93\xc9lise\x94 \x97 \x80"})
     {
-        CHECK(textWidth(ttf->atlas.glyphMetrics, text) == textWidth(native, text));
+        CHECK(textWidth(ttf->atlas, text) == textWidth(native, text));
     }
     const bool noteFace = std::string(pName) == "AUTONOTE";
     size_t partialAlphaCount = 0;
@@ -427,16 +473,70 @@ TEST_CASE("legacy font atlas requires its TTF replacement and reports broken des
     CHECK(error == "invalid legacy FNT");
 }
 
-TEST_CASE("UTF-8 text converts to the CP1252 bytes of the legacy faces without the platform's iconv")
+TEST_CASE("UTF-8 text decodes to the code points the atlas is keyed by")
 {
+    const auto decodeAll =
+        [](const std::string &text)
+        {
+            std::vector<uint32_t> points;
+            size_t index = 0;
+
+            while (index < text.size())
+            {
+                points.push_back(Engine::decodeUtf8(text, index));
+            }
+
+            return points;
+        };
+
     // The MAW Rules panel: times, en dash, em dash and middle dot.
-    CHECK(Engine::utf8ToCp1252("\xC3\x97" "0.50") == "\xD7" "0.50");
-    CHECK(Engine::utf8ToCp1252("1\xE2\x80\x93" "3") == "1\x96" "3");
-    CHECK(Engine::utf8ToCp1252("\xE2\x80\x94") == "\x97");
-    CHECK(Engine::utf8ToCp1252("once \xC2\xB7 fixed") == "once \xB7 fixed");
-    CHECK(Engine::utf8ToCp1252("engine\xE2\x80\x99s \xE2\x82\xAC") == "engine\x92s \x80");
-    CHECK(Engine::utf8ToCp1252("plain") == "plain");
-    // CP1252 has no arrow; a name imported as CP1252 is not valid UTF-8 and stays as it is.
-    CHECK(Engine::utf8ToCp1252("a \xE2\x86\x92 b") == "a ? b");
-    CHECK(Engine::utf8ToCp1252("Caf\xE9") == "Caf\xE9");
+    CHECK(decodeAll("\xC3\x97" "0.50") == std::vector<uint32_t>{0xd7, '0', '.', '5', '0'});
+    CHECK(decodeAll("1\xE2\x80\x93" "3") == std::vector<uint32_t>{'1', 0x2013, '3'});
+    CHECK(decodeAll("\xE2\x80\x94") == std::vector<uint32_t>{0x2014});
+    CHECK(decodeAll("\xE2\x80\x99") == std::vector<uint32_t>{0x2019});
+    CHECK(decodeAll("plain") == std::vector<uint32_t>{'p', 'l', 'a', 'i', 'n'});
+    // A Chinese phrase keeps one code point per character.
+    CHECK(decodeAll("\xE5\x8C\x95\xE4\xBC\xA4\xE5\xB2\x9B")
+        == std::vector<uint32_t>{0x5317, 0x4f24, 0x5c9b});
+    // Invalid bytes decode as one replacement character each so callers always advance.
+    CHECK(decodeAll("a\xFF" "b") == std::vector<uint32_t>{'a', 0xfffd, 'b'});
+}
+
+TEST_CASE("a CJK face bakes the glyph subset of the translations next to its Latin coverage")
+{
+    // Only meaningful with the Chinese patch prepared: OPENYAMM_CJK_ASSETS names an asset root that already holds
+    // engine/fonts/truetype/<face>.yml, openyamm_cjk.ttf and cjk_glyphs.txt.
+    const char *pAssetRoot = std::getenv("OPENYAMM_CJK_ASSETS");
+
+    if (pAssetRoot == nullptr)
+    {
+        return;
+    }
+
+    const std::filesystem::path root = pAssetRoot;
+    Engine::AssetFileSystem assets;
+    REQUIRE(assets.initialize(root, root, Engine::AssetScaleTier::X1));
+
+    std::string error;
+    const std::optional<Engine::FontAtlasImage> image = Engine::loadTrueTypeFontAtlas(assets, "arrus", error);
+    assets.shutdown();
+
+    REQUIRE_MESSAGE(image, error);
+    const Engine::FontAtlas &font = image->atlas;
+
+    // Latin coverage survives the switch to the CJK face.
+    REQUIRE(font.glyph('A') != nullptr);
+    CHECK(font.glyph('A')->metrics.width > 0);
+
+    // The translated tables' characters are baked, and a full-width ideograph keeps a full-width advance.
+    const Engine::FontGlyph *pIsland = font.glyph(0x5c9b);
+    REQUIRE(pIsland);
+    CHECK(pIsland->metrics.width > 0);
+    CHECK(pIsland->metrics.advance() > font.glyph('A')->metrics.advance());
+
+    for (const uint32_t codePoint : {uint32_t(0x5317), uint32_t(0x4f24), uint32_t(0x9b54)})
+    {
+        CAPTURE(codePoint);
+        CHECK(font.glyph(codePoint) != nullptr);
+    }
 }

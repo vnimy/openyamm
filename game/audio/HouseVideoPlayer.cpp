@@ -1,5 +1,9 @@
 #include "game/audio/HouseVideoPlayer.h"
 
+// House videos decode through the bundled FFmpeg, which a native Windows build may not have. The switch keeps every
+// entry point in place and simply plays nothing.
+#if OPENYAMM_HOUSE_VIDEOS
+
 #include "engine/BgfxContext.h"
 #include "game/render/TextureFiltering.h"
 
@@ -1728,3 +1732,130 @@ void HouseVideoPlayer::updateFinishedPlaybackState(float deltaSeconds)
         || m_playbackSeconds + 0.001 >= endTimeSeconds;
 }
 }
+
+#else // OPENYAMM_HOUSE_VIDEOS
+
+#include <bgfx/bgfx.h>
+
+namespace OpenYAMM::Game
+{
+// Without the bundled FFmpeg there is nothing to decode: the player keeps the same surface and reports no video.
+struct HouseVideoPlayer::StreamingSession
+{
+};
+
+HouseVideoPlayer::HouseVideoPlayer()
+    : m_isInitialized(false)
+    , m_initializedAudioSubsystem(false)
+    , m_videoTextureHandle(BGFX_INVALID_HANDLE)
+    , m_videoTextureWidth(0)
+    , m_videoTextureHeight(0)
+    , m_pAudioStream(nullptr)
+    , m_playbackSeconds(0.0f)
+    , m_totalQueuedAudioFrames(0)
+    , m_loopPlayback(false)
+    , m_playbackStarted(false)
+    , m_hasActiveFrame(false)
+    , m_finishedPlayback(false)
+    , m_presentedFrameSeconds(0.0)
+    , m_presentedFrameSerial(0)
+    , m_audioVolume(1.0f)
+{
+}
+
+HouseVideoPlayer::~HouseVideoPlayer() = default;
+
+bool HouseVideoPlayer::initialize()
+{
+    return false;
+}
+
+void HouseVideoPlayer::shutdown()
+{
+    m_isInitialized = false;
+}
+
+void HouseVideoPlayer::stop()
+{
+    m_hasActiveFrame = false;
+    m_playbackStarted = false;
+}
+
+bool HouseVideoPlayer::play(const Engine::AssetFileSystem &, const std::string &)
+{
+    return false;
+}
+
+bool HouseVideoPlayer::play(const Engine::AssetFileSystem &, const std::string &, const std::string &)
+{
+    return false;
+}
+
+bool HouseVideoPlayer::play(const Engine::AssetFileSystem &, const std::string &, const std::string &, bool)
+{
+    return false;
+}
+
+void HouseVideoPlayer::setAudioVolume(float volume)
+{
+    m_audioVolume = volume;
+}
+
+void HouseVideoPlayer::update(float)
+{
+}
+
+bool HouseVideoPlayer::hasActiveFrame() const
+{
+    return false;
+}
+
+bool HouseVideoPlayer::hasFinishedPlayback() const
+{
+    return false;
+}
+
+bgfx::TextureHandle HouseVideoPlayer::textureHandle() const
+{
+    return BGFX_INVALID_HANDLE;
+}
+
+int HouseVideoPlayer::videoTextureWidth() const
+{
+    return 0;
+}
+
+int HouseVideoPlayer::videoTextureHeight() const
+{
+    return 0;
+}
+
+bool HouseVideoPlayer::ensureAudioStream()
+{
+    return false;
+}
+
+void HouseVideoPlayer::ensureVideoTexture(int, int)
+{
+}
+
+bool HouseVideoPlayer::uploadReadyVideoFrame(bool)
+{
+    return false;
+}
+
+void HouseVideoPlayer::updateAudioQueue()
+{
+}
+
+std::optional<float> HouseVideoPlayer::playbackSecondsFromAudioQueue() const
+{
+    return std::nullopt;
+}
+
+void HouseVideoPlayer::updateFinishedPlaybackState(float)
+{
+}
+}
+
+#endif // OPENYAMM_HOUSE_VIDEOS

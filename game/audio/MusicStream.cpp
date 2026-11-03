@@ -1,5 +1,6 @@
 #include "game/audio/MusicStream.h"
 
+#if OPENYAMM_HOUSE_VIDEOS
 extern "C"
 {
 #include <libavcodec/avcodec.h>
@@ -10,6 +11,7 @@ extern "C"
 #include <libavutil/samplefmt.h>
 #include <libswresample/swresample.h>
 }
+#endif
 
 #include <algorithm>
 #include <array>
@@ -19,6 +21,7 @@ extern "C"
 
 namespace OpenYAMM::Game
 {
+#if OPENYAMM_HOUSE_VIDEOS
 namespace
 {
 constexpr int OutputSampleRate = 48000;
@@ -418,7 +421,9 @@ private:
     int m_streamIndex = -1;
 };
 }
+#endif // OPENYAMM_HOUSE_VIDEOS
 
+#if OPENYAMM_HOUSE_VIDEOS
 MusicStream::MusicStream(std::shared_ptr<const std::vector<uint8_t>> pEncodedTrack)
     : m_pEncodedTrack(std::move(pEncodedTrack))
     , m_buffer(size_t(BufferFrames) * OutputChannels)
@@ -534,4 +539,32 @@ bool MusicStream::writeFrames(const float *pSamples, uint32_t frameCount)
 
     return true;
 }
+#else // OPENYAMM_HOUSE_VIDEOS
+// Builds without FFmpeg (Android, OPENYAMM_HOUSE_VIDEOS=OFF) play no music: the stream is silent and starts no worker.
+MusicStream::MusicStream(std::shared_ptr<const std::vector<uint8_t>> pEncodedTrack)
+    : m_pEncodedTrack(pEncodedTrack)
+{
+}
+
+MusicStream::~MusicStream() = default;
+
+uint32_t MusicStream::read(float *, uint32_t)
+{
+    return 0;
+}
+
+bool MusicStream::finished() const
+{
+    return true;
+}
+
+void MusicStream::decodeTrack()
+{
+}
+
+bool MusicStream::writeFrames(const float *, uint32_t)
+{
+    return false;
+}
+#endif // OPENYAMM_HOUSE_VIDEOS
 }

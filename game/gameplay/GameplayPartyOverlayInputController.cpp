@@ -1,4 +1,5 @@
 #include "game/gameplay/GameplayPartyOverlayInputController.h"
+#include "game/ui/UiText.h"
 
 #include "game/gameplay/GameplayAlchemyBenchInputController.h"
 #include "game/debug/GameplayDebugTrace.h"
@@ -541,14 +542,7 @@ const CharacterDollEntry *resolveCharacterDollEntry(
 
 std::string skillPageMasteryDisplayName(SkillMastery mastery)
 {
-    const std::string displayName = masteryDisplayName(mastery);
-
-    if (displayName == "Grandmaster")
-    {
-        return "Grand";
-    }
-
-    return displayName;
+    return localizedSkillPageMasteryName(mastery);
 }
 
 void appendCharacterSkillUiRows(
@@ -579,7 +573,7 @@ void appendCharacterSkillUiRows(
 
         if (character.rulesetState.skillSwitchedOff(canonicalName))
         {
-            row.label += " (off)";
+            row.label += " " + UiText::translate("(off)");
         }
 
         row.level = std::to_string(pSkill->level);
@@ -596,9 +590,13 @@ std::string bagTagHoverText(const Character &member, BagTag tag)
 {
     const uint8_t bag = member.rulesetState.currentBag;
     const bool tagged = InventoryBags::hasTag(member, bag, tag);
-    const std::string kind = tag == BagTag::Crafting ? "a crafting bag (Shift+B)" : "an alchemy bag";
-    return (tagged ? "Bag " + std::to_string(bag + 1) + " is " : "Make bag " + std::to_string(bag + 1) + " ") + kind
-        + (tagged ? ": click to untag" : "");
+    const std::string kind = tag == BagTag::Crafting
+        ? UiText::translate("a crafting bag (Shift+B)")
+        : UiText::translate("an alchemy bag");
+    const std::string prefix = tagged
+        ? UiText::translateTemplate("Bag {bag} is", {{"{bag}", std::to_string(bag + 1)}})
+        : UiText::translateTemplate("Make bag {bag}", {{"{bag}", std::to_string(bag + 1)}});
+    return prefix + " " + kind + (tagged ? UiText::translate(": click to untag") : "");
 }
 
 std::string skillRaiseCostHoverText(
@@ -614,27 +612,33 @@ std::string skillRaiseCostHoverText(
         return {};
     }
 
-    std::string text = skillRules.skillDisplayName(character, canonicalSkill) + " " + std::to_string(pSkill->level)
-        + " to " + std::to_string(pSkill->level + 1) + ": " + std::to_string(cost->cost)
-        + (cost->cost == 1 ? " skill point" : " skill points");
+    std::string text = UiText::translateTemplate("{skill} {level} to {next}: {cost} {points}",
+        {{"{skill}", skillRules.skillDisplayName(character, canonicalSkill)},
+         {"{level}", std::to_string(pSkill->level)},
+         {"{next}", std::to_string(pSkill->level + 1)},
+         {"{cost}", std::to_string(cost->cost)},
+         {"{points}", cost->cost == 1 ? UiText::translate("skill point") : UiText::translate("skill points")}});
 
     if (!cost->sharedWith.empty())
     {
-        text += " (" + std::to_string(cost->fullCost) + ", shared with ";
+        std::string shared;
 
         for (size_t index = 0; index < cost->sharedWith.size(); ++index)
         {
-            text += (index == 0 ? "" : index + 1 == cost->sharedWith.size() ? " and " : ", ") + cost->sharedWith[index];
+            shared += (index == 0 ? "" : index + 1 == cost->sharedWith.size()
+                    ? " " + UiText::translate("and") + " "
+                    : ", ") + cost->sharedWith[index];
         }
 
-        text += ")";
+        text += UiText::translateTemplate(" ({full}, shared with {shared})",
+            {{"{full}", std::to_string(cost->fullCost)}, {"{shared}", shared}});
     }
 
     const uint32_t points = character.pointsForRaisingSkill(canonicalSkill);
 
     if (points < cost->cost)
     {
-        text += ", you have " + std::to_string(points);
+        text += UiText::translateTemplate(", you have {points}", {{"{points}", std::to_string(points)}});
     }
 
     return text;
@@ -711,7 +715,7 @@ CharacterSkillUiData buildCharacterSkillUiData(
 
         if (pCharacter->rulesetState.skillSwitchedOff(canonicalName))
         {
-            row.label += " (off)";
+            row.label += " " + UiText::translate("(off)");
         }
 
         row.level = std::to_string(skill.level);
@@ -842,7 +846,7 @@ void GameplayPartyOverlayInputController::handleUtilitySpellOverlayInput(
         {
             context.utilitySpellOverlay() = {};
             context.resetUtilitySpellOverlayInteractionState();
-            context.setStatusBarEvent("Spell cancelled", 2.0f);
+            context.setStatusBarEvent(UiText::translate("Spell cancelled"), 2.0f);
             latchGameplayMenuEscape(context);
             context.interactionState().closeOverlayLatch = true;
         }
@@ -863,17 +867,17 @@ void GameplayPartyOverlayInputController::handleUtilitySpellOverlayInput(
         {
             if (isDimensionDoorOverlayMode(context.utilitySpellOverlayReadOnly().mode))
             {
-                return "Dimension Door";
+                return UiText::translate("Dimension Door");
             }
 
             if (context.spellTable() == nullptr)
             {
-                return "Spell";
+                return UiText::translate("Spell");
             }
 
             const SpellEntry *pEntry =
                 context.spellTable()->findById(static_cast<int>(context.utilitySpellOverlayReadOnly().spellId));
-            return pEntry != nullptr && !pEntry->name.empty() ? pEntry->name : "Spell";
+            return pEntry != nullptr && !pEntry->name.empty() ? pEntry->name : UiText::translate("Spell");
         };
 
     if (isTownPortalOverlayMode(context.utilitySpellOverlayReadOnly().mode))
@@ -882,7 +886,7 @@ void GameplayPartyOverlayInputController::handleUtilitySpellOverlayInput(
         {
             context.utilitySpellOverlay() = {};
             context.resetUtilitySpellOverlayInteractionState();
-            context.setStatusBarEvent("Town Portal destinations unavailable");
+            context.setStatusBarEvent(UiText::translate("Town Portal destinations unavailable"));
             return;
         }
 
@@ -993,11 +997,11 @@ void GameplayPartyOverlayInputController::handleUtilitySpellOverlayInput(
         if (hoveredTarget.type == GameplayUtilitySpellPointerTargetType::TownPortalDestination
             && hoveredTarget.index < context.townPortalDestinations().size())
         {
-            const std::string actionLabel = isDimensionDoorOverlayMode(context.utilitySpellOverlayReadOnly().mode)
-                ? "Dimension Door to "
-                : "Town Portal to ";
-            context.setStatusBarHoverText(
-                actionLabel + context.townPortalDestinations()[hoveredTarget.index].label);
+            const char *pActionLabel = isDimensionDoorOverlayMode(context.utilitySpellOverlayReadOnly().mode)
+                ? "Dimension Door to {target}"
+                : "Town Portal to {target}";
+            context.setStatusBarHoverText(UiText::translateTemplate(pActionLabel,
+                {{"{target}", context.townPortalDestinations()[hoveredTarget.index].label}}));
         }
         else
         {
@@ -1016,7 +1020,7 @@ void GameplayPartyOverlayInputController::handleUtilitySpellOverlayInput(
                 {
                     context.utilitySpellOverlay() = {};
                     context.resetUtilitySpellOverlayInteractionState();
-                    context.setStatusBarEvent("Spell cancelled", 2.0f);
+                    context.setStatusBarEvent(UiText::translate("Spell cancelled"), 2.0f);
                     return;
                 }
 
@@ -1140,7 +1144,8 @@ void GameplayPartyOverlayInputController::handleUtilitySpellOverlayInput(
                     {
                         const std::string locationName =
                             beacon->locationName.empty() ? beacon->mapName : beacon->locationName;
-                        context.setStatusBarHoverText("Recall to " + locationName);
+                        context.setStatusBarHoverText(UiText::translateTemplate("Recall to {target}",
+                            {{"{target}", locationName}}));
                     }
                 }
                 else
@@ -1148,19 +1153,20 @@ void GameplayPartyOverlayInputController::handleUtilitySpellOverlayInput(
                     const std::string currentLocationName =
                         context.worldRuntime() != nullptr
                             ? context.resolveMapLocationName(context.worldRuntime()->mapName())
-                            : std::string("current location");
+                            : UiText::translate("current location");
                     const std::optional<LloydBeacon> &beacon = pCaster->lloydsBeacons[hoveredTarget.index];
 
                     if (beacon.has_value())
                     {
                         const std::string locationName =
                             beacon->locationName.empty() ? beacon->mapName : beacon->locationName;
-                        context.setStatusBarHoverText(
-                            "Set " + currentLocationName + " over " + locationName);
+                        context.setStatusBarHoverText(UiText::translateTemplate("Set {current} over {target}",
+                            {{"{current}", currentLocationName}, {"{target}", locationName}}));
                     }
                     else
                     {
-                        context.setStatusBarHoverText("Set beacon to " + currentLocationName);
+                        context.setStatusBarHoverText(UiText::translateTemplate("Set beacon to {target}",
+                            {{"{target}", currentLocationName}}));
                     }
                 }
             }
@@ -1178,7 +1184,7 @@ void GameplayPartyOverlayInputController::handleUtilitySpellOverlayInput(
                 {
                     context.utilitySpellOverlay() = {};
                     context.resetUtilitySpellOverlayInteractionState();
-                    context.setStatusBarEvent("Spell cancelled", 2.0f);
+                    context.setStatusBarEvent(UiText::translate("Spell cancelled"), 2.0f);
                     return;
                 }
 
@@ -1240,7 +1246,7 @@ void GameplayPartyOverlayInputController::handleUtilitySpellOverlayInput(
                     + "_" + std::to_string(target.index);
                 overlay.lloydSetPreviewSpellName = resolveSpellName();
                 overlay.lloydSetPreviewRequest = request;
-                context.setStatusBarEvent("Setting beacon", 2.0f);
+                context.setStatusBarEvent(UiText::translate("Setting beacon"), 2.0f);
             });
         return;
     }
@@ -1304,7 +1310,7 @@ void GameplayPartyOverlayInputController::handleUtilitySpellOverlayInput(
             {
                 context.utilitySpellOverlay() = {};
                 context.resetUtilitySpellOverlayInteractionState();
-                context.setStatusBarEvent("Spell cancelled", 2.0f);
+                context.setStatusBarEvent(UiText::translate("Spell cancelled"), 2.0f);
                 return;
             }
 
@@ -1654,7 +1660,7 @@ void GameplayPartyOverlayInputController::handleSpellbookOverlayInput(
                 {
                     if (!context.activeMemberKnowsSpell(target.spellId))
                     {
-                        context.setStatusBarEvent("Spell not learned");
+                        context.setStatusBarEvent(UiText::translate("Spell not learned"));
                         return;
                     }
 
@@ -1665,7 +1671,7 @@ void GameplayPartyOverlayInputController::handleSpellbookOverlayInput(
                     const std::string spellName =
                         pSpellEntry != nullptr && !pSpellEntry->name.empty()
                             ? pSpellEntry->name
-                            : ("Spell " + std::to_string(target.spellId));
+                            : UiText::translateTemplate("Spell {id}", {{"{id}", std::to_string(target.spellId)}});
                     const size_t casterMemberIndex =
                         context.partyReadOnly() != nullptr ? context.partyReadOnly()->activeMemberIndex() : 0;
 
@@ -1691,19 +1697,20 @@ void GameplayPartyOverlayInputController::handleSpellbookOverlayInput(
                 if (pActiveMember == nullptr || context.spellTable() == nullptr
                     || target.slot >= ExtraQuickSpellSlotCount)
                 {
-                    context.setStatusBarEvent("Can't set quick spell");
+                    context.setStatusBarEvent(UiText::translate("Can't set quick spell"));
                     return;
                 }
 
                 std::string &slotSpellName = pActiveMember->extraQuickSpellNames[target.slot];
-                const std::string slotLabel = "Quick spell " + std::to_string(target.slot + 1);
+                const std::string slotLabel = UiText::translateTemplate("Quick spell {slot}",
+                    {{"{slot}", std::to_string(target.slot + 1)}});
                 const uint32_t selectedSpellId = context.spellbook().selectedSpellId;
                 const SpellEntry *pSpellEntry =
                     selectedSpellId != 0 ? context.spellTable()->findById(int(selectedSpellId)) : nullptr;
 
                 if (pSpellEntry != nullptr && !pActiveMember->knowsSpell(selectedSpellId))
                 {
-                    context.setStatusBarEvent("Spell not learned");
+                    context.setStatusBarEvent(UiText::translate("Spell not learned"));
                     return;
                 }
 
@@ -1716,7 +1723,8 @@ void GameplayPartyOverlayInputController::handleSpellbookOverlayInput(
                         context.audioSystem()->playCommonSound(SoundId::Fizzle, GameAudioSystem::PlaybackGroup::Ui);
                     }
 
-                    context.setStatusBarEvent(slotLabel + " cleared");
+                    context.setStatusBarEvent(
+                        UiText::translateTemplate("{slot} cleared", {{"{slot}", slotLabel}}));
                     return;
                 }
 
@@ -1728,7 +1736,8 @@ void GameplayPartyOverlayInputController::handleSpellbookOverlayInput(
                 }
 
                 context.playSpeechReaction(context.partyReadOnly()->activeMemberIndex(), SpeechId::SetQuickSpell, true);
-                context.setStatusBarEvent(slotLabel + " set to " + pSpellEntry->name);
+                context.setStatusBarEvent(UiText::translateTemplate("{slot} set to {spell}",
+                    {{"{slot}", slotLabel}, {"{spell}", pSpellEntry->name}}));
                 return;
             }
 
@@ -1736,7 +1745,7 @@ void GameplayPartyOverlayInputController::handleSpellbookOverlayInput(
             {
                 if (context.party() == nullptr || context.spellTable() == nullptr)
                 {
-                    context.setStatusBarEvent("Can't set quick spell");
+                    context.setStatusBarEvent(UiText::translate("Can't set quick spell"));
                     return;
                 }
 
@@ -1744,7 +1753,7 @@ void GameplayPartyOverlayInputController::handleSpellbookOverlayInput(
 
                 if (pActiveMember == nullptr)
                 {
-                    context.setStatusBarEvent("Can't set quick spell");
+                    context.setStatusBarEvent(UiText::translate("Can't set quick spell"));
                     return;
                 }
 
@@ -1758,7 +1767,7 @@ void GameplayPartyOverlayInputController::handleSpellbookOverlayInput(
                         context.audioSystem()->playCommonSound(SoundId::Fizzle, GameAudioSystem::PlaybackGroup::Ui);
                     }
 
-                    context.setStatusBarEvent("Quick spell cleared");
+                    context.setStatusBarEvent(UiText::translate("Quick spell cleared"));
                     return;
                 }
 
@@ -1767,13 +1776,13 @@ void GameplayPartyOverlayInputController::handleSpellbookOverlayInput(
 
                 if (pSpellEntry == nullptr)
                 {
-                    context.setStatusBarEvent("Can't set quick spell");
+                    context.setStatusBarEvent(UiText::translate("Can't set quick spell"));
                     return;
                 }
 
                 if (!pActiveMember->knowsSpell(context.spellbook().selectedSpellId))
                 {
-                    context.setStatusBarEvent("Spell not learned");
+                    context.setStatusBarEvent(UiText::translate("Spell not learned"));
                     return;
                 }
 
@@ -1787,7 +1796,7 @@ void GameplayPartyOverlayInputController::handleSpellbookOverlayInput(
                         context.audioSystem()->playCommonSound(SoundId::Fizzle, GameAudioSystem::PlaybackGroup::Ui);
                     }
 
-                    context.setStatusBarEvent("Quick spell cleared");
+                    context.setStatusBarEvent(UiText::translate("Quick spell cleared"));
                     return;
                 }
 
@@ -1803,7 +1812,8 @@ void GameplayPartyOverlayInputController::handleSpellbookOverlayInput(
                     SpeechId::SetQuickSpell,
                     true);
                 const SpellRules &spellRules = gameRulesFor(context.party()).spells;
-                context.setStatusBarEvent("Quick spell set to " + spellRules.spellName(*pActiveMember, *pSpellEntry));
+                context.setStatusBarEvent(UiText::translateTemplate("Quick spell set to {spell}",
+                    {{"{spell}", spellRules.spellName(*pActiveMember, *pSpellEntry)}}));
                 return;
             }
 
@@ -1811,7 +1821,7 @@ void GameplayPartyOverlayInputController::handleSpellbookOverlayInput(
             {
                 if (context.party() == nullptr || context.spellTable() == nullptr)
                 {
-                    context.setStatusBarEvent("Can't set attack spell");
+                    context.setStatusBarEvent(UiText::translate("Can't set attack spell"));
                     return;
                 }
 
@@ -1819,7 +1829,7 @@ void GameplayPartyOverlayInputController::handleSpellbookOverlayInput(
 
                 if (pActiveMember == nullptr)
                 {
-                    context.setStatusBarEvent("Can't set attack spell");
+                    context.setStatusBarEvent(UiText::translate("Can't set attack spell"));
                     return;
                 }
 
@@ -1833,7 +1843,7 @@ void GameplayPartyOverlayInputController::handleSpellbookOverlayInput(
                         context.audioSystem()->playCommonSound(SoundId::Fizzle, GameAudioSystem::PlaybackGroup::Ui);
                     }
 
-                    context.setStatusBarEvent("Attack spell cleared");
+                    context.setStatusBarEvent(UiText::translate("Attack spell cleared"));
                     return;
                 }
 
@@ -1842,13 +1852,13 @@ void GameplayPartyOverlayInputController::handleSpellbookOverlayInput(
 
                 if (pSpellEntry == nullptr)
                 {
-                    context.setStatusBarEvent("Can't set attack spell");
+                    context.setStatusBarEvent(UiText::translate("Can't set attack spell"));
                     return;
                 }
 
                 if (!pActiveMember->knowsSpell(context.spellbook().selectedSpellId))
                 {
-                    context.setStatusBarEvent("Spell not learned");
+                    context.setStatusBarEvent(UiText::translate("Spell not learned"));
                     return;
                 }
 
@@ -1862,7 +1872,7 @@ void GameplayPartyOverlayInputController::handleSpellbookOverlayInput(
                         context.audioSystem()->playCommonSound(SoundId::Fizzle, GameAudioSystem::PlaybackGroup::Ui);
                     }
 
-                    context.setStatusBarEvent("Attack spell cleared");
+                    context.setStatusBarEvent(UiText::translate("Attack spell cleared"));
                     return;
                 }
 
@@ -1877,7 +1887,8 @@ void GameplayPartyOverlayInputController::handleSpellbookOverlayInput(
                     context.partyReadOnly()->activeMemberIndex(),
                     SpeechId::SetQuickSpell,
                     true);
-                context.setStatusBarEvent("Attack spell set to " + pSpellEntry->name);
+                context.setStatusBarEvent(
+                    UiText::translateTemplate("Attack spell set to {spell}", {{"{spell}", pSpellEntry->name}}));
             }
         });
 
@@ -1890,8 +1901,9 @@ void GameplayPartyOverlayInputController::handleSpellbookOverlayInput(
         && hovered.slot < ExtraQuickSpellSlotCount)
     {
         const std::string &spellName = pHoverMember->extraQuickSpellNames[hovered.slot];
-        context.setStatusBarHoverText(
-            "Quick spell " + std::to_string(hovered.slot + 1) + ": " + (spellName.empty() ? "none" : spellName));
+        context.setStatusBarHoverText(UiText::translateTemplate("Quick spell {slot}: {spell}",
+            {{"{slot}", std::to_string(hovered.slot + 1)},
+             {"{spell}", spellName.empty() ? UiText::translate("none") : spellName}}));
     }
 }
 
@@ -1908,7 +1920,7 @@ bool openInventoryBag(GameplayScreenRuntime &context, Party &party, size_t membe
         return false;
     }
 
-    context.setStatusBarEvent("Bag " + std::to_string(bag + 1));
+    context.setStatusBarEvent(UiText::translateTemplate("Bag {bag}", {{"{bag}", std::to_string(bag + 1)}}));
     return true;
 }
 
@@ -2003,7 +2015,9 @@ void activateBagOverviewTarget(
         {
             const std::string &partyStatus = party.lastStatus();
             context.setStatusBarEvent(
-                partyStatus.empty() || partyStatus == "inventory full" ? "Pack is Full!" : partyStatus);
+                partyStatus.empty() || partyStatus == "inventory full"
+                    ? UiText::translate("Pack is Full!")
+                    : partyStatus);
             return;
         }
 
@@ -2113,7 +2127,7 @@ void GameplayPartyOverlayInputController::openNestedInventoryBag(GameplayScreenR
 
     if (InventoryBags::openBag(*pMember, uint8_t(bag), bagCount) || shopOverview)
     {
-        context.setStatusBarEvent("Bag " + std::to_string(bag + 1));
+        context.setStatusBarEvent(UiText::translateTemplate("Bag {bag}", {{"{bag}", std::to_string(bag + 1)}}));
     }
 
     if (shopOverview)
@@ -2156,8 +2170,13 @@ bool GameplayPartyOverlayInputController::toggleBagTag(GameplayScreenRuntime &co
 
     const uint8_t bag = pMember->rulesetState.currentBag;
     const bool tagged = InventoryBags::toggleTag(*pMember, bag, tag);
-    context.setStatusBarEvent(pMember->name + "'s bag " + std::to_string(bag + 1)
-        + (tagged ? " is now" : " is no longer") + (tag == BagTag::Crafting ? " a crafting bag" : " an alchemy bag"));
+    const std::string bagKind = tag == BagTag::Crafting
+        ? UiText::translate("a crafting bag")
+        : UiText::translate("an alchemy bag");
+    const char *pBagTemplate = tagged ? "{owner}'s bag {bag} is now {kind}"
+                                      : "{owner}'s bag {bag} is no longer {kind}";
+    context.setStatusBarEvent(UiText::translateTemplate(pBagTemplate,
+        {{"{owner}", pMember->name}, {"{bag}", std::to_string(bag + 1)}, {"{kind}", bagKind}}));
     return true;
 }
 
@@ -2165,7 +2184,7 @@ bool GameplayPartyOverlayInputController::openWorkbench(GameplayScreenRuntime &c
 {
     if (context.heldInventoryItem().active)
     {
-        context.setStatusBarEvent("Put the item down first.");
+        context.setStatusBarEvent(UiText::translate("Put the item down first."));
         return false;
     }
 
@@ -2299,7 +2318,9 @@ void GameplayPartyOverlayInputController::handleCharacterOverlayInput(
             bool &disabled = *switchedSkill == "Cover" ? pActiveCharacter->rulesetState.coverDisabled
                                                        : pActiveCharacter->rulesetState.manaShieldDisabled;
             disabled = !disabled;
-            context.setStatusBarEvent(displaySkillName(*switchedSkill) + (disabled ? " disabled" : " enabled"));
+            context.setStatusBarEvent(UiText::translateTemplate(
+                disabled ? "{skill} disabled" : "{skill} enabled",
+                {{"{skill}", displaySkillName(*switchedSkill)}}));
         }
     }
 
@@ -2321,7 +2342,8 @@ void GameplayPartyOverlayInputController::handleCharacterOverlayInput(
         if (const std::optional<bool> rotation =
                 gameRulesFor(context.partyReadOnly()).spells.toggleSpellRotation(*pActiveCharacter))
         {
-            context.setStatusBarEvent(*rotation ? "Elementalist rotation enabled" : "Elementalist rotation disabled");
+            context.setStatusBarEvent(*rotation ? UiText::translate("Elementalist rotation enabled")
+                                                : UiText::translate("Elementalist rotation disabled"));
         }
     }
     if (!input.leftMouseButton.held)
@@ -3402,7 +3424,7 @@ void GameplayPartyOverlayInputController::handleCharacterOverlayInput(
             {
                 if (isInventorySpellTargetMode && target.page != GameplayUiController::CharacterPage::Inventory)
                 {
-                    context.setStatusBarEvent("Select an item");
+                    context.setStatusBarEvent(UiText::translate("Select an item"));
                     return;
                 }
 
@@ -3489,7 +3511,7 @@ void GameplayPartyOverlayInputController::handleCharacterOverlayInput(
                 const size_t innIndex = context.characterScreenReadOnly().sourceIndex;
                 const AdventurersInnMember *pInnMember = pParty->adventurersInnMember(innIndex);
                 const std::string memberName =
-                    pInnMember != nullptr ? pInnMember->character.name : "Adventurer";
+                    pInnMember != nullptr ? pInnMember->character.name : UiText::translate("Adventurer");
 
                 if (pParty->hireAdventurersInnMember(innIndex))
                 {
@@ -3516,12 +3538,14 @@ void GameplayPartyOverlayInputController::handleCharacterOverlayInput(
                         context.characterScreen().adventurersInnRosterOverlayOpen = true;
                     }
 
-                    context.setStatusBarEvent(memberName + " joined the party.");
+                    context.setStatusBarEvent(
+                        UiText::translateTemplate("{name} joined the party.", {{"{name}", memberName}}));
                 }
                 else
                 {
                     context.setStatusBarEvent(
-                        pParty->lastStatus().empty() ? "Can't hire adventurer." : pParty->lastStatus());
+                        pParty->lastStatus().empty() ? UiText::translate("Can't hire adventurer.")
+                                                     : pParty->lastStatus());
                 }
 
                 return;
@@ -3548,9 +3572,9 @@ void GameplayPartyOverlayInputController::handleCharacterOverlayInput(
                     const uint64_t dismissClickTicks = SDL_GetTicks();
                     context.interactionState().pendingCharacterDismissMemberIndex = memberIndex;
                     context.interactionState().pendingCharacterDismissExpiresTicks = dismissClickTicks + CharacterDismissConfirmWindowMs;
-                    context.setStatusBarEvent(
-                        "To confirm " + pMember->name + " dismissal press the button again...",
-                        2.0f);
+                    context.setStatusBarEvent(UiText::translateTemplate(
+                        "To confirm {name} dismissal press the button again...",
+                        {{"{name}", pMember->name}}), 2.0f);
                 }
                 else
                 {
@@ -3560,11 +3584,12 @@ void GameplayPartyOverlayInputController::handleCharacterOverlayInput(
                     if (pParty->dismissMemberToAdventurersInn(memberIndex))
                     {
                         context.characterScreen().dollJewelryOverlayOpen = false;
-                        context.setStatusBarEvent(dismissedName + " dismissed.");
+                        context.setStatusBarEvent(
+                            UiText::translateTemplate("{name} dismissed.", {{"{name}", dismissedName}}));
                     }
                     else
                     {
-                        context.setStatusBarEvent("Dismissal failed.");
+                        context.setStatusBarEvent(UiText::translate("Dismissal failed."));
                     }
                 }
 
@@ -3617,17 +3642,18 @@ void GameplayPartyOverlayInputController::handleCharacterOverlayInput(
                                 pItemTable != nullptr ? pItemTable->get(item.objectDescriptionId) : nullptr;
                             return pDefinition != nullptr ? itemRules.bagTag(*pDefinition) : std::nullopt;
                         });
-                    context.setStatusBarEvent(!sorted ? "Not enough room to sort."
-                            : ctrlHeld && shiftHeld ? "All bags of the party sorted"
-                            : ctrlHeld              ? "All inventories have been sorted"
-                            : shiftHeld             ? "All of " + pMember->name + "'s bags sorted"
-                                                    : "Inventory sorted");
+                    context.setStatusBarEvent(!sorted ? UiText::translate("Not enough room to sort.")
+                            : ctrlHeld && shiftHeld ? UiText::translate("All bags of the party sorted")
+                            : ctrlHeld              ? UiText::translate("All inventories have been sorted")
+                            : shiftHeld             ? UiText::translateTemplate("All of {owner}'s bags sorted",
+                                                        {{"{owner}", pMember->name}})
+                                                    : UiText::translate("Inventory sorted"));
                     return;
                 }
 
                 if (!pParty->sortMemberInventory(selectedPartyMemberIndex))
                 {
-                    context.setStatusBarEvent("Not enough room to sort.");
+                    context.setStatusBarEvent(UiText::translate("Not enough room to sort."));
                 }
 
                 return;
@@ -3720,7 +3746,7 @@ void GameplayPartyOverlayInputController::handleCharacterOverlayInput(
             {
                 if (!selectedPartyMemberCanAct)
                 {
-                    context.setStatusBarEvent("Can't do that");
+                    context.setStatusBarEvent(UiText::translate("Can't do that"));
                     return;
                 }
 
@@ -3743,8 +3769,8 @@ void GameplayPartyOverlayInputController::handleCharacterOverlayInput(
                     const ItemDefinition *pHeld =
                         context.itemTable()->get(context.heldInventoryItem().item.objectDescriptionId);
                     context.setStatusBarEvent(pHeld == nullptr || pHeld->equipStat != "Implant"
-                            ? "Only an implant fits there"
-                            : "Cybernetics has not opened that socket");
+                            ? UiText::translate("Only an implant fits there")
+                            : UiText::translate("Cybernetics has not opened that socket"));
                     return;
                 }
 
@@ -3764,7 +3790,7 @@ void GameplayPartyOverlayInputController::handleCharacterOverlayInput(
             {
                 if (!selectedPartyMemberCanAct)
                 {
-                    context.setStatusBarEvent("Can't do that");
+                    context.setStatusBarEvent(UiText::translate("Can't do that"));
                     return;
                 }
 
@@ -3812,7 +3838,7 @@ void GameplayPartyOverlayInputController::handleCharacterOverlayInput(
 
                 if (!plan.has_value())
                 {
-                    context.setStatusBarEvent("Can't equip that item there");
+                    context.setStatusBarEvent(UiText::translate("Can't equip that item there"));
                     context.playSpeechReaction(memberIndex, SpeechId::CantEquip, true);
                     return;
                 }
@@ -3829,7 +3855,9 @@ void GameplayPartyOverlayInputController::handleCharacterOverlayInput(
                 {
                     const std::string &partyStatus = pParty->lastStatus();
                     context.setStatusBarEvent(
-                        partyStatus.empty() || partyStatus == "inventory full" ? "Pack is Full!" : partyStatus);
+                        partyStatus.empty() || partyStatus == "inventory full"
+                            ? UiText::translate("Pack is Full!")
+                            : partyStatus);
                     context.playSpeechReaction(
                         memberIndex,
                         partyStatus == "inventory full" ? SpeechId::InventoryRoom : SpeechId::CantEquip,
@@ -3853,7 +3881,7 @@ void GameplayPartyOverlayInputController::handleCharacterOverlayInput(
             {
                 if (!selectedPartyMemberCanAct)
                 {
-                    context.setStatusBarEvent("Can't do that");
+                    context.setStatusBarEvent(UiText::translate("Can't do that"));
                     return;
                 }
 
@@ -3902,7 +3930,7 @@ void GameplayPartyOverlayInputController::handleCharacterOverlayInput(
 
                 if (!plan.has_value())
                 {
-                    context.setStatusBarEvent("Can't equip that item");
+                    context.setStatusBarEvent(UiText::translate("Can't equip that item"));
                     context.playSpeechReaction(memberIndex, SpeechId::CantEquip, true);
                     return;
                 }
@@ -3919,7 +3947,9 @@ void GameplayPartyOverlayInputController::handleCharacterOverlayInput(
                 {
                     const std::string &partyStatus = pParty->lastStatus();
                     context.setStatusBarEvent(
-                        partyStatus.empty() || partyStatus == "inventory full" ? "Pack is Full!" : partyStatus);
+                        partyStatus.empty() || partyStatus == "inventory full"
+                            ? UiText::translate("Pack is Full!")
+                            : partyStatus);
                     context.playSpeechReaction(
                         memberIndex,
                         partyStatus == "inventory full" ? SpeechId::InventoryRoom : SpeechId::CantEquip,
@@ -3952,7 +3982,9 @@ void GameplayPartyOverlayInputController::handleCharacterOverlayInput(
                 {
                     const std::string &partyStatus = pParty->lastStatus();
                     context.setStatusBarEvent(
-                        partyStatus.empty() || partyStatus == "inventory full" ? "Pack is Full!" : partyStatus);
+                        partyStatus.empty() || partyStatus == "inventory full"
+                            ? UiText::translate("Pack is Full!")
+                            : partyStatus);
                     return;
                 }
 
@@ -4026,7 +4058,9 @@ void GameplayPartyOverlayInputController::handleCharacterOverlayInput(
                 {
                     const std::string &partyStatus = pParty->lastStatus();
                     context.setStatusBarEvent(
-                        partyStatus.empty() || partyStatus == "inventory full" ? "Pack is Full!" : partyStatus);
+                        partyStatus.empty() || partyStatus == "inventory full"
+                            ? UiText::translate("Pack is Full!")
+                            : partyStatus);
                     return;
                 }
 

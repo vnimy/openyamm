@@ -11,10 +11,12 @@
 #include "game/gameplay/GenericActorDialog.h"
 #include "game/gameplay/MercenaryRecruitmentRuntime.h"
 #include "game/items/InventoryBags.h"
+#include "game/party/SkillData.h"
 #include "game/maps/MapIdentity.h"
 #include "game/rules/RandomStreams.h"
 #include "game/rules/maw/MawRulesFactory.h"
 #include "game/ui/GameplaySpellTargetingOverlayRenderer.h"
+#include "game/ui/UiText.h"
 
 #include <cassert>
 #include <algorithm>
@@ -152,6 +154,75 @@ void migrateBlazenRescueRosterUnlock(Party &party)
         "save_migration name=blazen_rescue_roster_unlock"
         " source_qbit=" + std::to_string(RescuedBlazenStormlanceQBit)
         + " restored_qbit=" + std::to_string(BlazenStormlanceRosterUnlockQBit));
+}
+
+// 教师注记的正文是「<技能> - <等级>」，它在学会的当下就写进了存档。译文表上线后存档里那份旧英文
+// 不会自己变中文，所以读档时按注记自己记下的技能与等级重算一次；覆盖表为空（英文环境）时不动，
+// 已经是中文的注记重算后与原串相同，因此这一步是幂等的。
+void migrateLocalizeJournalTrainerNotes(Party &party)
+{
+    if (!UiText::hasOverrides())
+    {
+        return;
+    }
+
+    static constexpr SkillMastery Masteries[] = {
+        SkillMastery::Normal, SkillMastery::Expert, SkillMastery::Master, SkillMastery::Grandmaster};
+
+    std::vector<JournalMapNote> rewritten;
+
+    for (const JournalMapNote &note : party.journalMapNotes())
+    {
+        if (!note.listedWithTrainerNotes)
+        {
+            continue;
+        }
+
+        const size_t separator = note.text.find(" - ");
+
+        if (separator == std::string::npos)
+        {
+            continue;
+        }
+
+        const std::string skillName = note.text.substr(0, separator);
+        const std::string masteryName = note.text.substr(separator + 3);
+        std::string localizedMastery;
+
+        for (const SkillMastery mastery : Masteries)
+        {
+            // 只认英文等级名，别的写法（玩家自己写的注记、MAW 的特殊等级）原样留着。
+            if (masteryDisplayName(mastery) == masteryName)
+            {
+                localizedMastery = localizedMasteryName(mastery);
+                break;
+            }
+        }
+
+        if (localizedMastery.empty())
+        {
+            continue;
+        }
+
+        JournalMapNote updated = note;
+        updated.text = displaySkillName(skillName) + " - " + localizedMastery;
+
+        if (updated.text != note.text)
+        {
+            rewritten.push_back(updated);
+        }
+    }
+
+    for (const JournalMapNote &note : rewritten)
+    {
+        party.setJournalMapNote(note);
+    }
+
+    if (!rewritten.empty())
+    {
+        GAMEPLAY_DEBUG_TRACE(
+            "save_migration name=localize_trainer_notes rewritten=" + std::to_string(rewritten.size()));
+    }
 }
 
 void synchronizeGameplayActiveMemberToReadyMember(
@@ -1824,6 +1895,7 @@ void GameSession::restoreFromSaveData(const GameSaveData &saveData)
     if (m_partyState)
     {
         migrateBlazenRescueRosterUnlock(*m_partyState);
+        migrateLocalizeJournalTrainerNotes(*m_partyState);
 
         if (saveData.currentSceneKind == SceneKind::Outdoor && saveData.hasOutdoorRuntimeState)
         {

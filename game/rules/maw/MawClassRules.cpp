@@ -1,3 +1,4 @@
+#include "game/ui/UiText.h"
 #include "game/rules/maw/MawClassRules.h"
 
 #include "game/gameplay/GameplayRuntimeInterfaces.h"
@@ -110,7 +111,9 @@ std::string joinedList(const std::vector<std::string> &names)
 
     for (size_t index = 0; index < names.size(); ++index)
     {
-        text += (index == 0 ? "" : index + 1 == names.size() ? " and " : ", ") + names[index];
+        const std::string separator = index == 0 ? std::string()
+            : index + 1 == names.size() ? UiText::translate(" and ") : UiText::translate(", ");
+        text += separator + names[index];
     }
 
     return text;
@@ -316,7 +319,9 @@ std::string MawClassRules::displayName(const Party &party, const Character &memb
         ? party.classMultiplierTable()->get(canonicalClassName(member.className))
         : nullptr;
     const int worlds = pEntry != nullptr && pEntry->promotionStep == 2 ? m_rules.promotionWorlds(pEntry->classKind) : 0;
-    return worlds >= 3 ? "Ultimate " + name : worlds == 2 ? "Elder " + name : name;
+    return worlds >= 3 ? UiText::translateTemplate("Ultimate {name}", {{"{name}", name}})
+        : worlds == 2 ? UiText::translateTemplate("Elder {name}", {{"{name}", name}})
+                      : name;
 }
 
 PortraitCounter MawClassRules::portraitCounter(const Character &member) const
@@ -332,9 +337,9 @@ PortraitCounter MawClassRules::portraitCounter(const Character &member) const
         counter.kind = PortraitCounterKind::ComboPoints;
         counter.amount = halves / 2.0;
         counter.pips = 5;
-        counter.title = member.name + " - Combo points";
-        counter.notes.push_back(
-            std::to_string(halves / 2) + (halves % 2 != 0 ? ".5" : "") + " of 5 combo points");
+        counter.title = UiText::translateTemplate("{name} - Combo points", {{"{name}", member.name}});
+        counter.notes.push_back(UiText::translateTemplate("{points} of 5 combo points",
+            {{"{points}", std::to_string(halves / 2) + (halves % 2 != 0 ? ".5" : "")}}));
         std::map<int, std::string> spellsByCost;
 
         for (const MawClassSpell &spell : mawClassSpells(member.className))
@@ -342,16 +347,18 @@ PortraitCounter MawClassRules::portraitCounter(const Character &member) const
             if (spell.comboCost > 0 && member.knownSpellIds.contains(spell.spellId))
             {
                 std::string &names = spellsByCost[spell.comboCost];
-                names += (names.empty() ? "" : ", ") + std::string(spell.pName);
+                names += (names.empty() ? "" : UiText::translate(", ")) + UiText::translate(spell.pName);
             }
         }
 
         for (const auto &[cost, names] : spellsByCost)
         {
-            counter.notes.push_back(std::to_string(cost) + (counter.amount >= cost ? " (ready): " : ": ") + names);
+            counter.notes.push_back(UiText::translateTemplate(
+                counter.amount >= cost ? "{cost} (ready): {spells}" : "{cost}: {spells}",
+                {{"{cost}", std::to_string(cost)}, {"{spells}", names}}));
         }
 
-        counter.notes.push_back("+1 per paying blow or kill, +0.5 per arrow");
+        counter.notes.push_back(UiText::translate("+1 per paying blow or kill, +0.5 per arrow"));
     }
     else if (line == "elementalist")
     {
@@ -364,11 +371,12 @@ PortraitCounter MawClassRules::portraitCounter(const Character &member) const
         counter.kind = PortraitCounterKind::Stacks;
         counter.amount = stacks;
         counter.pips = 10;
-        counter.title = member.name + " - Elemental stacks";
-        counter.notes.push_back(std::to_string(stacks) + (stacks == 1 ? " stack" : " stacks"));
-        counter.notes.push_back("Damage " + percent(1 + 0.1 * stacks) + ", cast delay "
-            + percent(1.5 / (1 + 0.05 * stacks)));
-        counter.notes.push_back("+1 per offensive cast; halves when idle");
+        counter.title = UiText::translateTemplate("{name} - Elemental stacks", {{"{name}", member.name}});
+        counter.notes.push_back(UiText::translateTemplate(stacks == 1 ? "{stacks} stack" : "{stacks} stacks",
+            {{"{stacks}", std::to_string(stacks)}}));
+        counter.notes.push_back(UiText::translateTemplate("Damage {damage}, cast delay {delay}",
+            {{"{damage}", percent(1 + 0.1 * stacks)}, {"{delay}", percent(1.5 / (1 + 0.05 * stacks))}}));
+        counter.notes.push_back(UiText::translate("+1 per offensive cast; halves when idle"));
     }
 
     return counter;
@@ -929,7 +937,8 @@ std::vector<std::string> MawClassRules::raceNotes(const Character &character) co
 
         if (!skills.empty())
         {
-            notes.push_back("+3 to " + joinedList(skills) + ", and +1 more per 10 skill levels.");
+            notes.push_back(UiText::translateTemplate("+3 to {skills}, and +1 more per 10 skill levels.",
+                {{"{skills}", joinedList(skills)}}));
         }
     }
 
@@ -941,7 +950,7 @@ std::vector<std::string> MawClassRules::raceNotes(const Character &character) co
         {
             if (entry.race == character.raceId && pElement != nullptr)
             {
-                elements.push_back(pElement->pName);
+                elements.push_back(UiText::translate(pElement->pName));
             }
         }
 
@@ -951,14 +960,15 @@ std::vector<std::string> MawClassRules::raceNotes(const Character &character) co
         }
 
         notes.push_back(entry.base == 0
-                ? "Immune to " + joinedList(elements) + " magic."
-                : joinedList(elements) + " resistance +" + std::to_string(entry.base) + ", and +"
-                    + std::to_string(entry.perLevel) + " per level.");
+                ? UiText::translateTemplate("Immune to {elements} magic.", {{"{elements}", joinedList(elements)}})
+                : UiText::translateTemplate("{elements} resistance +{base}, and +{per} per level.",
+                    {{"{elements}", joinedList(elements)}, {"{base}", std::to_string(entry.base)},
+                        {"{per}", std::to_string(entry.perLevel)}}));
     }
 
     if (character.raceId == Vampire)
     {
-        notes.push_back("Preservation at night and in dungeons.");
+        notes.push_back(UiText::translate("Preservation at night and in dungeons."));
     }
 
     return notes;
@@ -997,8 +1007,8 @@ std::optional<std::string> MawClassRules::partyCharge(
 
     if (now < m_chargeReadyGameMinutes)
     {
-        return "Charge has " + std::to_string(int(std::ceil((m_chargeReadyGameMinutes - now) * 2)))
-            + " seconds of cooldown";
+        return UiText::translateTemplate("Charge has {seconds} seconds of cooldown",
+            {{"{seconds}", std::to_string(int(std::ceil((m_chargeReadyGameMinutes - now) * 2)))}});
     }
 
     GameplayRuntimeActorState target = {};
@@ -1015,7 +1025,7 @@ std::optional<std::string> MawClassRules::partyCharge(
 
     if (distance <= 500 || distance >= 3000)
     {
-        return std::string("Out of range");
+        return UiText::translate("Out of range");
     }
 
     // Twenty steps of a 22nd of the way.
@@ -1036,7 +1046,7 @@ std::optional<std::string> MawClassRules::partyCharge(
         world.stunActor(*targetActorIndex, float(seconds));
     }
 
-    return pKnight->name + " casts Charge stunning the enemy";
+    return UiText::translateTemplate("{name} casts Charge stunning the enemy", {{"{name}", pKnight->name}});
 }
 
 std::optional<float> MawClassRules::unstuckLift(double gameMinutes) const
@@ -1055,8 +1065,8 @@ std::optional<FollowerHireRefusal> MawClassRules::followerHireRefusal(uint32_t h
         return std::nullopt;
     }
 
-    return FollowerHireRefusal{"Following you would be foolish",
-        "I wouldn't join in your reckless adventure, not even for all the wealth in the world."};
+    return FollowerHireRefusal{UiText::translate("Following you would be foolish"),
+        UiText::translate("I wouldn't join in your reckless adventure, not even for all the wealth in the world.")};
 }
 
 std::vector<uint32_t> MawClassRules::mercenaryClassKinds(uint32_t continentId, std::vector<uint32_t>) const

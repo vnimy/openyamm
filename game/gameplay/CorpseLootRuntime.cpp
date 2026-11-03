@@ -1,4 +1,5 @@
 #include "game/gameplay/CorpseLootRuntime.h"
+#include "game/ui/UiText.h"
 
 #include "game/gameplay/ChestRuntime.h"
 
@@ -158,10 +159,13 @@ std::string foundItemStatusText(int goldAmount, const std::string &itemName)
 
     if (goldAmount <= 0)
     {
-        return "You found an item (" + resolvedItemName + ")!";
+        return UiText::translateTemplate(
+            "You found an item ({item})!", {{"{item}", resolvedItemName}});
     }
 
-    return "You found " + std::to_string(goldAmount) + " gold and an item (" + resolvedItemName + ")!";
+    return UiText::translateTemplate(
+        "You found {gold} gold and an item ({item})!",
+        {{"{gold}", std::to_string(goldAmount)}, {"{item}", resolvedItemName}});
 }
 
 std::string corpseLootItemName(const GameplayChestItemState &item, const ItemTable *pItemTable)
@@ -489,7 +493,9 @@ std::string telepathyLootStatusText(const GameplayCorpseViewState &loot, const I
 
     if (itemName.empty())
     {
-        return goldAmount > 0 ? std::to_string(goldAmount) + " gold" : "Nothing here";
+        return goldAmount > 0
+            ? UiText::translateTemplate("{gold} gold", {{"{gold}", std::to_string(goldAmount)}})
+            : UiText::translate("Nothing here");
     }
 
     return goldAmount > 0 ? "(" + itemName + "), and " + std::to_string(goldAmount) + " gold" : "(" + itemName + ")";

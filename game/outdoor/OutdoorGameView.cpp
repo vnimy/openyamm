@@ -34,6 +34,7 @@
 #include "game/SpawnPreview.h"
 #include "game/gameplay/GameplayScreenController.h"
 #include "game/ui/SpellbookUiLayout.h"
+#include "game/ui/UiText.h"
 #include "game/gameplay/SavePreviewImage.h"
 #include "game/party/SpellSchool.h"
 #include "game/party/SpellIds.h"
@@ -844,11 +845,12 @@ std::string resolveItemInspectDetailText(const InventoryItem *pItemState, const 
 
         if (damageText.empty())
         {
-            return isBroken ? "Broken" : std::string {};
+            return isBroken ? UiText::translate("Broken") : std::string {};
         }
 
-        const std::string detail = "Attack: +" + std::to_string(attackBonus) + "   Damage: " + damageText;
-        return isBroken ? "Broken   " + detail : detail;
+        const std::string detail = UiText::translateTemplate("Attack: +{bonus}   Damage: {damage}",
+            {{"{bonus}", std::to_string(attackBonus)}, {"{damage}", damageText}});
+        return isBroken ? UiText::translateTemplate("Broken   {detail}", {{"{detail}", detail}}) : detail;
     }
 
     if (equipStat == "Missile")
@@ -858,22 +860,25 @@ std::string resolveItemInspectDetailText(const InventoryItem *pItemState, const 
 
         if (damageText.empty())
         {
-            return isBroken ? "Broken" : std::string {};
+            return isBroken ? UiText::translate("Broken") : std::string {};
         }
 
-        const std::string detail = "Shoot: +" + std::to_string(shootBonus) + "   Damage: " + damageText;
-        return isBroken ? "Broken   " + detail : detail;
+        const std::string detail = UiText::translateTemplate("Shoot: +{bonus}   Damage: {damage}",
+            {{"{bonus}", std::to_string(shootBonus)}, {"{damage}", damageText}});
+        return isBroken ? UiText::translateTemplate("Broken   {detail}", {{"{detail}", detail}}) : detail;
     }
 
     if (equipStat == "WeaponW")
     {
         if (hasMod2Int && mod2Value > 0)
         {
-            const std::string detail = "Charges: " + std::to_string(mod2Value);
-            return isBroken ? "Broken   " + detail : detail;
+            const std::string detail =
+                UiText::translateTemplate("Charges: {current}/{max}",
+                    {{"{current}", std::to_string(mod2Value)}, {"{max}", std::to_string(mod2Value)}});
+            return isBroken ? UiText::translateTemplate("Broken   {detail}", {{"{detail}", detail}}) : detail;
         }
 
-        return isBroken ? "Broken" : std::string {};
+        return isBroken ? UiText::translate("Broken") : std::string {};
     }
 
     if (equipStat == "Armor"
@@ -890,14 +895,15 @@ std::string resolveItemInspectDetailText(const InventoryItem *pItemState, const 
 
         if (armorValue > 0)
         {
-            const std::string detail = "Armor: +" + std::to_string(armorValue);
-            return isBroken ? "Broken   " + detail : detail;
+            const std::string detail =
+                UiText::translateTemplate("Armor: +{armor}", {{"{armor}", std::to_string(armorValue)}});
+            return isBroken ? UiText::translateTemplate("Broken   {detail}", {{"{detail}", detail}}) : detail;
         }
 
-        return isBroken ? "Broken" : std::string {};
+        return isBroken ? UiText::translate("Broken") : std::string {};
     }
 
-    return isBroken ? "Broken" : std::string {};
+    return isBroken ? UiText::translate("Broken") : std::string {};
 }
 
 constexpr const char *WeaponSkillNames[] = {

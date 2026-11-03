@@ -8,6 +8,8 @@
 #include "game/StringUtils.h"
 #include "game/app/ProfilingControl.h"
 #include "game/debug/GameplayDebugTrace.h"
+#include "game/debug/ImGuiCjkFont.h"
+#include "game/ui/UiText.h"
 #include "game/debug/MawTestParties.h"
 #include "game/gameplay/GameMechanics.h"
 #include "game/gameplay/GameplayHeldItemController.h"
@@ -2961,6 +2963,55 @@ void GameApplication::registerDebugConsoleCommands()
     };
 
     m_debugConsole.registerCommand({
+        .name = "uireport",
+        .description = "Collect UI strings that still show English, so gaps the patch never hooked become visible.",
+        .usage = "uireport on|off|dump|clear",
+        .callback = [commandResult](const DebugConsole::CommandContext &context)
+        {
+            const std::string action = context.args.empty() ? std::string("dump") : context.args.front();
+
+            if (action == "on")
+            {
+                UiText::setUnresolvedReportEnabled(true);
+                return commandResult(true, "UI text report on; play, then 'uireport dump'.");
+            }
+
+            if (action == "off")
+            {
+                UiText::setUnresolvedReportEnabled(false);
+                return commandResult(true, "UI text report off.");
+            }
+
+            if (action == "clear")
+            {
+                UiText::takeUnresolvedUiText();
+                return commandResult(true, "UI text report cleared.");
+            }
+
+            if (action != "dump")
+            {
+                return commandResult(false, "usage: uireport on|off|dump|clear");
+            }
+
+            const std::vector<std::string> texts = UiText::takeUnresolvedUiText();
+
+            if (texts.empty())
+            {
+                return commandResult(true, "no untranslated UI text collected.");
+            }
+
+            std::ostringstream out;
+            out << texts.size() << " untranslated UI strings:";
+
+            for (const std::string &text : texts)
+            {
+                out << "\n  " << text;
+            }
+
+            return commandResult(true, out.str());
+        }});
+
+    m_debugConsole.registerCommand({
         .name = "help",
         .description = "Show available commands.",
         .usage = "help",
@@ -2982,7 +3033,8 @@ void GameApplication::registerDebugConsoleCommands()
                 << "config get|set|toggle terrain_decorations, "
                 << "effect list|stats|rate|spawn|impact-rebind|pause|scrub|replay|stop, "
                 << "model list|spawn|play|pause|scrub|visible|markers|nodes|orbit|stop, "
-                << "memory, reload map, menu, ruleset [difficulty <id> | banks <mm8> <mm7> <mm6> <other>]";
+                << "memory, reload map, menu, ruleset [difficulty <id> | banks <mm8> <mm7> <mm6> <other>], "
+                << "uireport on|off|dump|clear";
             return commandResult(true, out.str());
         }});
 
@@ -5733,7 +5785,7 @@ void GameApplication::registerDebugConsoleCommands()
             return commandResult(
                 true,
                 pMember->name + " " + displaySkillName(skillName) + " " + std::to_string(*level) + " "
-                    + masteryDisplayName(mastery));
+                    + localizedMasteryName(mastery));
         }});
 
     m_debugConsole.registerCommand({
@@ -6660,6 +6712,15 @@ bool GameApplication::initializeDebugConsoleRenderer()
     io.IniFilename = nullptr;
     configureDebugConsoleStyle();
 
+#if defined(__ANDROID__) || defined(OPENYAMM_IOS)
+    // 触屏没有滚轮：滚动条和滑块要够粗才按得住，TouchExtraPadding 让手指不必精确落在控件上。
+    io.ConfigFlags |= ImGuiConfigFlags_IsTouchScreen;
+    ImGuiStyle &touchStyle = ImGui::GetStyle();
+    touchStyle.ScrollbarSize = 26.0f;
+    touchStyle.GrabMinSize = 26.0f;
+    touchStyle.TouchExtraPadding = ImVec2(8.0f, 8.0f);
+#endif
+
     SDL_Window *pWindow = SDL_GetKeyboardFocus();
 
     if (pWindow == nullptr)
@@ -6683,6 +6744,13 @@ bool GameApplication::initializeDebugConsoleRenderer()
     if (pWindow == nullptr || !ImGui_ImplSDL3_InitForOther(pWindow))
     {
         return false;
+    }
+
+    if (m_pAssetFileSystem != nullptr)
+    {
+        // 控制台把布局放大 1.55~2.45 倍时，动态图集会在放大后的字号上重新栅格化字形，
+        // 所以这里只需要给出基础字号。
+        installImGuiCjkFont(*m_pAssetFileSystem, 16.0f);
     }
 
     if (!m_debugConsoleRenderer.initialize())
@@ -6768,7 +6836,8 @@ void GameApplication::renderDebugConsoleFrame(int width, int height)
     // A command can close the console after ImGui has already built this frame's window.
     if (m_debugConsole.enabled())
     {
-        m_debugConsoleRenderer.renderDrawData(ImGui::GetDrawData());
+        m_debugConsoleRenderer.updateTextures();
+    m_debugConsoleRenderer.renderDrawData(ImGui::GetDrawData());
     }
     m_debugConsoleFrameBegun = false;
 }

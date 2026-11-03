@@ -12,6 +12,7 @@
 #include "game/rules/SkillRules.h"
 #include "game/StringUtils.h"
 #include "game/tables/MergedBaseTables.h"
+#include "game/ui/UiText.h"
 
 #include <algorithm>
 #include <array>
@@ -223,7 +224,8 @@ void appendNpcBtbAction(
     action.label = topic && !topic->topic.empty() ? topic->topic : "Talk";
     if (topicId == NpcBribeTopicId && cost != 0)
     {
-        action.label += " " + std::to_string(cost) + " Gold";
+        action.label = UiText::translateTemplate(
+            "{topic} {cost} Gold", {{"{topic}", action.label}, {"{cost}", std::to_string(cost)}});
     }
     dialog.actions.push_back(std::move(action));
 }
@@ -661,23 +663,31 @@ bool shouldDisplayHouseType(const std::string &houseType)
 
 std::string buildHouseParticipantTitle(const HouseEntry &houseEntry)
 {
-    std::string title;
+    std::string name;
+    std::string profession;
 
     if (!houseEntry.proprietorName.empty() && houseEntry.proprietorName != "Placeholder")
     {
-        title = houseEntry.proprietorName;
+        name = houseEntry.proprietorName;
     }
     else
     {
-        title = houseEntry.name;
+        name = houseEntry.name;
     }
 
     if (!houseEntry.proprietorTitle.empty() && houseEntry.proprietorTitle != "Placeholder")
     {
-        title += ", " + houseEntry.proprietorTitle;
+        profession = houseEntry.proprietorTitle;
     }
 
-    return title;
+    if (profession.empty())
+    {
+        return UiText::translate(name);
+    }
+
+    // 中文语序是「名字·职业」，模板放在覆盖表里。
+    return UiText::translateTemplate(
+        "{name}, {title}", {{"{name}", UiText::translate(name)}, {"{title}", UiText::translate(profession)}});
 }
 
 uint32_t weekDayIndexFromGameMinutes(float currentGameMinutes)
@@ -853,20 +863,27 @@ std::string formatNpcProfessionText(
         pActiveMember = pParty->member(0);
     }
 
-    const std::string memberName = pActiveMember != nullptr ? pActiveMember->name : "traveler";
-    const std::string className = pActiveMember != nullptr ? pActiveMember->className : "traveler";
+    const std::string memberName = pActiveMember != nullptr ? pActiveMember->name : UiText::translate("traveler");
+    // 汉化：%05/%06/%07/%08/%11/%12 会把这些英文词嵌进中文台词，必须先过覆盖表。
+    const std::string className = pActiveMember != nullptr
+        ? UiText::translate(pActiveMember->className)
+        : UiText::translate("traveler");
     const uint32_t hour = static_cast<uint32_t>(std::max(0.0f, currentGameMinutes) / 60.0f) % 24u;
-    const std::string timeOfDay = hour <= 8u ? "morning" : (hour <= 16u ? "afternoon" : "evening");
-    const std::array<std::pair<std::string, std::string>, 14> replacements = {{
+    const std::string timeOfDay = UiText::translate(
+        hour <= 8u ? "morning" : (hour <= 16u ? "afternoon" : "evening"));
+    const std::array<std::pair<std::string, std::string>, 17> replacements = {{
         {"%01", npc.name},
         {"%02", memberName},
+        {"%03", UiText::translate("%03")},
         {"%04", std::to_string(profession.weeklyCost)},
         {"%05", timeOfDay},
         {"%06", className},
         {"%07", className},
-        {"%08", reputationLabel(effectiveReputation)},
-        {"%11", reputationLabel(effectiveReputation)},
-        {"%12", reputationLabel(requiredReputation.value_or(effectiveReputation))},
+        {"%08", UiText::translate(reputationLabel(effectiveReputation))},
+        {"%09", UiText::translate("%09")},
+        {"%10", UiText::translate("%10")},
+        {"%11", UiText::translate(reputationLabel(effectiveReputation))},
+        {"%12", UiText::translate(reputationLabel(requiredReputation.value_or(effectiveReputation)))},
         {"%13", memberName},
         {"%14", profession.profession},
         {"%15", memberName},
@@ -1557,7 +1574,8 @@ EventDialogContent buildEventDialogContent(
                     const std::optional<std::string> joinText = pNpcDialogTable->getText(offer->joinTextId);
                     joinAction.label = joinText && !joinText->empty()
                         ? *joinText
-                        : "Join guild for " + std::to_string(offer->cost) + " gold";
+                        : UiText::translateTemplate(
+                              "Join guild for {cost} gold", {{"{cost}", std::to_string(offer->cost)}});
                     dialog.actions.push_back(std::move(joinAction));
                 }
             }

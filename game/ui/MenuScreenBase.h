@@ -173,6 +173,7 @@ protected:
         bgfx::TextureHandle handle = BGFX_INVALID_HANDLE;
     };
 
+    using FontGlyph = Engine::FontGlyph;
     using FontGlyphMetrics = Engine::FontGlyphMetrics;
 
     // Fonts are shared with the gameplay HUD (SharedFontCache).
@@ -189,6 +190,8 @@ protected:
     const FontHandle *findFont(const std::string &fontName, int pixelHeight) const;
     const FontHandle *ensureFont(const std::string &fontName, int pixelHeight = 0);
     const FontHandle *ensureTextFont(const std::string &fontName, float &scale);
+    // A face whose descriptor declares outline metrics is rasterized at the display pixel height.
+    bool usesOutlineMetrics(const std::string &fontName) const;
     void resizeFontCache(int width, int height);
     bgfx::TextureHandle ensureDynamicTexture(
         const std::string &cacheKey,

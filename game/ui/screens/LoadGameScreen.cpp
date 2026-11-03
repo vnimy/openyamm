@@ -1,4 +1,5 @@
 #include "game/ui/screens/LoadGameScreen.h"
+#include "game/ui/UiText.h"
 
 #include "game/content/RulesetDefinition.h"
 #include "game/maps/SaveGame.h"
@@ -79,7 +80,7 @@ std::string weekdayName(int dayOfWeek)
 {
     static const std::array<const char *, 7> names = {"Monday", "Tuesday",  "Wednesday", "Thursday",
                                                       "Friday", "Saturday", "Sunday"};
-    return names[std::clamp(dayOfWeek, 1, 7) - 1];
+    return UiText::translate(names[std::clamp(dayOfWeek, 1, 7) - 1]);
 }
 
 std::string monthName(int month)
@@ -87,7 +88,7 @@ std::string monthName(int month)
     static const std::array<const char *, 12> names = {"January",   "February", "March",    "April",
                                                        "May",       "June",     "July",     "August",
                                                        "September", "October",  "November", "December"};
-    return names[std::clamp(month, 1, 12) - 1];
+    return UiText::translate(names[std::clamp(month, 1, 12) - 1]);
 }
 
 std::string formatClock(const CivilTime &time)

@@ -1,3 +1,4 @@
+#include "game/ui/UiText.h"
 #include "game/gameplay/GameplayScreenController.h"
 #include "game/ui/GameplayLootSummaryRenderer.h"
 
@@ -626,7 +627,7 @@ void GameplayScreenController::applySharedItemInspectSkillInteraction(
                     : SpeechId::IdentifyGreatItem;
             playSingleReaction(speechId);
         }
-        else if (statusText == "Identify Failed")
+        else if (statusText == UiText::translate("Identify Failed"))
         {
             context.setStatusBarEvent(statusText);
             playSingleReaction(SpeechId::IdentifyFailItem);
@@ -642,7 +643,7 @@ void GameplayScreenController::applySharedItemInspectSkillInteraction(
             refreshOverlayItemState();
             playSingleReaction(SpeechId::RepairSuccess);
         }
-        else if (statusText == "Repair Failed")
+        else if (statusText == UiText::translate("Repair Failed"))
         {
             context.setStatusBarEvent(statusText);
             playSingleReaction(SpeechId::RepairFail);

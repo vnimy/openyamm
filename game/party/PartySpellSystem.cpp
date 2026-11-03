@@ -1,5 +1,7 @@
 #include "game/party/PartySpellSystem.h"
 
+#include "game/ui/UiText.h"
+
 #include "game/gameplay/CorpseLootRuntime.h"
 #include "game/gameplay/GameMechanics.h"
 #include "game/gameplay/PartyHostileAlert.h"
@@ -38,12 +40,38 @@ constexpr int16_t SummonWispGrandmasterMonsterId = 99;
 // A wisp the rules add past the limit stays until it dies.
 constexpr float PermanentWispSeconds = 1.0e9f;
 
-constexpr const char *SpellFailedText = "Spell failed";
-constexpr const char *NoValidTargetText = "No valid target exists!";
-constexpr const char *HostileCreaturesNearbyText = "There are hostile creatures nearby!";
-constexpr const char *SummonLimitText = "This character can't summon any more monsters!";
-constexpr const char *WandAlreadyChargedText = "Wand already charged!";
-constexpr const char *ItemQualityTooLowText = "Item is not of high enough quality";
+// 这些提示会直接上屏，所以在取用处按需翻译；原文同时是覆盖表的键，便于和日志对照。
+std::string spellFailedText()
+{
+    return UiText::translate("Spell failed");
+}
+
+std::string noValidTargetText()
+{
+    return UiText::translate("No valid target exists!");
+}
+
+std::string hostileCreaturesNearbyText()
+{
+    return UiText::translate("There are hostile creatures nearby!");
+}
+
+std::string summonLimitText()
+{
+    return UiText::translate("This character can't summon any more monsters!");
+}
+
+std::string wandAlreadyChargedText()
+{
+    return UiText::translate("Wand already charged!");
+}
+
+std::string itemQualityTooLowText()
+{
+    return UiText::translate("Item is not of high enough quality");
+}
+
+
 
 float secondsFromHours(float hours);
 float secondsFromMinutes(float minutes);
@@ -272,22 +300,22 @@ std::string spellWorldUnavailableText(SpellId spellId, bool indoorMap)
             case SpellId::Starburst:
                 return "Can't cast Starburst indoors!";
             case SpellId::Fly:
-                return "Can not cast Fly indoors!";
+                return UiText::translate("Can not cast Fly indoors!");
             case SpellId::Armageddon:
-                return "Can't cast Armageddon indoors!";
+                return UiText::translate("Can't cast Armageddon indoors!");
             default:
-                return SpellFailedText;
+                return spellFailedText();
         }
     }
 
     switch (spellId)
     {
         case SpellId::Inferno:
-            return "Can't cast Inferno outdoors!";
+            return UiText::translate("Can't cast Inferno outdoors!");
         case SpellId::PrismaticLight:
-            return "Can't cast Prismatic Light outdoors!";
+            return UiText::translate("Can't cast Prismatic Light outdoors!");
         default:
-            return SpellFailedText;
+            return spellFailedText();
     }
 }
 
@@ -1313,7 +1341,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
             PartySpellCastStatus::InvalidCaster,
             PartySpellCastTargetKind::None,
             PartySpellCastEffectKind::Unsupported,
-            SpellFailedText);
+            spellFailedText());
     }
 
     if (spellIdFromValue(request.spellId) == SpellId::DivineIntervention
@@ -1336,7 +1364,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
             PartySpellCastStatus::InvalidSpell,
             PartySpellCastTargetKind::None,
             PartySpellCastEffectKind::Unsupported,
-            SpellFailedText);
+            spellFailedText());
     }
 
     // A null field (the world's Hum at 0 here): no spell is cast without a Null Damper II.
@@ -1438,7 +1466,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
             PartySpellCastStatus::Unsupported,
             PartySpellCastTargetKind::None,
             PartySpellCastEffectKind::Unsupported,
-            SpellFailedText);
+            spellFailedText());
     }
 
     result.targetKind = rule->targetKind;
@@ -1612,7 +1640,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                 PartySpellCastStatus::Failed,
                 rule->targetKind,
                 rule->effectKind,
-                SpellFailedText);
+                spellFailedText());
         }
     }
 
@@ -1651,7 +1679,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                     PartySpellCastStatus::NeedActorTarget,
                     rule->targetKind,
                     rule->effectKind,
-                    NoValidTargetText);
+                    noValidTargetText());
             }
         }
         else
@@ -1666,7 +1694,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                     PartySpellCastStatus::Failed,
                     rule->targetKind,
                     rule->effectKind,
-                    SpellFailedText);
+                    spellFailedText());
             }
 
             targetPoint = resolveActorTargetPoint(actor);
@@ -1698,7 +1726,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                 PartySpellCastStatus::NeedCharacterOrWorldTarget,
                 rule->targetKind,
                 rule->effectKind,
-                NoValidTargetText);
+                noValidTargetText());
         }
     }
     else if (rule->targetKind == PartySpellCastTargetKind::ActorOrCharacter)
@@ -1716,7 +1744,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                 PartySpellCastStatus::NeedActorOrCharacterTarget,
                 rule->targetKind,
                 rule->effectKind,
-                NoValidTargetText);
+                noValidTargetText());
         }
 
         if (hasActorTarget)
@@ -1733,7 +1761,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                 PartySpellCastStatus::NeedGroundPoint,
                 rule->targetKind,
                 rule->effectKind,
-                NoValidTargetText);
+                noValidTargetText());
         }
 
         targetPoint = {request.targetX, request.targetY, request.targetZ};
@@ -1760,7 +1788,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                 PartySpellCastStatus::NeedTelekinesisTarget,
                 rule->targetKind,
                 rule->effectKind,
-                NoValidTargetText);
+                noValidTargetText());
         }
 
         if (!worldRuntime.canActivateTelekinesisTarget(*request.telekinesisTarget))
@@ -1769,7 +1797,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                 PartySpellCastStatus::Failed,
                 rule->targetKind,
                 rule->effectKind,
-                SpellFailedText);
+                spellFailedText());
         }
     }
     else if (rule->targetKind == PartySpellCastTargetKind::UtilityUi)
@@ -1795,7 +1823,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                     PartySpellCastStatus::Failed,
                     rule->targetKind,
                     rule->effectKind,
-                    SpellFailedText);
+                    spellFailedText());
             }
 
             if (request.utilityAction == PartySpellUtilityActionKind::None)
@@ -1812,7 +1840,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                             PartySpellCastStatus::Failed,
                             rule->targetKind,
                             rule->effectKind,
-                            SpellFailedText);
+                            spellFailedText());
                     }
                 }
 
@@ -1863,7 +1891,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                 PartySpellCastStatus::Failed,
                 rule->targetKind,
                 rule->effectKind,
-                HostileCreaturesNearbyText);
+                hostileCreaturesNearbyText());
         }
 
         const float durationSeconds =
@@ -2060,7 +2088,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                     PartySpellCastStatus::Failed,
                     rule->targetKind,
                     rule->effectKind,
-                    SpellFailedText);
+                    spellFailedText());
             }
 
             castSucceeded = true;
@@ -2210,7 +2238,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                     PartySpellCastStatus::Failed,
                     rule->targetKind,
                     rule->effectKind,
-                    SpellFailedText);
+                    spellFailedText());
             }
 
             InventoryItem *pMutableInventoryItem =
@@ -2229,7 +2257,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                         PartySpellCastStatus::Failed,
                         rule->targetKind,
                         rule->effectKind,
-                        SpellFailedText);
+                        spellFailedText());
                 }
 
                 const SpecialItemEnchantKind enchantKind =
@@ -2250,7 +2278,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                         PartySpellCastStatus::Failed,
                         rule->targetKind,
                         rule->effectKind,
-                        SpellFailedText);
+                        spellFailedText());
                 }
 
                 const float durationSeconds =
@@ -2284,7 +2312,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                         PartySpellCastStatus::Failed,
                         rule->targetKind,
                         rule->effectKind,
-                        SpellFailedText);
+                        spellFailedText());
                 }
 
                 const uint16_t currentCharges =
@@ -2307,7 +2335,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                         PartySpellCastStatus::Failed,
                         rule->targetKind,
                         rule->effectKind,
-                        WandAlreadyChargedText);
+                        wandAlreadyChargedText());
                 }
 
                 if (pMutableInventoryItem != nullptr)
@@ -2332,7 +2360,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                         PartySpellCastStatus::Failed,
                         rule->targetKind,
                         rule->effectKind,
-                        SpellFailedText);
+                        spellFailedText());
                 }
 
                 static thread_local std::mt19937 rng(std::random_device{}());
@@ -2359,7 +2387,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                         PartySpellCastStatus::Failed,
                         rule->targetKind,
                         rule->effectKind,
-                        ItemQualityTooLowText);
+                        itemQualityTooLowText());
                 }
 
                 std::uniform_int_distribution<int> distribution(1, 100);
@@ -2372,7 +2400,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                         PartySpellCastStatus::Failed,
                         rule->targetKind,
                         rule->effectKind,
-                        SpellFailedText);
+                        spellFailedText());
                 }
 
                 const bool preferStandardEnchant =
@@ -2392,7 +2420,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                             PartySpellCastStatus::Failed,
                             rule->targetKind,
                             rule->effectKind,
-                            SpellFailedText);
+                            spellFailedText());
                     }
 
                     pMutableInventoryItem->standardEnchantId = *standardEnchantId;
@@ -2419,7 +2447,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                             PartySpellCastStatus::Failed,
                             rule->targetKind,
                             rule->effectKind,
-                            SpellFailedText);
+                            spellFailedText());
                     }
 
                     pMutableInventoryItem->specialEnchantId = *specialEnchantId;
@@ -2453,7 +2481,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                         PartySpellCastStatus::Failed,
                         rule->targetKind,
                         rule->effectKind,
-                        SpellFailedText);
+                        spellFailedText());
                 }
 
                 EventRuntimeState::PendingMapMove move = {};
@@ -2478,7 +2506,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                         PartySpellCastStatus::Failed,
                         rule->targetKind,
                         rule->effectKind,
-                        SpellFailedText);
+                        spellFailedText());
                 }
 
                 Character *pTargetMember = party.member(request.casterMemberIndex);
@@ -2489,7 +2517,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                         PartySpellCastStatus::Failed,
                         rule->targetKind,
                         rule->effectKind,
-                        SpellFailedText);
+                        spellFailedText());
                 }
 
                 if (request.utilityAction == PartySpellUtilityActionKind::LloydsBeaconSet)
@@ -2535,7 +2563,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                             PartySpellCastStatus::Failed,
                             rule->targetKind,
                             rule->effectKind,
-                            SpellFailedText);
+                            spellFailedText());
                     }
 
                     EventRuntimeState *pEventRuntimeState = worldRuntime.eventRuntimeState();
@@ -2546,7 +2574,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                             PartySpellCastStatus::Failed,
                             rule->targetKind,
                             rule->effectKind,
-                            SpellFailedText);
+                            spellFailedText());
                     }
 
                     EventRuntimeState::PendingMapMove move = {};
@@ -2641,7 +2669,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                 PartySpellCastStatus::Failed,
                 rule->targetKind,
                 rule->effectKind,
-                SpellFailedText);
+                spellFailedText());
         }
 
         if (request.targetActorIndex && spellId == SpellId::Telepathy)
@@ -2655,7 +2683,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                     PartySpellCastStatus::Failed,
                     rule->targetKind,
                     rule->effectKind,
-                    SpellFailedText);
+                    spellFailedText());
             }
 
             result.statusText = telepathyLootStatusText(*loot, party.itemTable());
@@ -2842,7 +2870,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                         PartySpellCastStatus::Failed,
                         rule->targetKind,
                         rule->effectKind,
-                        SummonLimitText);
+                        summonLimitText());
                 }
 
                 castSucceeded = worldRuntime.summonFriendlyMonsterById(
@@ -2863,7 +2891,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                     PartySpellCastStatus::Failed,
                     rule->targetKind,
                     rule->effectKind,
-                    SpellFailedText);
+                    spellFailedText());
             }
 
             if (spellId == SpellId::Armageddon)
@@ -2880,7 +2908,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
                         PartySpellCastStatus::Failed,
                         rule->targetKind,
                         rule->effectKind,
-                        failureText.empty() ? SpellFailedText : failureText);
+                        failureText.empty() ? spellFailedText() : failureText);
                 }
 
                 castSucceeded = true;
@@ -3070,7 +3098,7 @@ PartySpellCastResult PartySpellSystem::castSpell(
             PartySpellCastStatus::Failed,
             rule->targetKind,
             rule->effectKind,
-            SpellFailedText);
+            spellFailedText());
     }
 
     if (request.spendMana)

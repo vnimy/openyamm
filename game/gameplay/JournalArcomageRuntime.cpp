@@ -3,6 +3,7 @@
 #include "game/party/Party.h"
 #include "game/tables/HouseTable.h"
 #include "game/tables/MapStats.h"
+#include "game/ui/UiText.h"
 
 #include <algorithm>
 #include <map>
@@ -65,13 +66,19 @@ std::vector<std::string> buildArcomageTavernTexts(const HouseTable &houseTable, 
             });
         const size_t wonCount = size_t(std::count_if(taverns.begin(), taverns.end(),
             [](const ArcomageTavern &tavern) { return tavern.won; }));
-        texts.push_back(continentName(continentId) + ": " + std::to_string(wonCount) + " of "
-            + std::to_string(taverns.size()) + " taverns won.");
+        texts.push_back(UiText::translateTemplate("{continent}: {won} of {total} taverns won.",
+            {{"{continent}", UiText::translate(continentName(continentId))},
+             {"{won}", std::to_string(wonCount)},
+             {"{total}", std::to_string(taverns.size())}}));
 
         for (const ArcomageTavern &tavern : taverns)
         {
-            const std::string place = tavern.town.empty() ? tavern.name : tavern.name + ", " + tavern.town;
-            texts.push_back(place + (tavern.won ? ": won" : ": not won yet"));
+            const std::string place = tavern.town.empty()
+                ? UiText::translate(tavern.name)
+                : UiText::translateTemplate("{tavern}, {town}",
+                      {{"{tavern}", UiText::translate(tavern.name)}, {"{town}", UiText::translate(tavern.town)}});
+            texts.push_back(UiText::translateTemplate(tavern.won ? "{place}: won" : "{place}: not won yet",
+                {{"{place}", place}}));
         }
     }
 

@@ -1,4 +1,5 @@
 #include "game/gameplay/MasteryTeacherDialog.h"
+#include "game/ui/UiText.h"
 
 #include "game/gameplay/GameMechanics.h"
 #include "game/tables/MergedBaseTables.h"
@@ -543,14 +544,15 @@ std::optional<MasteryTeacherEvaluation> evaluateSkillMasteryTraining(
 
         if (!qualifyingPromotions.empty())
         {
-            evaluation.displayText =
-                "You have to be promoted to " + joinPromotionClassNames(qualifyingPromotions)
-                + " to learn this skill.";
+            evaluation.displayText = UiText::translateTemplate(
+                "You have to be promoted to {classes} to learn this skill.",
+                {{"{classes}", joinPromotionClassNames(qualifyingPromotions)}});
             return evaluation;
         }
 
-        evaluation.displayText =
-            "This skill level can not be learned by the " + displayClassName(pCharacter->className) + " class.";
+        evaluation.displayText = UiText::translateTemplate(
+            "This skill level can not be learned by the {class} class.",
+            {{"{class}", displayClassName(pCharacter->className)}});
         return evaluation;
     }
 
@@ -583,15 +585,18 @@ std::optional<MasteryTeacherEvaluation> evaluateSkillMasteryTraining(
     {
         if (requirementFailure == MasteryRequirementFailure::IntellectTooLow)
         {
-            evaluation.displayText = "You must have at least 50 base Intellect to learn Master Learning.";
+            evaluation.displayText =
+                UiText::translate("You must have at least 50 base Intellect to learn Master Learning.");
         }
         else if (requirementFailure == MasteryRequirementFailure::PersonalityTooLow)
         {
-            evaluation.displayText = "You must have at least 50 base Personality to learn Master Merchant.";
+            evaluation.displayText =
+                UiText::translate("You must have at least 50 base Personality to learn Master Merchant.");
         }
         else if (requirementFailure == MasteryRequirementFailure::EnduranceTooLow)
         {
-            evaluation.displayText = "You must have at least 50 base Endurance to learn Master Bodybuilding.";
+            evaluation.displayText =
+                UiText::translate("You must have at least 50 base Endurance to learn Master Bodybuilding.");
         }
         else
         {
@@ -611,10 +616,11 @@ std::optional<MasteryTeacherEvaluation> evaluateSkillMasteryTraining(
     }
 
     evaluation.approved = true;
-    evaluation.displayText =
-        "Become " + masteryDisplayName(evaluation.targetMastery)
-        + " in " + displaySkillName(evaluation.skillName)
-        + " for " + std::to_string(evaluation.cost) + " gold";
+    evaluation.displayText = UiText::translateTemplate(
+        "Become {mastery} in {skill} for {cost} gold",
+        {{"{mastery}", localizedMasteryName(evaluation.targetMastery)},
+         {"{skill}", displaySkillName(evaluation.skillName)},
+         {"{cost}", std::to_string(evaluation.cost)}});
     return evaluation;
 }
 
@@ -642,10 +648,11 @@ bool applySkillMasteryTraining(
     }
 
     party.addGold(-evaluation->cost);
-    message =
-        pCharacter->name + " is now a "
-        + masteryDisplayName(evaluation->targetMastery)
-        + " in " + displaySkillName(evaluation->skillName) + ".";
+    message = UiText::translateTemplate(
+        "{name} is now a {mastery} in {skill}.",
+        {{"{name}", pCharacter->name},
+         {"{mastery}", localizedMasteryName(evaluation->targetMastery)},
+         {"{skill}", displaySkillName(evaluation->skillName)}});
     return true;
 }
 
@@ -702,9 +709,11 @@ std::optional<MasteryTeacherEvaluation> evaluateSkillMasteryGroupTraining(
         return alreadyTrainedEvaluation;
     }
     approvedEvaluation->skillName = request.displayName;
-    approvedEvaluation->displayText =
-        "Become " + masteryDisplayName(request.targetMastery)
-        + " in " + request.displayName + " for " + std::to_string(approvedEvaluation->cost) + " gold";
+    approvedEvaluation->displayText = UiText::translateTemplate(
+        "Become {mastery} in {skill} for {cost} gold",
+        {{"{mastery}", localizedMasteryName(request.targetMastery)},
+         {"{skill}", request.displayName},
+         {"{cost}", std::to_string(approvedEvaluation->cost)}});
     return approvedEvaluation;
 }
 
@@ -739,8 +748,11 @@ bool applySkillMasteryGroupTraining(
         }
     }
     party.addGold(-evaluation->cost);
-    message = pCharacter->name + " is now a " + masteryDisplayName(request.targetMastery)
-        + " in " + request.displayName + ".";
+    message = UiText::translateTemplate(
+        "{name} is now a {mastery} in {skill}.",
+        {{"{name}", pCharacter->name},
+         {"{mastery}", localizedMasteryName(request.targetMastery)},
+         {"{skill}", request.displayName}});
     return true;
 }
 

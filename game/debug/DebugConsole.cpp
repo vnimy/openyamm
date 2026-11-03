@@ -2,11 +2,13 @@
 
 #include "game/StringUtils.h"
 #include "game/tables/MapStats.h"
+#include "game/ui/UiText.h"
 
 #include <imgui.h>
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstring>
 #include <cstdio>
 #include <filesystem>
@@ -19,6 +21,8 @@ namespace
 {
 constexpr size_t MaxMessages = 400;
 constexpr size_t MaxHistory = 64;
+// Travel before a finger counts as panning rather than tapping.
+constexpr float TouchScrollThreshold = 12.0f;
 
 std::string upperText(std::string value)
 {
@@ -375,7 +379,9 @@ void DebugConsole::addMessage(MessageKind kind, const std::string &message)
         return;
     }
 
-    m_messages.push_back({kind, message});
+    // Every line reaches the log through here, including the output of the commands registered elsewhere, so this is
+    // the single place the patch translates. Untranslated text stays as typed (a command echo, for instance).
+    m_messages.push_back({kind, UiText::translate(message)});
     ++m_totalMessageCount;
 
     if (m_messages.size() > MaxMessages)
@@ -445,7 +451,7 @@ bool DebugConsole::dispatchCommand(const std::string &commandLine, bool reportSu
 
     if (commandIt == m_commands.end())
     {
-        addMessage(MessageKind::Error, "Unknown command: " + tokens.front());
+        addMessage(MessageKind::Error, UiText::translate("Unknown command: ") + tokens.front());
         return false;
     }
 
@@ -467,7 +473,7 @@ DebugConsole::CommandResult DebugConsole::executeFile(const std::string &path)
 
     if (!file)
     {
-        return {false, "Cannot open " + path};
+        return {false, UiText::translate("Cannot open ") + path};
     }
 
     size_t commands = 0;
@@ -495,8 +501,16 @@ DebugConsole::CommandResult DebugConsole::executeFile(const std::string &path)
         }
     }
 
-    return {failed == 0, "Ran " + std::to_string(commands) + " commands from " + path
-        + (failed > 0 ? ", " + std::to_string(failed) + " failed" : std::string())};
+    std::string message = UiText::translateTemplate(
+        "Ran {count} commands from {path}",
+        {{"{count}", std::to_string(commands)}, {"{path}", path}});
+
+    if (failed > 0)
+    {
+        message += UiText::translateTemplate(", {count} failed", {{"{count}", std::to_string(failed)}});
+    }
+
+    return {failed == 0, message};
 }
 
 void DebugConsole::render(int width, int height)
@@ -821,21 +835,21 @@ void DebugConsole::renderConsoleWindow(int width, int height)
         return;
     }
 
-    ImGui::TextUnformatted("OpenYAMM Console");
+    ImGui::TextUnformatted(UiText::translate("OpenYAMM Console").c_str());
     ImGui::SameLine();
-    ImGui::Checkbox("Freeze", &m_freezeGameplay);
+    ImGui::Checkbox(UiText::translate("Freeze").c_str(), &m_freezeGameplay);
     ImGui::SameLine();
-    ImGui::Checkbox("Help", &m_showHelpPanel);
+    ImGui::Checkbox(UiText::translate("Help").c_str(), &m_showHelpPanel);
     ImGui::SameLine();
 
-    if (ImGui::Button("Clear"))
+    if (ImGui::Button(UiText::translate("Clear").c_str()))
     {
         clearMessages();
     }
 
     ImGui::SameLine();
 
-    if (ImGui::Button("Copy All"))
+    if (ImGui::Button(UiText::translate("Copy All").c_str()))
     {
         ImGui::SetClipboardText(joinedMessageText().c_str());
     }
@@ -850,7 +864,9 @@ void DebugConsole::renderConsoleWindow(int width, int height)
 
     if (ImGui::BeginChild("Messages", ImVec2(consoleWidth, contentHeight), true))
     {
+        updateTouchScroll();
         const float textWidth = std::max(1.0f, ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ScrollbarSize);
+
         ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
         ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
         ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
@@ -907,7 +923,10 @@ void DebugConsole::renderConsoleWindow(int width, int height)
 
         if (ImGui::BeginChild("ConsoleHelpPanel", ImVec2(0.0f, contentHeight), false))
         {
+            updateTouchScroll();
+            beginTouchScrollGuard();
             renderHelpPanelContents();
+            endTouchScrollGuard();
         }
 
         ImGui::EndChild();
@@ -931,7 +950,7 @@ void DebugConsole::renderConsoleWindow(int width, int height)
     ImGui::PopItemWidth();
     ImGui::SameLine();
 
-    if (ImGui::Button("Send") || submitted)
+    if (ImGui::Button(UiText::translate("Send").c_str()) || submitted)
     {
         const std::string line = m_inputBuffer;
         std::memset(m_inputBuffer, 0, sizeof(m_inputBuffer));
@@ -990,11 +1009,14 @@ void DebugConsole::renderMobileConsoleWindow(int width, int height)
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8.0f * layoutScale, 7.0f * layoutScale));
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8.0f * layoutScale, 5.0f * layoutScale));
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f * layoutScale, 6.0f * layoutScale));
+    // The scrollbar and its grab have to grow with the rest of the layout, or a fingertip cannot stay on them.
+    ImGui::PushStyleVar(ImGuiStyleVar_ScrollbarSize, 16.0f * layoutScale);
+    ImGui::PushStyleVar(ImGuiStyleVar_GrabMinSize, 16.0f * layoutScale);
 
     if (!ImGui::Begin("OpenYAMM Console", &m_enabled, flags))
     {
         ImGui::End();
-        ImGui::PopStyleVar(5);
+        ImGui::PopStyleVar(7);
         m_renderingMobileConsole = wasRenderingMobileConsole;
         m_activeMobileConsoleScale = previousMobileConsoleScale;
         return;
@@ -1002,21 +1024,21 @@ void DebugConsole::renderMobileConsoleWindow(int width, int height)
 
     applyActiveMobileConsoleScale();
 
-    ImGui::TextUnformatted("OpenYAMM Console");
+    ImGui::TextUnformatted(UiText::translate("OpenYAMM Console").c_str());
     ImGui::SameLine();
-    ImGui::Checkbox("Freeze", &m_freezeGameplay);
+    ImGui::Checkbox(UiText::translate("Freeze").c_str(), &m_freezeGameplay);
     ImGui::SameLine();
-    ImGui::Checkbox("Tools", &m_showHelpPanel);
+    ImGui::Checkbox(UiText::translate("Tools").c_str(), &m_showHelpPanel);
     ImGui::SameLine();
 
-    if (ImGui::Button("Clear"))
+    if (ImGui::Button(UiText::translate("Clear").c_str()))
     {
         clearMessages();
     }
 
     ImGui::SameLine();
 
-    if (ImGui::Button("Close"))
+    if (ImGui::Button(UiText::translate("Close").c_str()))
     {
         m_enabled = false;
     }
@@ -1039,6 +1061,7 @@ void DebugConsole::renderMobileConsoleWindow(int width, int height)
     if (ImGui::BeginChild("MobileConsoleMessages", ImVec2(messagesWidth, contentHeight), true))
     {
         applyActiveMobileConsoleScale();
+        updateTouchScroll();
 
         for (const Message &message : m_messages)
         {
@@ -1063,7 +1086,10 @@ void DebugConsole::renderMobileConsoleWindow(int width, int height)
         if (ImGui::BeginChild("MobileConsoleTools", ImVec2(0.0f, contentHeight), true))
         {
             applyActiveMobileConsoleScale();
+            updateTouchScroll();
+            beginTouchScrollGuard();
             renderMobileHelpPanelContents();
+            endTouchScrollGuard();
         }
 
         ImGui::EndChild();
@@ -1087,7 +1113,7 @@ void DebugConsole::renderMobileConsoleWindow(int width, int height)
     ImGui::PopItemWidth();
     ImGui::SameLine();
 
-    if (ImGui::Button("Run", ImVec2(80.0f * layoutScale, 0.0f)) || submitted)
+    if (ImGui::Button(UiText::translate("Run").c_str(), ImVec2(80.0f * layoutScale, 0.0f)) || submitted)
     {
         const std::string line = m_inputBuffer;
         std::memset(m_inputBuffer, 0, sizeof(m_inputBuffer));
@@ -1096,7 +1122,7 @@ void DebugConsole::renderMobileConsoleWindow(int width, int height)
     }
 
     ImGui::End();
-    ImGui::PopStyleVar(5);
+    ImGui::PopStyleVar(7);
     m_renderingMobileConsole = wasRenderingMobileConsole;
     m_activeMobileConsoleScale = previousMobileConsoleScale;
 }
@@ -1111,8 +1137,11 @@ void DebugConsole::renderHelpPanelContents()
 
     if (ImGui::BeginChild("ConsoleToolsLeft", ImVec2(columnWidth, contentHeight), false))
     {
+        updateTouchScroll();
+        beginTouchScrollGuard();
         renderMapControls();
         renderItemPicker();
+        endTouchScrollGuard();
     }
 
     ImGui::EndChild();
@@ -1130,12 +1159,15 @@ void DebugConsole::renderHelpPanelContents()
 
     if (ImGui::BeginChild("ConsoleToolsRight", ImVec2(0.0f, contentHeight), false))
     {
+        updateTouchScroll();
+        beginTouchScrollGuard();
         renderQuickActions();
         renderQuestBitControls();
         renderAwardControls();
 
         ImGui::Separator();
         renderHelpText();
+        endTouchScrollGuard();
     }
 
     ImGui::EndChild();
@@ -1153,9 +1185,9 @@ void DebugConsole::renderMobileHelpPanelContents()
         return;
     }
 
-    ImGui::TableSetupColumn("Quick", ImGuiTableColumnFlags_WidthStretch, 0.85f);
-    ImGui::TableSetupColumn("Maps", ImGuiTableColumnFlags_WidthStretch, 1.55f);
-    ImGui::TableSetupColumn("Items", ImGuiTableColumnFlags_WidthStretch, 1.6f);
+    ImGui::TableSetupColumn(UiText::translate("Quick Actions").c_str(), ImGuiTableColumnFlags_WidthStretch, 0.85f);
+    ImGui::TableSetupColumn(UiText::translate("Maps").c_str(), ImGuiTableColumnFlags_WidthStretch, 1.55f);
+    ImGui::TableSetupColumn(UiText::translate("Items").c_str(), ImGuiTableColumnFlags_WidthStretch, 1.6f);
     ImGui::TableHeadersRow();
 
     ImGui::TableNextRow();
@@ -1175,26 +1207,27 @@ void DebugConsole::renderMobileQuickActions()
 {
     const auto toggleLabel = [](std::string_view name, bool value)
     {
-        std::string label(name);
-        label += value ? " [On]" : " [Off]";
+        // The suffix is translated separately so a translation can move or drop it.
+        std::string label = UiText::translate(std::string(name));
+        label += UiText::translate(value ? " [On]" : " [Off]");
         return label;
     };
 
     const auto commandButton =
         [this](const char *pLabel, const char *pCommand)
         {
-            if (ImGui::Button(pLabel, ImVec2(-1.0f, 0.0f)))
+            if (ImGui::Button(UiText::translate(pLabel).c_str(), ImVec2(-1.0f, 0.0f)))
             {
                 executeLine(pCommand);
             }
         };
 
-    ImGui::SeparatorText("Quick");
+    ImGui::SeparatorText(UiText::translate("Quick Actions").c_str());
     commandButton("Map Info", "map");
     commandButton("Full Heal", "hp full");
     commandButton("Next Day", "time advance 1");
 
-    if (ImGui::Button("Clear Log", ImVec2(-1.0f, 0.0f)))
+    if (ImGui::Button(UiText::translate("Clear Log").c_str(), ImVec2(-1.0f, 0.0f)))
     {
         clearMessages();
     }
@@ -1210,17 +1243,17 @@ void DebugConsole::renderMobileQuickActions()
 
 void DebugConsole::renderMobileQuestBitControls()
 {
-    ImGui::SeparatorText("QBits");
+    ImGui::SeparatorText(UiText::translate("QBits").c_str());
 
     ImGui::PushItemWidth(-1.0f);
     ImGui::InputText("##MobileQBitSet", m_qbitSetBuffer, sizeof(m_qbitSetBuffer));
     ImGui::PopItemWidth();
 
-    if (ImGui::Button("Set QBit", ImVec2(-1.0f, 0.0f)))
+    if (ImGui::Button(UiText::translate("Set QBit").c_str(), ImVec2(-1.0f, 0.0f)))
     {
         if (m_qbitSetBuffer[0] == '\0')
         {
-            addMessage(MessageKind::Error, "Set QBit needs an id.");
+            addMessage(MessageKind::Error, UiText::translate("Set QBit needs an id."));
         }
         else
         {
@@ -1232,11 +1265,11 @@ void DebugConsole::renderMobileQuestBitControls()
     ImGui::InputText("##MobileQBitClear", m_qbitClearBuffer, sizeof(m_qbitClearBuffer));
     ImGui::PopItemWidth();
 
-    if (ImGui::Button("Clear QBit", ImVec2(-1.0f, 0.0f)))
+    if (ImGui::Button(UiText::translate("Clear QBit").c_str(), ImVec2(-1.0f, 0.0f)))
     {
         if (m_qbitClearBuffer[0] == '\0')
         {
-            addMessage(MessageKind::Error, "Clear QBit needs an id.");
+            addMessage(MessageKind::Error, UiText::translate("Clear QBit needs an id."));
         }
         else
         {
@@ -1244,12 +1277,12 @@ void DebugConsole::renderMobileQuestBitControls()
         }
     }
 
-    if (ImGui::Button("Dump Active QBits", ImVec2(-1.0f, 0.0f)))
+    if (ImGui::Button(UiText::translate("Dump Active QBits").c_str(), ImVec2(-1.0f, 0.0f)))
     {
         executeLine("qbit dump active");
     }
 
-    if (ImGui::Button("Dump All QBits", ImVec2(-1.0f, 0.0f)))
+    if (ImGui::Button(UiText::translate("Dump All QBits").c_str(), ImVec2(-1.0f, 0.0f)))
     {
         executeLine("qbit dump all");
     }
@@ -1257,17 +1290,17 @@ void DebugConsole::renderMobileQuestBitControls()
 
 void DebugConsole::renderMobileAwardControls()
 {
-    ImGui::SeparatorText("Awards");
+    ImGui::SeparatorText(UiText::translate("Awards").c_str());
 
     ImGui::PushItemWidth(-1.0f);
     ImGui::InputText("##MobileAwardSet", m_awardSetBuffer, sizeof(m_awardSetBuffer));
     ImGui::PopItemWidth();
 
-    if (ImGui::Button("Set Award", ImVec2(-1.0f, 0.0f)))
+    if (ImGui::Button(UiText::translate("Set Award").c_str(), ImVec2(-1.0f, 0.0f)))
     {
         if (m_awardSetBuffer[0] == '\0')
         {
-            addMessage(MessageKind::Error, "Set Award needs an id.");
+            addMessage(MessageKind::Error, UiText::translate("Set Award needs an id."));
         }
         else
         {
@@ -1279,11 +1312,11 @@ void DebugConsole::renderMobileAwardControls()
     ImGui::InputText("##MobileAwardClear", m_awardClearBuffer, sizeof(m_awardClearBuffer));
     ImGui::PopItemWidth();
 
-    if (ImGui::Button("Clear Award", ImVec2(-1.0f, 0.0f)))
+    if (ImGui::Button(UiText::translate("Clear Award").c_str(), ImVec2(-1.0f, 0.0f)))
     {
         if (m_awardClearBuffer[0] == '\0')
         {
-            addMessage(MessageKind::Error, "Clear Award needs an id.");
+            addMessage(MessageKind::Error, UiText::translate("Clear Award needs an id."));
         }
         else
         {
@@ -1291,15 +1324,105 @@ void DebugConsole::renderMobileAwardControls()
         }
     }
 
-    if (ImGui::Button("Dump Active Awards", ImVec2(-1.0f, 0.0f)))
+    if (ImGui::Button(UiText::translate("Dump Active Awards").c_str(), ImVec2(-1.0f, 0.0f)))
     {
         executeLine("award dump active");
     }
 
-    if (ImGui::Button("Dump All Awards", ImVec2(-1.0f, 0.0f)))
+    if (ImGui::Button(UiText::translate("Dump All Awards").c_str(), ImVec2(-1.0f, 0.0f)))
     {
         executeLine("award dump all");
     }
+}
+
+void DebugConsole::updateTouchScroll()
+{
+    // ImGui only scrolls from the wheel, and the touch bridge submits a finger as pointer motion, so a drag over a list
+    // does nothing while a release over a row counts as a click on it. Panning here covers both: the list follows the
+    // finger, and once the travel passes the drag threshold the release stops being a click.
+    const ImGuiIO &io = ImGui::GetIO();
+    const bool mouseDown = ImGui::IsMouseDown(ImGuiMouseButton_Left);
+    const bool mouseReleased = ImGui::IsMouseReleased(ImGuiMouseButton_Left);
+
+    // Keep the suppression alive through the release frame, then drop it.
+    if (!mouseDown && !mouseReleased)
+    {
+        m_touchScrollTracking = false;
+        m_touchScrollDragged = false;
+    }
+
+    // Only the press has to come from a finger. Checking the source every frame would abort the pan whenever a frame
+    // carried no touch-sourced event (io.MouseSource then falls back to whatever the last event was).
+    if (!m_touchScrollTracking && io.MouseSource != ImGuiMouseSource_TouchScreen)
+    {
+        return;
+    }
+
+    // AllowWhenBlockedByActiveItem is essential: pressing a row gives it the active id, and plain IsWindowHovered()
+    // reports false for as long as any item holds it, which silently killed every pan after the first frame.
+    if (!ImGui::IsWindowHovered(
+            ImGuiHoveredFlags_ChildWindows | ImGuiHoveredFlags_AllowWhenBlockedByActiveItem))
+    {
+        return;
+    }
+
+    if (ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+    {
+        m_touchScrollTracking = true;
+        m_touchScrollDragged = false;
+        m_touchScrollAnchorPos = io.MousePos;
+        m_touchScrollAnchorOffset = ImGui::GetScrollY();
+        m_touchScrollTravel = 0.0f;
+        return;
+    }
+
+    if (!m_touchScrollTracking || !mouseDown)
+    {
+        return;
+    }
+
+    m_touchScrollTravel = std::max(m_touchScrollTravel, std::fabs(io.MousePos.y - m_touchScrollAnchorPos.y));
+    // ImGui's 6px mouse threshold is too twitchy for a fingertip: a deliberate tap wobbles, and treating that as a pan
+    // would make every button in the console unreliable.
+    m_touchScrollDragged = m_touchScrollDragged || m_touchScrollTravel > TouchScrollThreshold;
+
+    // 1:1 with the finger. The anchor offset is re-read on every press, so the content tracks the finger exactly
+    // instead of accumulating float drift across frames.
+    const float target = std::clamp(
+        m_touchScrollAnchorOffset + (m_touchScrollAnchorPos.y - io.MousePos.y),
+        0.0f,
+        ImGui::GetScrollMaxY());
+    ImGui::SetScrollY(target);
+}
+
+bool DebugConsole::touchScrollSuppressed() const
+{
+    // A drag suppresses the release of whatever it started on; a plain tap does not.
+    return m_touchScrollTracking && m_touchScrollDragged;
+}
+
+void DebugConsole::beginTouchScrollGuard()
+{
+    if (!touchScrollSuppressed())
+    {
+        return;
+    }
+
+    // Not BeginDisabled(): that also fades the whole panel. This only blocks activation, and it drops the widget the
+    // finger pressed, so the release that ends the pan cannot fire it.
+    ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
+    m_touchScrollGuardPushed = true;
+}
+
+void DebugConsole::endTouchScrollGuard()
+{
+    if (!m_touchScrollGuardPushed)
+    {
+        return;
+    }
+
+    ImGui::PopItemFlag();
+    m_touchScrollGuardPushed = false;
 }
 
 float DebugConsole::activeMobileConsoleScale() const
@@ -1311,6 +1434,7 @@ void DebugConsole::applyActiveMobileConsoleScale() const
 {
     if (m_renderingMobileConsole)
     {
+        // 动态图集会把字形按放大后的字号重新栅格化，所以这里放大不会糊。
         ImGui::SetWindowFontScale(activeMobileConsoleScale());
     }
 }
@@ -1324,30 +1448,30 @@ void DebugConsole::renderQuickActions()
         return label;
     };
 
-    ImGui::SeparatorText("Quick");
+    ImGui::SeparatorText(UiText::translate("Quick Actions").c_str());
 
-    if (ImGui::SmallButton("Map Info"))
+    if (ImGui::SmallButton(UiText::translate("Map Info").c_str()))
     {
         executeLine("map");
     }
 
     ImGui::SameLine();
 
-    if (ImGui::SmallButton("Full Heal"))
+    if (ImGui::SmallButton(UiText::translate("Full Heal").c_str()))
     {
         executeLine("hp full");
     }
 
     ImGui::SameLine();
 
-    if (ImGui::SmallButton("Next Day"))
+    if (ImGui::SmallButton(UiText::translate("Next Day").c_str()))
     {
         executeLine("time advance 1");
     }
 
     ImGui::SameLine();
 
-    if (ImGui::SmallButton("Clear Log"))
+    if (ImGui::SmallButton(UiText::translate("Clear Log").c_str()))
     {
         clearMessages();
     }
@@ -1374,17 +1498,35 @@ void DebugConsole::renderQuickActions()
     {
         executeLine("config toggle invisible");
     }
+
+    // 界面英文报告：安卓上没有好用的键盘，这两个按钮是主要的开关方式。
+    ImGui::NewLine();
+
+    const std::string uiReportLabel =
+        toggleLabel(UiText::translate("UI Text Report"), UiText::unresolvedReportEnabled());
+
+    if (ImGui::SmallButton(uiReportLabel.c_str()))
+    {
+        executeLine(UiText::unresolvedReportEnabled() ? "uireport off" : "uireport on");
+    }
+
+    ImGui::SameLine();
+
+    if (ImGui::SmallButton(UiText::translate("Dump UI Text").c_str()))
+    {
+        executeLine("uireport dump");
+    }
 }
 
 void DebugConsole::renderQuestBitControls()
 {
-    ImGui::SeparatorText("QBits");
+    ImGui::SeparatorText(UiText::translate("QBits").c_str());
 
-    if (ImGui::SmallButton("Set QBit"))
+    if (ImGui::SmallButton(UiText::translate("Set QBit").c_str()))
     {
         if (m_qbitSetBuffer[0] == '\0')
         {
-            addMessage(MessageKind::Error, "Set QBit needs an id.");
+            addMessage(MessageKind::Error, UiText::translate("Set QBit needs an id."));
         }
         else
         {
@@ -1397,11 +1539,11 @@ void DebugConsole::renderQuestBitControls()
     ImGui::InputText("##QBitSet", m_qbitSetBuffer, sizeof(m_qbitSetBuffer));
     ImGui::PopItemWidth();
 
-    if (ImGui::SmallButton("Clear QBit"))
+    if (ImGui::SmallButton(UiText::translate("Clear QBit").c_str()))
     {
         if (m_qbitClearBuffer[0] == '\0')
         {
-            addMessage(MessageKind::Error, "Clear QBit needs an id.");
+            addMessage(MessageKind::Error, UiText::translate("Clear QBit needs an id."));
         }
         else
         {
@@ -1414,14 +1556,14 @@ void DebugConsole::renderQuestBitControls()
     ImGui::InputText("##QBitClear", m_qbitClearBuffer, sizeof(m_qbitClearBuffer));
     ImGui::PopItemWidth();
 
-    if (ImGui::SmallButton("Dump QBits"))
+    if (ImGui::SmallButton(UiText::translate("Dump QBits").c_str()))
     {
         executeLine("qbit dump active");
     }
 
     ImGui::SameLine();
 
-    if (ImGui::SmallButton("Dump All QBits"))
+    if (ImGui::SmallButton(UiText::translate("Dump All QBits").c_str()))
     {
         executeLine("qbit dump all");
     }
@@ -1429,13 +1571,13 @@ void DebugConsole::renderQuestBitControls()
 
 void DebugConsole::renderAwardControls()
 {
-    ImGui::SeparatorText("Awards");
+    ImGui::SeparatorText(UiText::translate("Awards").c_str());
 
-    if (ImGui::SmallButton("Set Award"))
+    if (ImGui::SmallButton(UiText::translate("Set Award").c_str()))
     {
         if (m_awardSetBuffer[0] == '\0')
         {
-            addMessage(MessageKind::Error, "Set Award needs an id.");
+            addMessage(MessageKind::Error, UiText::translate("Set Award needs an id."));
         }
         else
         {
@@ -1448,11 +1590,11 @@ void DebugConsole::renderAwardControls()
     ImGui::InputText("##AwardSet", m_awardSetBuffer, sizeof(m_awardSetBuffer));
     ImGui::PopItemWidth();
 
-    if (ImGui::SmallButton("Clear Award"))
+    if (ImGui::SmallButton(UiText::translate("Clear Award").c_str()))
     {
         if (m_awardClearBuffer[0] == '\0')
         {
-            addMessage(MessageKind::Error, "Clear Award needs an id.");
+            addMessage(MessageKind::Error, UiText::translate("Clear Award needs an id."));
         }
         else
         {
@@ -1465,14 +1607,14 @@ void DebugConsole::renderAwardControls()
     ImGui::InputText("##AwardClear", m_awardClearBuffer, sizeof(m_awardClearBuffer));
     ImGui::PopItemWidth();
 
-    if (ImGui::SmallButton("Dump Awards"))
+    if (ImGui::SmallButton(UiText::translate("Dump Awards").c_str()))
     {
         executeLine("award dump active");
     }
 
     ImGui::SameLine();
 
-    if (ImGui::SmallButton("Dump All Awards"))
+    if (ImGui::SmallButton(UiText::translate("Dump All Awards").c_str()))
     {
         executeLine("award dump all");
     }
@@ -1480,7 +1622,7 @@ void DebugConsole::renderAwardControls()
 
 void DebugConsole::renderMapControls()
 {
-    ImGui::SeparatorText("Map Jump");
+    ImGui::SeparatorText(UiText::translate("Map Jump").c_str());
     renderMapPicker(
         MapOptionKind::Outdoor,
         "Outdoor",
@@ -1505,9 +1647,11 @@ void DebugConsole::renderMapPicker(
         int score = 0;
     };
 
-    ImGui::TextUnformatted(label);
+    const std::string translatedLabel = UiText::translate(label);
+    ImGui::TextUnformatted(translatedLabel.c_str());
     ImGui::SameLine();
     ImGui::PushItemWidth(-1.0f);
+    // The id stays keyed by the untranslated label so the widget identity survives a language change.
     ImGui::InputText((std::string("##MapSearch") + label).c_str(), pSearchBuffer, searchBufferSize);
     ImGui::PopItemWidth();
 
@@ -1562,6 +1706,8 @@ void DebugConsole::renderMapPicker(
             ImVec2(-1.0f, 86.0f * mobileScale)))
     {
         applyActiveMobileConsoleScale();
+        updateTouchScroll();
+        beginTouchScrollGuard();
 
         ImGuiListClipper clipper;
         clipper.Begin(static_cast<int>(matches.size()));
@@ -1583,7 +1729,7 @@ void DebugConsole::renderMapPicker(
                     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.08f, 0.07f, 0.05f, 1.0f));
                 }
 
-                if (ImGui::Selectable(rowLabel.c_str(), selected))
+                if (ImGui::Selectable(rowLabel.c_str(), selected) && !touchScrollSuppressed())
                 {
                     selectedMapId = map.mapId;
                     executeLine("goto " + std::to_string(map.mapId));
@@ -1599,9 +1745,10 @@ void DebugConsole::renderMapPicker(
 
         if (matches.empty())
         {
-            ImGui::TextDisabled("No matching maps.");
+            ImGui::TextDisabled("%s", UiText::translate("No matching maps.").c_str());
         }
 
+        endTouchScrollGuard();
         ImGui::EndListBox();
     }
 }
@@ -1614,11 +1761,14 @@ void DebugConsole::renderItemPicker()
         int score = 0;
     };
 
-    ImGui::SeparatorText("Give Item");
+    ImGui::SeparatorText(UiText::translate("Give Item").c_str());
     ImGui::PushItemWidth(-1.0f);
-    ImGui::InputText("Search", m_itemSearchBuffer, sizeof(m_itemSearchBuffer));
+    ImGui::InputTextWithHint("Search", UiText::translate("Search").c_str(), m_itemSearchBuffer,
+                             sizeof(m_itemSearchBuffer));
     ImGui::PopItemWidth();
-    ImGui::SetItemTooltip("Search by item id, name, unidentified name, icon, skill group, or notes.");
+    ImGui::SetItemTooltip("%s", UiText::translate(
+                                      "Search by item id, name, unidentified name, icon, skill group, or notes.")
+                                      .c_str());
 
     std::vector<ScoredItem> matches;
     matches.reserve(m_itemOptions.size());
@@ -1664,6 +1814,8 @@ void DebugConsole::renderItemPicker()
     if (ImGui::BeginListBox("##ItemSelect", ImVec2(-1.0f, 156.0f * mobileScale)))
     {
         applyActiveMobileConsoleScale();
+        updateTouchScroll();
+        beginTouchScrollGuard();
 
         ImGuiListClipper clipper;
         clipper.Begin(static_cast<int>(matches.size()));
@@ -1685,8 +1837,10 @@ void DebugConsole::renderItemPicker()
                     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.08f, 0.07f, 0.05f, 1.0f));
                 }
 
-                const bool activated = ImGui::Selectable(itemLabel, selected);
-                const bool doubleClicked = ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left);
+                const bool activated = ImGui::Selectable(itemLabel, selected) && !touchScrollSuppressed();
+                const bool doubleClicked =
+                    !touchScrollSuppressed() && ImGui::IsItemHovered()
+                    && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left);
 
                 if (activated)
                 {
@@ -1716,17 +1870,19 @@ void DebugConsole::renderItemPicker()
 
                     if (!item.unidentifiedName.empty() && item.unidentifiedName != item.name)
                     {
-                        ImGui::Text("Unidentified: %s", item.unidentifiedName.c_str());
+                        ImGui::Text("%s %s",
+                                    UiText::translate("Unidentified:").c_str(),
+                                    item.unidentifiedName.c_str());
                     }
 
                     if (!item.skillGroup.empty())
                     {
-                        ImGui::Text("Group: %s", item.skillGroup.c_str());
+                        ImGui::Text("%s %s", UiText::translate("Group:").c_str(), item.skillGroup.c_str());
                     }
 
                     if (!item.iconName.empty())
                     {
-                        ImGui::Text("Icon: %s", item.iconName.c_str());
+                        ImGui::Text("%s %s", UiText::translate("Icon:").c_str(), item.iconName.c_str());
                     }
 
                     if (!item.notes.empty())
@@ -1741,14 +1897,15 @@ void DebugConsole::renderItemPicker()
 
         if (matches.empty())
         {
-            ImGui::TextDisabled("No matching items.");
+            ImGui::TextDisabled("%s", UiText::translate("No matching items.").c_str());
         }
 
+        endTouchScrollGuard();
         ImGui::EndListBox();
     }
 
     ImGui::PushItemWidth(92.0f);
-    ImGui::InputInt("Qty", &m_itemQuantity);
+    ImGui::InputInt(UiText::translate("Qty").c_str(), &m_itemQuantity);
     ImGui::PopItemWidth();
 
     if (m_itemQuantity < 1)
@@ -1756,7 +1913,7 @@ void DebugConsole::renderItemPicker()
         m_itemQuantity = 1;
     }
 
-    if (ImGui::Button("Give Selected", ImVec2(-1.0f, 0.0f)))
+    if (ImGui::Button(UiText::translate("Give Selected").c_str(), ImVec2(-1.0f, 0.0f)))
     {
         giveSelectedItem();
     }
@@ -1766,7 +1923,7 @@ void DebugConsole::giveSelectedItem()
 {
     if (m_selectedItemId == 0)
     {
-        addMessage(MessageKind::Error, "No item selected.");
+        addMessage(MessageKind::Error, UiText::translate("No item selected."));
         return;
     }
 
@@ -1777,7 +1934,8 @@ void DebugConsole::giveSelectedItem()
 
 void DebugConsole::renderHelpText() const
 {
-    ImGui::TextDisabled("Common commands");
+    // The bullets are command syntax rather than prose, so only the heading is translated.
+    ImGui::TextDisabled("%s", UiText::translate("Common commands").c_str());
     ImGui::BulletText("help");
     ImGui::BulletText("map");
     ImGui::BulletText("time [advance [days]] | time set HH:MM");

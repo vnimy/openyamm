@@ -1,5 +1,7 @@
 #pragma once
 
+#include <imgui.h>
+
 #include <cstdint>
 #include <functional>
 #include <optional>
@@ -130,6 +132,15 @@ private:
     void renderHelpText() const;
     float activeMobileConsoleScale() const;
     void applyActiveMobileConsoleScale() const;
+    // Touch scrolling: a finger dragging over a list pans it, and a drag never counts as a click on what it started on.
+    // Must be called right after a scrollable BeginChild()/BeginListBox() opened; tracks its own window.
+    void updateTouchScroll();
+    // True while a finger is still on the screen after panning, so the widget under it must not activate on release.
+    bool touchScrollSuppressed() const;
+    // Submits the scrollable content disabled for as long as a pan is in progress, so the widget the finger started on
+    // never sees its release. Always paired with endTouchScrollGuard().
+    void beginTouchScrollGuard();
+    void endTouchScrollGuard();
 
     std::unordered_map<std::string, CommandDefinition> m_commands;
     std::vector<Message> m_messages;
@@ -161,5 +172,12 @@ private:
     bool m_renderingMobileConsole = false;
     float m_activeMobileConsoleScale = 1.0f;
     size_t m_historyCursor = 0;
+    // Touch panning state: the content position when the finger went down, and the accumulated travel.
+    ImVec2 m_touchScrollAnchorPos = ImVec2(0.0f, 0.0f);
+    float m_touchScrollAnchorOffset = 0.0f;
+    float m_touchScrollTravel = 0.0f;
+    bool m_touchScrollTracking = false;
+    bool m_touchScrollDragged = false;
+    bool m_touchScrollGuardPushed = false;
 };
 }

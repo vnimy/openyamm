@@ -1,4 +1,5 @@
 #include "game/gameplay/GameplayDialogController.h"
+#include "game/ui/UiText.h"
 
 #include "game/StringUtils.h"
 #include "game/audio/SoundIds.h"
@@ -348,11 +349,12 @@ const char *mercenarySelfImpression(uint32_t level)
 std::string generatedMercenaryJoinOfferText(
     const EventRuntimeState::GeneratedMercenaryRecruit &recruit)
 {
-    return "Good tidings. I am " + recruit.character.name
-        + ", " + mercenarySelfImpression(recruit.character.level)
-        + " " + displayClassName(recruit.character.className)
-        + ". I'd love to see the world and taste the adventure, but it'd be foolish to go alone. "
-          "Perhaps I could come with you?";
+    return UiText::translateTemplate(
+        "Good tidings. I am {name}, {impression} {class}. I'd love to see the world and taste the "
+        "adventure, but it'd be foolish to go alone. Perhaps I could come with you?",
+        {{"{name}", recruit.character.name},
+         {"{impression}", UiText::translate(mercenarySelfImpression(recruit.character.level))},
+         {"{class}", UiText::translate(displayClassName(recruit.character.className))}});
 }
 
 int mapTransitionTravelFoodRequired(
@@ -832,7 +834,7 @@ bool tryAddRuntimeMapNote(
 
     JournalMapNote note = {};
     note.id = noteId;
-    note.text = displaySkillName(teacherTopic.skillName) + " - " + masteryDisplayName(teacherTopic.targetMastery);
+    note.text = displaySkillName(teacherTopic.skillName) + " - " + localizedMasteryName(teacherTopic.targetMastery);
     note.mapFileName = noteMapFileName;
     note.listedWithTrainerNotes = !teacherHasAutonote;
 
@@ -1499,7 +1501,7 @@ bool executeBuiltInNpcTopic(
 
     if (context.pWorldRuntime == nullptr)
     {
-        context.eventRuntimeState.messages.push_back("The bounty office is unavailable right now.");
+        context.eventRuntimeState.messages.push_back(UiText::translate("The bounty office is unavailable right now."));
         return true;
     }
 
@@ -1708,7 +1710,7 @@ NpcProfessionActionExecution executeNpcFollowerProfessionAction(
 
     if (context.pParty == nullptr || context.pNpcDialogTable == nullptr)
     {
-        context.eventRuntimeState.messages.push_back("That topic does not have an event yet.");
+        context.eventRuntimeState.messages.push_back(UiText::translate("That topic does not have an event yet."));
         return execution;
     }
 
@@ -1724,7 +1726,7 @@ NpcProfessionActionExecution executeNpcFollowerProfessionAction(
             npcId,
             context.pWorldRuntime != nullptr ? context.pWorldRuntime->gameMinutes() : -1.0f))
     {
-        context.eventRuntimeState.messages.push_back("Sorry, come back another day");
+        context.eventRuntimeState.messages.push_back(UiText::translate("Sorry, come back another day"));
         return execution;
     }
 
@@ -1762,7 +1764,7 @@ NpcProfessionActionExecution executeNpcFollowerProfessionAction(
             {
                 if (context.pParty->food() >= MaxFoodForCookFollower)
                 {
-                    context.eventRuntimeState.messages.push_back("Your packs are already full!");
+                    context.eventRuntimeState.messages.push_back(UiText::translate("Your packs are already full!"));
                     return execution;
                 }
 
@@ -1788,7 +1790,7 @@ NpcProfessionActionExecution executeNpcFollowerProfessionAction(
             {
                 if (partyHasIndoorExitAlert(context))
                 {
-                    context.eventRuntimeState.messages.push_back("There are hostile creatures nearby!");
+                    context.eventRuntimeState.messages.push_back(UiText::translate("There are hostile creatures nearby!"));
                     return execution;
                 }
                 markNpcProfessionActionUsed(context.eventRuntimeState, npcId, context.pWorldRuntime, context.pParty);
@@ -1830,7 +1832,7 @@ NpcProfessionActionExecution executeNpcFollowerProfessionAction(
 
     if (!applied)
     {
-        context.eventRuntimeState.messages.push_back("That topic does not have an event yet.");
+        context.eventRuntimeState.messages.push_back(UiText::translate("That topic does not have an event yet."));
         return execution;
     }
 
@@ -2514,7 +2516,7 @@ GameplayDialogController::Result GameplayDialogController::executeActiveDialogAc
                 }
                 else
                 {
-                    context.activeEventDialog.lines.push_back("Sorry, come back another day.");
+                    context.activeEventDialog.lines.push_back(UiText::translate("Sorry, come back another day."));
                 }
 
                 EventDialogAction backAction = {};
@@ -2844,7 +2846,7 @@ GameplayDialogController::Result GameplayDialogController::executeActiveDialogAc
         {
             if (!partyCanPlayArcomageInHouse(*pHouseEntry, context.pParty))
             {
-                const char *pMessage = arcomageDeckRequiredMessage();
+                const std::string pMessage = arcomageDeckRequiredMessage();
                 context.eventRuntimeState.messages.push_back(pMessage);
                 context.uiController.setStatusBarEvent(pMessage);
                 refreshCurrentHouseServiceDialog(context, pHouseEntry->id);
@@ -3093,7 +3095,7 @@ GameplayDialogController::Result GameplayDialogController::executeActiveDialogAc
 
         if (recruitIt == context.eventRuntimeState.generatedMercenaryRecruitsByNpcId.end())
         {
-            context.eventRuntimeState.messages.push_back("That companion is not ready to join yet.");
+            context.eventRuntimeState.messages.push_back(UiText::translate("That companion is not ready to join yet."));
             result.shouldOpenPendingEventDialog = true;
             return result;
         }
@@ -3126,7 +3128,7 @@ GameplayDialogController::Result GameplayDialogController::executeActiveDialogAc
 
         if (!offer)
         {
-            context.eventRuntimeState.messages.push_back("That companion is not ready to join yet.");
+            context.eventRuntimeState.messages.push_back(UiText::translate("That companion is not ready to join yet."));
             result.shouldOpenPendingEventDialog = true;
             return result;
         }
@@ -3187,8 +3189,8 @@ GameplayDialogController::Result GameplayDialogController::executeActiveDialogAc
                 context.eventRuntimeState.npcHouseOverrides.erase(invite.npcId);
                 context.pParty->setNpcUnavailable(invite.npcId, true);
                 context.pParty->clearNpcHouseOverride(invite.npcId);
-                context.eventRuntimeState.messages.push_back(
-                    recruit.character.name + " waits at the Adventurer's Inn.");
+                context.eventRuntimeState.messages.push_back(UiText::translateTemplate("{name} waits at the Adventurer's Inn.",
+                    {{"{name}", recruit.character.name}}));
                 setPendingDialogueContext(
                     context.eventRuntimeState,
                     DialogueContextKind::NpcTalk,
@@ -3201,7 +3203,7 @@ GameplayDialogController::Result GameplayDialogController::executeActiveDialogAc
 
             if (!context.pParty->recruitCharacter(recruit.character))
             {
-                context.eventRuntimeState.messages.push_back("Recruitment is not available for this companion yet.");
+                context.eventRuntimeState.messages.push_back(UiText::translate("Recruitment is not available for this companion yet."));
                 setPendingDialogueContext(
                     context.eventRuntimeState,
                     DialogueContextKind::NpcTalk,
@@ -3216,7 +3218,8 @@ GameplayDialogController::Result GameplayDialogController::executeActiveDialogAc
             context.eventRuntimeState.npcHouseOverrides.erase(invite.npcId);
             context.pParty->setNpcUnavailable(invite.npcId, true);
             context.pParty->clearNpcHouseOverride(invite.npcId);
-            context.eventRuntimeState.messages.push_back(recruit.character.name + " joined the party.");
+            context.eventRuntimeState.messages.push_back(UiText::translateTemplate("{name} joined the party.",
+                    {{"{name}", recruit.character.name}}));
             queueUiSound(context.eventRuntimeState, HeroismEffectSoundId);
             playSpeechReaction(context, context.pParty->activeMemberIndex(), SpeechId::HireNpc, true);
             setPendingDialogueContext(
@@ -3273,7 +3276,7 @@ GameplayDialogController::Result GameplayDialogController::executeActiveDialogAc
 
         if (pRosterEntry == nullptr || !context.pParty->recruitRosterMember(*pRosterEntry))
         {
-            context.eventRuntimeState.messages.push_back("Recruitment is not available for this companion yet.");
+            context.eventRuntimeState.messages.push_back(UiText::translate("Recruitment is not available for this companion yet."));
             setPendingDialogueContext(
                 context.eventRuntimeState,
                 DialogueContextKind::NpcTalk,
@@ -3287,7 +3290,8 @@ GameplayDialogController::Result GameplayDialogController::executeActiveDialogAc
         context.eventRuntimeState.npcHouseOverrides.erase(invite.npcId);
         context.pParty->setNpcUnavailable(invite.npcId, true);
         context.pParty->clearNpcHouseOverride(invite.npcId);
-        context.eventRuntimeState.messages.push_back(pRosterEntry->name + " joined the party.");
+        context.eventRuntimeState.messages.push_back(UiText::translateTemplate("{name} joined the party.",
+                    {{"{name}", pRosterEntry->name}}));
         queueUiSound(context.eventRuntimeState, HeroismEffectSoundId);
         playSpeechReaction(context, context.pParty->activeMemberIndex(), SpeechId::HireNpc, true);
         setPendingDialogueContext(
@@ -3417,7 +3421,7 @@ GameplayDialogController::Result GameplayDialogController::executeActiveDialogAc
 
         if (!offer)
         {
-            context.eventRuntimeState.messages.push_back("That topic does not have an event yet.");
+            context.eventRuntimeState.messages.push_back(UiText::translate("That topic does not have an event yet."));
             result.shouldOpenPendingEventDialog = true;
             return result;
         }
@@ -3471,7 +3475,7 @@ GameplayDialogController::Result GameplayDialogController::executeActiveDialogAc
 
         if (!offer)
         {
-            context.eventRuntimeState.messages.push_back("That topic does not have an event yet.");
+            context.eventRuntimeState.messages.push_back(UiText::translate("That topic does not have an event yet."));
             result.shouldOpenPendingEventDialog = true;
             return result;
         }
@@ -3536,7 +3540,7 @@ GameplayDialogController::Result GameplayDialogController::executeActiveDialogAc
                 currentDialogueHostHouseId(context.eventRuntimeState) == 0 || pNpc->topicIds.empty())
             || !continentAllowsNpcFollowers(context.pCurrentMap, context.pContinentSettingTable))
         {
-            context.eventRuntimeState.messages.push_back("That follower is not available.");
+            context.eventRuntimeState.messages.push_back(UiText::translate("That follower is not available."));
             result.shouldOpenPendingEventDialog = true;
             return result;
         }
@@ -3610,11 +3614,12 @@ GameplayDialogController::Result GameplayDialogController::executeActiveDialogAc
                 currentDialogueHostHouseId(context.eventRuntimeState) == 0 || pNpc->topicIds.empty())
             || !continentAllowsNpcFollowers(context.pCurrentMap, context.pContinentSettingTable))
         {
-            context.eventRuntimeState.messages.push_back("That follower is not available.");
+            context.eventRuntimeState.messages.push_back(UiText::translate("That follower is not available."));
         }
         else if (hasHiredNpcFollower(context.eventRuntimeState, offer.npcId))
         {
-            context.eventRuntimeState.messages.push_back(pNpc->name + " is already following you.");
+            context.eventRuntimeState.messages.push_back(UiText::translateTemplate("{name} is already following you.",
+                    {{"{name}", pNpc->name}}));
         }
         else if (context.eventRuntimeState.hiredNpcFollowers.size() >= MaxNpcFollowerCount
             || hiredNpcFollowerFeePercent(context.eventRuntimeState) >= MaxNpcFollowerFeePercent)
@@ -3667,7 +3672,8 @@ GameplayDialogController::Result GameplayDialogController::executeActiveDialogAc
                 context.pWorldRuntime->applyEventRuntimeState();
             }
 
-            context.eventRuntimeState.messages.push_back(pNpc->name + " joined the followers.");
+            context.eventRuntimeState.messages.push_back(UiText::translateTemplate("{name} joined the followers.",
+                    {{"{name}", pNpc->name}}));
             playSpeechReaction(context, context.pParty->activeMemberIndex(), SpeechId::HireNpc, true);
             if (context.pScreenRuntime != nullptr)
             {
@@ -3737,8 +3743,8 @@ GameplayDialogController::Result GameplayDialogController::executeActiveDialogAc
                 context.pParty->setNpcUnavailable(npcId, false);
             }
 
-            context.eventRuntimeState.messages.push_back(
-                (pNpc != nullptr && !pNpc->name.empty() ? pNpc->name : "The follower") + " left the followers.");
+            context.eventRuntimeState.messages.push_back(UiText::translateTemplate("{name} left the followers.",
+                    {{"{name}", pNpc != nullptr && !pNpc->name.empty() ? pNpc->name : UiText::translate("The follower")}}));
         }
 
         result.shouldCloseActiveDialog = true;
@@ -3808,7 +3814,7 @@ GameplayDialogController::Result GameplayDialogController::executeActiveDialogAc
                 {
                     accepted = false;
                     textId = 0;
-                    context.eventRuntimeState.messages.push_back("You don't have enough gold.");
+                    context.eventRuntimeState.messages.push_back(UiText::translate("You don't have enough gold."));
                 }
                 else
                 {
@@ -3916,7 +3922,7 @@ GameplayDialogController::Result GameplayDialogController::executeActiveDialogAc
 
         if (!executed)
         {
-            context.eventRuntimeState.messages.push_back("That topic does not have an event yet.");
+            context.eventRuntimeState.messages.push_back(UiText::translate("That topic does not have an event yet."));
         }
 
         if (!context.eventRuntimeState.pendingDialogueContext
@@ -3941,7 +3947,7 @@ GameplayDialogController::Result GameplayDialogController::executeActiveDialogAc
         const uint32_t npcId = context.activeEventDialog.sourceId;
         if (context.pWorldRuntime == nullptr)
         {
-            context.eventRuntimeState.messages.push_back("The Arena is unavailable here.");
+            context.eventRuntimeState.messages.push_back(UiText::translate("The Arena is unavailable here."));
         }
         else if (action.kind == EventDialogActionKind::ArenaChallenge)
         {
@@ -4002,7 +4008,7 @@ GameplayDialogController::Result GameplayDialogController::executeActiveDialogAc
 
         if (!executed)
         {
-            context.eventRuntimeState.messages.push_back("That topic does not have an event yet.");
+            context.eventRuntimeState.messages.push_back(UiText::translate("That topic does not have an event yet."));
         }
 
         if (context.eventRuntimeState.pendingWinGame || context.eventRuntimeState.pendingDimensionDoorOverlay)
@@ -4654,7 +4660,7 @@ bool GameplayDialogController::refreshHouseBankInputDialog(Context &context, boo
         "Balance: " + std::to_string(context.pParty != nullptr ? context.pParty->bankGold() : 0));
     context.activeEventDialog.lines.push_back(std::string {});
     context.activeEventDialog.lines.push_back(promptLabel);
-    context.activeEventDialog.lines.push_back("How Much?");
+    context.activeEventDialog.lines.push_back(UiText::translate("How Much?"));
     context.activeEventDialog.lines.push_back(std::string {});
     context.activeEventDialog.actions.clear();
     context.selectionIndex = 0;

@@ -1,3 +1,4 @@
+#include "game/ui/UiText.h"
 #include "game/gameplay/GameplayInputController.h"
 #include "game/ui/GameplayLootSummaryRenderer.h"
 
@@ -328,7 +329,7 @@ void GameplayInputController::handleStandardUiHotkeys(
             {
                 if (!context.interactionState().restToggleLatch)
                 {
-                    context.setStatusBarEvent("You can't rest in turn-based mode!");
+                    context.setStatusBarEvent(UiText::translate("You can't rest in turn-based mode!"));
                     context.playCantRestHereReaction();
                     context.interactionState().restToggleLatch = true;
                 }
@@ -674,7 +675,7 @@ void GameplayInputController::handleSharedGameplayHotkeys(
             }
             else
             {
-                context.setStatusBarEvent("The Adventurer's Inn is empty.");
+                context.setStatusBarEvent(UiText::translate("The Adventurer's Inn is empty."));
             }
 
             context.interactionState().adventurersInnToggleLatch = true;

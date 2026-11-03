@@ -1,4 +1,5 @@
 #include "game/ui/GameplayCombatLogPanel.h"
+#include "game/ui/UiText.h"
 
 #include "game/gameplay/CombatLog.h"
 #include "game/gameplay/GameplayScreenRuntime.h"
@@ -172,7 +173,8 @@ std::string stageName(const std::string &stage)
 
     if (found != Names.end())
     {
-        return found->second;
+        // 汉化：阶段名单独一段，整句拼不起来，只能在这里查表。
+        return UiText::translate(found->second);
     }
 
     std::string name = stage;
@@ -183,7 +185,7 @@ std::string stageName(const std::string &stage)
         name[0] = char(std::toupper(static_cast<unsigned char>(name[0])));
     }
 
-    return name;
+    return UiText::translate(name);
 }
 
 // "Gerrard shoots Goblin 58!", short for the corner: the party's names ivory, monsters coral, the amount yellow with
@@ -194,7 +196,7 @@ std::vector<Segment> hitSegments(const CombatLogEntry &entry)
     // "Filtered: Uncommon Longsword -> 312 gold", the rarity in its colour.
     if (entry.kind == CombatLogKind::Loot)
     {
-        std::vector<Segment> segments = {{"Filtered: ", BodyColor}};
+        std::vector<Segment> segments = {{UiText::translate("Filtered:") + " ", BodyColor}};
 
         if (!entry.rarity.empty())
         {
@@ -203,7 +205,8 @@ std::vector<Segment> hitSegments(const CombatLogEntry &entry)
 
         segments.push_back({entry.target, PartyColor});
         segments.push_back({" -> ", BodyColor});
-        segments.push_back({std::to_string(entry.amount) + " gold", AmountColor});
+        segments.push_back({UiText::translateTemplate("{amount} gold",
+            {{"{amount}", std::to_string(entry.amount)}}), AmountColor});
         return segments;
     }
 
@@ -217,11 +220,13 @@ std::vector<Segment> hitSegments(const CombatLogEntry &entry)
 
     if (entry.killed)
     {
-        segments.push_back({" kills ", KillColor});
+        segments.push_back({" " + UiText::translate("kills") + " ", KillColor});
     }
     else
     {
-        segments.push_back({entry.spell.empty() ? " " + entry.verb + " " : " on ", BodyColor});
+        segments.push_back({entry.spell.empty()
+            ? " " + UiText::translate(entry.verb) + " "
+            : " " + UiText::translate("on") + " ", BodyColor});
     }
 
     segments.push_back({entry.target, dealt ? MonsterColor : PartyColor});
@@ -240,10 +245,10 @@ std::vector<Segment> stageSegments(const CombatLogEntry &entry)
 {
     if (entry.stages.empty())
     {
-        return {{"No damage steps for this line.", StageColor}};
+        return {{UiText::translate("No damage steps for this line."), StageColor}};
     }
 
-    std::vector<Segment> segments = {{"Rolled ", StageColor},
+    std::vector<Segment> segments = {{UiText::translate("Rolled") + " ", StageColor},
         {std::to_string(entry.stages.front().before), AmountColor}};
 
     for (const CombatLogStage &stage : entry.stages)
@@ -442,7 +447,7 @@ void GameplayCombatLogPanel::layOut(GameplayScreenRuntime &context, const Combat
     const GameplayResolvedHudLayoutElement scrollbar{panel.x + panel.width - 9 * scale, area.y, 6 * scale,
         area.height, scale};
     m_textFilter = lineStyle.pFont->smooth ? TextureFilterProfile::SmoothText : TextureFilterProfile::Text;
-    appendText(m_textQuads, titleStyle, "Combat log", panel.x + 6 * scale,
+    appendText(m_textQuads, titleStyle, UiText::translate("Combat log"), panel.x + 6 * scale,
         panel.y + 2 * scale + (headerHeight - 2 * scale - titleStyle.lineHeight) / 2, 0xffa8d1e6u);
 
     // The filter chips, laid out leftwards from the panel's right edge.
@@ -456,7 +461,8 @@ void GameplayCombatLogPanel::layOut(GameplayScreenRuntime &context, const Combat
 
     for (const auto &[pLabel, filter] : chips)
     {
-        const float chipWidth = std::round(textWidth(chipStyle, pLabel) + 8 * scale);
+        const std::string label = UiText::translate(pLabel);
+        const float chipWidth = std::round(textWidth(chipStyle, label) + 8 * scale);
         const GameplayResolvedHudLayoutElement chip{chipRight - chipWidth, panel.y + 3 * scale, chipWidth,
             13 * scale, scale};
         chipRight = chip.x - 2 * scale;
@@ -467,7 +473,7 @@ void GameplayCombatLogPanel::layOut(GameplayScreenRuntime &context, const Combat
         m_fills.push_back({{chip.x, chip.y + chip.height - hairline, chip.width, hairline, scale}, edge});
         m_fills.push_back({{chip.x, chip.y, hairline, chip.height, scale}, edge});
         m_fills.push_back({{chip.x + chip.width - hairline, chip.y, hairline, chip.height, scale}, edge});
-        appendText(m_textQuads, chipStyle, pLabel, chip.x + (chip.width - textWidth(chipStyle, pLabel)) / 2,
+        appendText(m_textQuads, chipStyle, label, chip.x + (chip.width - textWidth(chipStyle, label)) / 2,
             chip.y + (chip.height - chipStyle.lineHeight) / 2, on ? ChipTextOnColor : BodyColor);
         m_filterRects.push_back({chip, filter});
     }

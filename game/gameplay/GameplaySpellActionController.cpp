@@ -1,3 +1,4 @@
+#include "game/ui/UiText.h"
 #include "game/gameplay/GameplaySpellActionController.h"
 
 #include "game/gameplay/GameplayRuntimeInterfaces.h"
@@ -47,7 +48,7 @@ GameplaySpellActionController::AttackCastResult GameplaySpellActionController::t
 
     if (pAttackSpellEntry == nullptr)
     {
-        runtime.setStatusBarEvent("Unknown attack spell");
+        runtime.setStatusBarEvent(UiText::translate("Unknown attack spell"));
         return {
             .disposition = AttackCastDisposition::Failed,
             .followupUiActive = false,

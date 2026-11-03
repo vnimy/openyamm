@@ -4,6 +4,7 @@
 #include "game/data/GameDataRepository.h"
 #include "game/gameplay/GameplaySaveLoadUiSupport.h"
 #include "game/ui/MenuSettingsModel.h"
+#include "game/ui/UiText.h"
 #include "game/ui/screens/LoadGameScreen.h"
 
 #include <yaml-cpp/yaml.h>
@@ -357,7 +358,7 @@ void MainMenuScreen::drawHome()
     {
         if (m_paused)
         {
-            confirm("Start a New Adventure?", "Unsaved progress in this adventure will be lost.",
+            confirm(UiText::translate("Start a New Adventure?"), UiText::translate("Unsaved progress in this adventure will be lost."),
                     {"Cancel", "New Game"},
                     [this](int choice)
                     {
@@ -374,7 +375,7 @@ void MainMenuScreen::drawHome()
     };
     const auto quit = [this]()
     {
-        confirm("Leave OpenYAMM?",
+        confirm(UiText::translate("Leave OpenYAMM?"),
                 m_paused ? "Unsaved progress will be lost. Return to your desktop?" : "Return to your desktop?",
                 {"Cancel", "Quit"},
                 [this](int choice)
@@ -412,7 +413,7 @@ void MainMenuScreen::drawHome()
         }
         if (action("MenuButtonMainMenu"))
         {
-            confirm("Return to Main Menu?", "Unsaved progress in this adventure will be lost.", {"Cancel", "Main Menu"},
+            confirm(UiText::translate("Return to Main Menu?"), UiText::translate("Unsaved progress in this adventure will be lost."), {"Cancel", UiText::translate("Main Menu")},
                     [this](int choice)
                     {
                         if (choice == 1)
@@ -485,8 +486,10 @@ void MainMenuScreen::drawUpdates()
 
         if (const std::optional<std::string> failed = m_pUpdater->takeRollbackNotice())
         {
-            confirm("Update Undone", "OpenYAMM " + *failed + " did not start, so OpenYAMM "
-                        + m_pUpdater->installedVersion() + " was restored. Your saves are unchanged.",
+            confirm(UiText::translate("Update Undone"),
+                    UiText::translateTemplate(
+                        "OpenYAMM {failed} did not start, so OpenYAMM {installed} was restored. Your saves are unchanged.",
+                        {{"{failed}", *failed}, {"{installed}", m_pUpdater->installedVersion()}}),
                     {"OK"}, [](int) {});
         }
         else if (m_committed.keepModifiedPacks)
@@ -520,13 +523,15 @@ void MainMenuScreen::drawUpdates()
 
     if (status.state == Engine::UpdateState::Ready)
     {
-        text = "Restart to play OpenYAMM " + status.release;
+        text = UiText::translateTemplate("Restart to play OpenYAMM {version}",
+            {{"{version}", status.release}});
     }
     else if (status.state == Engine::UpdateState::Available
              || (status.state == Engine::UpdateState::Failed && !m_updateRelease.empty()))
     {
-        text = "Update to OpenYAMM " + m_updateRelease + " ("
-            + std::to_string((status.totalBytes + 999999) / 1000000) + " MB)";
+        text = UiText::translateTemplate("Update to OpenYAMM {version} ({size} MB)",
+            {{"{version}", m_updateRelease},
+             {"{size}", std::to_string((status.totalBytes + 999999) / 1000000)}});
     }
 
     if (!text.empty() && button("update", canvasRect(14, 430, 250, 22), text, "button_quiet") && !modalOpen())
@@ -547,51 +552,62 @@ void MainMenuScreen::drawUpdateSettings(const std::string &prefix)
 
     const Engine::UpdateStatus status = m_pUpdater->status();
     const std::string size = std::to_string((status.totalBytes + 999999) / 1000000) + " MB";
-    std::string text = "Check Now looks for a new version on jasicek.net. Nothing downloads without asking.";
-    std::string buttonText = "Check Now";
+    std::string text = UiText::translate("Check Now looks for a new version on jasicek.net. Nothing downloads without asking.");
+    std::string buttonText = UiText::translate("Check Now");
     bool enabled = true;
     bool install = false;
 
     if (status.state == Engine::UpdateState::Checking)
     {
-        text = "Looking for a new version on jasicek.net...";
+        text = UiText::translate("Looking for a new version on jasicek.net...");
         buttonText = "Checking...";
         enabled = false;
     }
     else if (status.state == Engine::UpdateState::UpToDate)
     {
-        text = "This is the newest version.";
+        text = UiText::translate("This is the newest version.");
     }
     else if (status.state == Engine::UpdateState::Failed)
     {
-        text = "The last check failed: " + status.message;
+        text = UiText::translateTemplate("The last check failed: {message}", {{"{message}", status.message}});
     }
     else if (status.state == Engine::UpdateState::Available)
     {
         m_updateRelease = status.release;
-        text = "OpenYAMM " + status.release + " is available (" + size + ")."
-            + (m_paused ? " Update it from the main menu." : "");
+        text = m_paused
+            ? UiText::translateTemplate(
+                "OpenYAMM {version} is available ({size}). Update it from the main menu.",
+                {{"{version}", status.release}, {"{size}", size}})
+            : UiText::translateTemplate("OpenYAMM {version} is available ({size}).",
+                {{"{version}", status.release}, {"{size}", size}});
         buttonText = m_paused ? "Check Now" : "Update";
         install = !m_paused;
     }
     else if (status.state == Engine::UpdateState::Downloading)
     {
-        text = "Downloading OpenYAMM " + m_updateRelease + ": " + std::to_string(status.doneBytes / 1000000) + " of "
-            + size + ".";
+        text = UiText::translateTemplate("Downloading OpenYAMM {version}: {done} of {size}.",
+            {{"{version}", m_updateRelease},
+             {"{done}", std::to_string(status.doneBytes / 1000000)},
+             {"{size}", size}});
         buttonText = "Downloading...";
         enabled = false;
     }
     else if (status.state == Engine::UpdateState::Ready)
     {
-        text = "OpenYAMM " + status.release + " is downloaded. Restart"
-            + (m_paused ? " from the main menu" : "") + " to play it.";
+        text = m_paused
+            ? UiText::translateTemplate(
+                "OpenYAMM {version} is downloaded. Restart from the main menu to play it.",
+                {{"{version}", status.release}})
+            : UiText::translateTemplate("OpenYAMM {version} is downloaded. Restart to play it.",
+                {{"{version}", status.release}});
         buttonText = "Restart";
         enabled = !m_paused;
         install = !m_paused;
     }
 
     const std::string id = prefix + "UpdateNow";
-    label(id + "Label", "Installed: OpenYAMM " + m_pUpdater->installedVersion(), 0, -m_scroll);
+    label(id + "Label", UiText::translateTemplate("Installed: OpenYAMM {version}",
+                                {{"{version}", m_pUpdater->installedVersion()}}), 0, -m_scroll);
     label(id + "Description", text, 0, -m_scroll);
     Rect rect = designRect(id + "Control");
     rect.y -= m_scroll * designScale();
@@ -611,7 +627,7 @@ void MainMenuScreen::drawUpdateSettings(const std::string &prefix)
 
 void MainMenuScreen::askAboutUpdates()
 {
-    confirm("Check for Updates?",
+    confirm(UiText::translate("Check for Updates?"),
             "OpenYAMM can look for a new version on jasicek.net when it starts. Nothing is downloaded without asking.",
             {"Never", "At start"},
             [this](int choice)
@@ -652,8 +668,11 @@ void MainMenuScreen::offerUpdate()
 
     const std::string size = std::to_string((status.totalBytes + 999999) / 1000000) + " MB";
     const std::string body = m_pUpdater->updatesInGame()
-        ? "Downloads " + size + ". Your saves and settings stay as they are."
-        : "Downloads " + size + " in the update screen. Your saves and settings stay as they are.";
+        ? UiText::translateTemplate("Downloads {size}. Your saves and settings stay as they are.",
+            {{"{size}", size}})
+        : UiText::translateTemplate(
+            "Downloads {size} in the update screen. Your saves and settings stay as they are.",
+            {{"{size}", size}});
     const bool hasNotesPage = !status.notesUrl.empty();
     std::vector<std::string> choices = {"Later", "Update"};
 
@@ -662,7 +681,8 @@ void MainMenuScreen::offerUpdate()
         choices.insert(choices.begin() + 1, "Release Notes");
     }
 
-    confirm("Update to OpenYAMM " + m_updateRelease + "?", body, choices,
+    confirm(UiText::translateTemplate("Update to OpenYAMM {version}?", {{"{version}", m_updateRelease}}),
+            body, choices,
             [this, hasNotesPage, url = status.notesUrl](int choice)
             {
                 if (hasNotesPage && choice == 1)
@@ -682,7 +702,7 @@ void MainMenuScreen::offerUpdate()
                     return;
                 }
                 m_followingUpdate = true;
-                confirm("Updating OpenYAMM", "Starting the download...", {"Cancel"},
+                confirm(UiText::translate("Updating OpenYAMM"), UiText::translate("Starting the download..."), {"Cancel"},
                         [this](int)
                         {
                             m_pUpdater->cancel();
@@ -701,9 +721,10 @@ void MainMenuScreen::followUpdate()
     if (status.state == Engine::UpdateState::Downloading || status.state == Engine::UpdateState::Available)
     {
         setModalBody(status.state == Engine::UpdateState::Available
-                         ? "Starting the download..."
-                         : status.message + "\n" + std::to_string(status.doneBytes / 1000000) + " of "
-                             + std::to_string((status.totalBytes + 999999) / 1000000) + " MB");
+                         ? UiText::translate("Starting the download...")
+                         : UiText::translateTemplate("{done} of {total} MB",
+                             {{"{done}", std::to_string(status.doneBytes / 1000000)},
+                              {"{total}", std::to_string((status.totalBytes + 999999) / 1000000)}}));
         return;
     }
 
@@ -715,13 +736,14 @@ void MainMenuScreen::followUpdate()
 
     if (status.state == Engine::UpdateState::Failed)
     {
-        confirm("Update Failed", status.message, {"OK"}, [](int) {});
+        confirm(UiText::translate("Update Failed"), status.message, {"OK"}, [](int) {});
         return;
     }
 
     if (status.state == Engine::UpdateState::Ready)
     {
-        confirm("OpenYAMM " + status.release + " Is Ready", "Restart now to play the new version.",
+        confirm(UiText::translateTemplate("OpenYAMM {version} Is Ready", {{"{version}", status.release}}),
+                "Restart now to play the new version.",
                 {"Later", "Restart Now"},
                 [this](int choice)
                 {
@@ -736,7 +758,7 @@ void MainMenuScreen::followUpdate()
                     }
                     else
                     {
-                        confirm("Update Failed", error, {"OK"}, [](int) {});
+                        confirm(UiText::translate("Update Failed"), error, {"OK"}, [](int) {});
                     }
                 });
     }
@@ -808,7 +830,7 @@ void MainMenuScreen::leaveSettings()
         setTextEditing(false);
         return;
     }
-    confirm("Unapplied Changes", "Apply your changes before leaving Settings?", {"Stay", "Discard", "Apply"},
+    confirm(UiText::translate("Unapplied Changes"), UiText::translate("Apply your changes before leaving Settings?"), {"Stay", "Discard", "Apply"},
             [this](int choice)
             {
                 if (choice == 1)
@@ -866,7 +888,7 @@ void MainMenuScreen::applySettings(bool leaveAfter)
         m_displayPreview = true;
         m_displaySeconds = 15;
         m_leaveAfterApply = leaveAfter;
-        confirm("Keep Display Settings?", "Reverting in 15 seconds.", {"Revert", "Keep"},
+        confirm(UiText::translate("Keep Display Settings?"), UiText::translate("Reverting in 15 seconds."), {"Revert", "Keep"},
                 [this](int choice)
                 {
                     if (choice != 1)
@@ -905,7 +927,7 @@ void MainMenuScreen::applySettings(bool leaveAfter)
 
 void MainMenuScreen::restoreDefaults()
 {
-    confirm("Restore Defaults?",
+    confirm(UiText::translate("Restore Defaults?"),
             m_section == "controls" ? "Restore mouse controls, the control preset and its keyboard bindings?"
                                     : "Restore the current Settings section to its defaults?",
             {"Cancel", "Restore"},
@@ -975,7 +997,7 @@ void MainMenuScreen::editSetting(const Setting &setting, const std::string &valu
         if (setting.id == "ruleset_difficulty" && value == rulesetDifficultyId(RulesetDifficulty::Nightmare)
             && m_rulesetDraft.difficulty != RulesetDifficulty::Nightmare)
         {
-            confirm("Choose Nightmare?", "Nightmare can never be lowered again in this adventure.",
+            confirm(UiText::translate("Choose Nightmare?"), UiText::translate("Nightmare can never be lowered again in this adventure."),
                     {"Cancel", "Nightmare"},
                     [this, setting, value](int choice)
                     {
@@ -994,7 +1016,7 @@ void MainMenuScreen::editSetting(const Setting &setting, const std::string &valu
     }
     if (setting.id == "control_scheme" && menuSettingValue(m_draft, setting.id) != value)
     {
-        confirm("Change Control Preset?", "This also resets the keyboard bindings for the selected preset.",
+        confirm(UiText::translate("Change Control Preset?"), UiText::translate("This also resets the keyboard bindings for the selected preset."),
                 {"Cancel", "Change"},
                 [this, value](int choice)
                 {
@@ -1049,7 +1071,8 @@ void MainMenuScreen::chooseSetting(const Setting &setting)
         for (const auto &[width, height] : sizes)
         {
             const std::string value = std::to_string(width) + "x" + std::to_string(height);
-            choices.emplace_back(value, std::to_string(width) + " x " + std::to_string(height));
+            choices.emplace_back(value, UiText::translateTemplate("{width} x {height}",
+                {{"{width}", std::to_string(width)}, {"{height}", std::to_string(height)}}));
         }
     }
     std::vector<std::string> labels;
@@ -1057,7 +1080,7 @@ void MainMenuScreen::chooseSetting(const Setting &setting)
     {
         labels.push_back(label);
     }
-    confirm(setting.name, "Choose a value", labels,
+    confirm(setting.name, UiText::translate("Choose a value"), labels,
             [this, setting, choices](int index)
             {
                 if (index >= 0)
@@ -1082,7 +1105,8 @@ void MainMenuScreen::drawSettings(float deltaSeconds)
     if (m_displayPreview)
     {
         m_displaySeconds -= deltaSeconds;
-        setModalBody("Reverting in " + std::to_string(std::max(0, int(std::ceil(m_displaySeconds)))) + " seconds.");
+        setModalBody(UiText::translateTemplate("Reverting in {seconds} seconds.",
+            {{"{seconds}", std::to_string(std::max(0, int(std::ceil(m_displaySeconds))))}}));
         if (m_displaySeconds <= 0)
         {
             closeConfirmation();
@@ -1130,7 +1154,8 @@ void MainMenuScreen::drawSettings(float deltaSeconds)
     }
     label(prefix + "DirtyStatus", !m_status.empty()   ? m_status
                                   : dirtyCount() == 0 ? "Your settings are up to date."
-                                                      : std::to_string(dirtyCount()) + " unapplied changes");
+                                                      : UiText::translateTemplate("{count} unapplied changes",
+                                                            {{"{count}", std::to_string(dirtyCount())}}));
     const Rect viewport = designRect(prefix + "ScrollViewport");
     if (m_section == "keyboard")
     {
@@ -1351,7 +1376,7 @@ void MainMenuScreen::drawKeyboard(const std::string &prefix, const Rect &viewpor
                 groups.push_back(binding.group);
             }
         }
-        confirm("Action Group", "", groups,
+        confirm(UiText::translate("Action Group"), "", groups,
                 [this, groups](int index)
                 {
                     if (index >= 0)
@@ -1418,8 +1443,9 @@ void MainMenuScreen::captureBinding(KeyboardAction action)
     setTextEditing(false);
     m_capture = action;
     m_captureModifier.reset();
-    confirm("Assign Key", std::string(keyboardBindingDefinition(action).label) +
-            "\nPress a key, mouse button, or scroll the wheel.",
+    confirm(UiText::translate("Assign Key"),
+            UiText::translateTemplate("{action}\nPress a key, mouse button, or scroll the wheel.",
+                {{"{action}", UiText::translate(std::string(keyboardBindingDefinition(action).label))}}),
             {"Cancel", "Clear", "Left Mouse"},
             [this, action](int choice)
             {
@@ -1464,9 +1490,10 @@ void MainMenuScreen::acceptBinding(InputBinding binding)
     closeConfirmation();
     if (conflict)
     {
-        confirm("Key Already Assigned",
-                inputBindingDisplayName(binding) + " is assigned to " +
-                    std::string(keyboardBindingDefinition(*conflict).label) + ". Swap the two actions?",
+        confirm(UiText::translate("Key Already Assigned"),
+                UiText::translateTemplate("{key} is assigned to {action}. Swap the two actions?",
+                    {{"{key}", inputBindingDisplayName(binding)},
+                     {"{action}", UiText::translate(std::string(keyboardBindingDefinition(*conflict).label))}}),
                 {"Cancel", "Swap"},
                 [this, target, binding, conflict](int choice)
                 {

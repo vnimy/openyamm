@@ -1,3 +1,4 @@
+#include "game/ui/UiText.h"
 #include "game/ui/GameplayBuffHud.h"
 #include "game/ui/GameplayUiSkin.h"
 #include "game/gameplay/GameplayScreenRuntime.h"
@@ -28,7 +29,7 @@ std::vector<GameplayAuraLine> gameplayUnslottedAuraLines(
     for (const uint32_t spellId : rules.heldAurasWithoutBuffSlot(party))
     {
         const SpellEntry *pSpell = pSpellTable != nullptr ? pSpellTable->findById(int(spellId)) : nullptr;
-        lines.push_back({pSpell != nullptr ? rules.spellName(member, *pSpell) : "Aura",
+        lines.push_back({pSpell != nullptr ? rules.spellName(member, *pSpell) : UiText::translate("Aura"),
             rules.heldBuffText(party, spellId).value_or("Held")});
     }
 
@@ -67,26 +68,26 @@ std::vector<GameplayPotionEffectLine> gameplayPotionEffectLines(const Character 
             case TimedPotionEffect::Kind::Aura:
             {
                 const SpellEntry *pSpell = pSpellTable != nullptr ? pSpellTable->findById(int(effect.key)) : nullptr;
-                lines.push_back({(pSpell != nullptr ? pSpell->name : std::string("Aura")) + " (potion)",
+                lines.push_back({(pSpell != nullptr ? pSpell->name : std::string(UiText::translate("Aura"))) + " (potion)",
                     effect.remainingSeconds});
                 break;
             }
             case TimedPotionEffect::Kind::SkillBonus:
             {
                 const std::optional<std::string> skill = skillNameForSkillId(effect.key);
-                lines.push_back({(skill ? displaySkillName(*skill) : std::string("Skill")) + " +"
+                lines.push_back({(skill ? displaySkillName(*skill) : std::string(UiText::translate("Skill"))) + " +"
                     + std::to_string(effect.amount) + " (potion)", effect.remainingSeconds});
                 break;
             }
             case TimedPotionEffect::Kind::Regeneration:
-                lines.push_back({"Regeneration (potion)", effect.remainingSeconds});
+                lines.push_back({UiText::translate("Regeneration (potion)"), effect.remainingSeconds});
                 break;
         }
     }
 
     if (!immunities.empty())
     {
-        lines.push_back({"Immune to " + immunities, immunitySeconds});
+        lines.push_back({UiText::translate("Immune to ") + immunities, immunitySeconds});
     }
 
     return lines;

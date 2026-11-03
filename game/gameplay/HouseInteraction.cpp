@@ -4,6 +4,7 @@
 #include "game/gameplay/BountyHuntRuntime.h"
 #include "game/events/EvtEnums.h"
 #include "game/tables/ClassSkillTable.h"
+#include "game/ui/UiText.h"
 #include "game/gameplay/HouseServiceRuntime.h"
 #include "game/gameplay/NpcFollowerRuntime.h"
 #include "game/gameplay/ReputationRuntime.h"
@@ -583,9 +584,9 @@ uint32_t arcomageDeckItemId()
     return ArcomageDeckItemId;
 }
 
-const char *arcomageDeckRequiredMessage()
+std::string arcomageDeckRequiredMessage()
 {
-    return pArcomageDeckRequiredMessage;
+    return UiText::translate(pArcomageDeckRequiredMessage);
 }
 
 bool partyHasArcomageDeck(const Party *pParty)
@@ -647,7 +648,9 @@ int adjustedTransportTravelDays(
 
 std::string transportTravelDaysText(int travelDays)
 {
-    return std::to_string(travelDays) + (travelDays == 1 ? " day" : " days");
+    // 天数与「天」分开拼，中文模板才能把量词放对位置。
+    return UiText::translateTemplate(
+        "{days} day(s)", {{"{days}", std::to_string(travelDays)}});
 }
 
 const HouseEntry::TransportRoute *findTransportRoute(const HouseEntry &houseEntry, const std::string &argument)
@@ -739,12 +742,12 @@ bool isHouseOpenAtGameMinute(const HouseEntry &houseEntry, float currentGameMinu
 
 std::string buildClosedStatusText(const HouseEntry &houseEntry)
 {
-    return "This place is open from "
-        + std::to_string(displayHourAmPm(houseEntry.openHour))
-        + amPmSuffixForHour(houseEntry.openHour)
-        + " to "
-        + std::to_string(displayHourAmPm(houseEntry.closeHour))
+    const std::string open = std::to_string(displayHourAmPm(houseEntry.openHour))
+        + amPmSuffixForHour(houseEntry.openHour);
+    const std::string close = std::to_string(displayHourAmPm(houseEntry.closeHour))
         + amPmSuffixForHour(houseEntry.closeHour);
+    return UiText::translateTemplate(
+        "This place is open from {open} to {close}", {{"{open}", open}, {"{close}", close}});
 }
 
 std::optional<uint32_t> lorettaStableQuestBitForHouse(uint32_t houseId)
@@ -991,15 +994,16 @@ std::string selectedMemberLine(const Party *pParty)
 
     if (pMember == nullptr)
     {
-        return "Selected: no character";
+        return UiText::translate("Selected: no character");
     }
 
-    return "Selected: " + pMember->name + " the " + pParty->rules().classes.displayName(*pParty, *pMember);
+    return "Selected: " + UiText::titleWithName(pMember->name, pParty->rules().classes.displayName(*pParty, *pMember));
 }
 
 std::string houseWelcomeLine(const HouseEntry &houseEntry)
 {
-    return "Welcome to " + houseEntry.name;
+    // 屋名走覆盖表，中文语序也由模板决定（「欢迎来到xxx」）。
+    return UiText::translateTemplate("Welcome to {house}", {{"{house}", UiText::translate(houseEntry.name)}});
 }
 
 HouseServiceType resolveHouseServiceType(const HouseEntry &houseEntry)
@@ -1187,7 +1191,9 @@ std::vector<HouseActionOption> buildHouseActionOptions(
         {
             HouseActionOption learn = makeOption(
                 HouseActionId::LearnSkill,
-                "Learn " + displaySkillName(skillName) + " for " + std::to_string(price) + " gold",
+                UiText::translateTemplate("Learn {skill} for {cost} gold",
+                                          {{"{skill}", UiText::translate(displaySkillName(skillName))},
+                                           {"{cost}", std::to_string(price)}}),
                 isHouseOpenNow,
                 closedReason
             );
@@ -1215,7 +1221,7 @@ std::vector<HouseActionOption> buildHouseActionOptions(
         const bool isExplicitVendor = houseEntry.vendorStockProfile != VendorStockProfile::None;
         if (!isExplicitVendor || HouseServiceRuntime::supportsEquipmentSell(houseEntry))
         {
-            HouseActionOption sell = makeOption(HouseActionId::ShopSell, "Sell", isHouseOpenNow, closedReason);
+            HouseActionOption sell = makeOption(HouseActionId::ShopSell, UiText::translate("Sell"), isHouseOpenNow, closedReason);
 
             if (sell.enabled && !HouseServiceRuntime::supportsEquipmentSell(houseEntry))
             {
@@ -1246,7 +1252,7 @@ std::vector<HouseActionOption> buildHouseActionOptions(
         if ((!isExplicitVendor && !isHouseType(houseEntry, "Alchemist"))
             || (isExplicitVendor && HouseServiceRuntime::supportsRepair(houseEntry)))
         {
-            HouseActionOption repair = makeOption(HouseActionId::ShopRepair, "Repair", isHouseOpenNow, closedReason);
+            HouseActionOption repair = makeOption(HouseActionId::ShopRepair, UiText::translate("Repair"), isHouseOpenNow, closedReason);
 
             if (repair.enabled && !HouseServiceRuntime::supportsRepair(houseEntry))
             {
@@ -1313,7 +1319,8 @@ std::vector<HouseActionOption> buildHouseActionOptions(
         {
             options.push_back(makeOption(
                 HouseActionId::TempleHeal,
-                "Heal " + std::to_string(templeHealCost(houseEntry, pMember)) + " gold",
+                UiText::translateTemplate("Heal {cost} gold",
+                                          {{"{cost}", std::to_string(templeHealCost(houseEntry, pMember))}}),
                 isHouseOpenNow,
                 closedReason
             ));
@@ -1323,7 +1330,8 @@ std::vector<HouseActionOption> buildHouseActionOptions(
         {
             options.push_back(makeOption(
                 HouseActionId::TempleDonate,
-                "Donate " + std::to_string(templeDonationCost(houseEntry)) + " gold",
+                UiText::translateTemplate("Donate {cost} gold",
+                                          {{"{cost}", std::to_string(templeDonationCost(houseEntry))}}),
                 isHouseOpenNow,
                 closedReason
             ));
@@ -1332,7 +1340,7 @@ std::vector<HouseActionOption> buildHouseActionOptions(
         {
             options.push_back(makeOption(
                 HouseActionId::OpenLearnSkillsMenu,
-                "Learn Skills",
+                UiText::translate("Learn Skills"),
                 isHouseOpenNow,
                 closedReason));
         }
@@ -1345,12 +1353,12 @@ std::vector<HouseActionOption> buildHouseActionOptions(
 
         options.push_back(makeOption(
             HouseActionId::TavernRentRoom,
-            "Rent room for "
-                + std::to_string(PriceCalculator::tavernRoomPrice(
-                    pMember,
-                    houseEntry,
-                    effectiveReputationForWorld(pWorldRuntime)))
-                + " gold",
+            UiText::translateTemplate(
+                "Rent room for {cost} gold",
+                {{"{cost}", std::to_string(PriceCalculator::tavernRoomPrice(
+                                 pMember,
+                                 houseEntry,
+                                 effectiveReputationForWorld(pWorldRuntime)))}}),
             isHouseOpenNow,
             closedReason
         ));
@@ -1358,11 +1366,13 @@ std::vector<HouseActionOption> buildHouseActionOptions(
         const int foodTarget = tavernFoodTarget(houseEntry);
         HouseActionOption food = makeOption(
             HouseActionId::TavernBuyFood,
-            "Fill packs to " + std::to_string(foodTarget) + " days for "
-                + std::to_string(PriceCalculator::tavernFoodPrice(
-                    pMember,
-                    houseEntry,
-                    effectiveReputationForWorld(pWorldRuntime))) + " gold",
+            UiText::translateTemplate(
+                "Fill packs to {days} days for {cost} gold",
+                {{"{days}", std::to_string(foodTarget)},
+                 {"{cost}", std::to_string(PriceCalculator::tavernFoodPrice(
+                                 pMember,
+                                 houseEntry,
+                                 effectiveReputationForWorld(pWorldRuntime)))}}),
             isHouseOpenNow,
             closedReason
         );
@@ -1379,7 +1389,7 @@ std::vector<HouseActionOption> buildHouseActionOptions(
         if (!houseEntry.teachesNothing)
         {
             options.push_back(
-                makeOption(HouseActionId::OpenLearnSkillsMenu, "Learn Skills", isHouseOpenNow, closedReason));
+                makeOption(HouseActionId::OpenLearnSkillsMenu, UiText::translate("Learn Skills"), isHouseOpenNow, closedReason));
         }
 
         if (houseEntry.arcomageRule.has_value())
@@ -1407,30 +1417,28 @@ std::vector<HouseActionOption> buildHouseActionOptions(
 
             if (trainingCap > 0 && member.level >= static_cast<uint32_t>(trainingCap))
             {
-                label = "With your skills, you should be working here as a teacher\n\n"
-                    "Sorry, but we are unable to train you.";
+                label = UiText::translate("With your skills, you should be working here as a teacher\n\n"
+                                          "Sorry, but we are unable to train you.");
                 trainingAvailable = false;
                 trainingUnavailableReason = label;
             }
             else if (const std::optional<uint64_t> experienceShortfall = trainingExperienceShortfall(*pParty, member))
             {
-                label = "You need "
-                    + std::to_string(*experienceShortfall)
-                    + " more experience to train to level "
-                    + std::to_string(member.level + 1);
+                label = UiText::translateTemplate(
+                    "You need {exp} more experience to train to level {level}",
+                    {{"{exp}", std::to_string(*experienceShortfall)}, {"{level}", std::to_string(member.level + 1)}});
                 trainingAvailable = false;
                 trainingUnavailableReason = label;
             }
             else
             {
-                label = "Train to level "
-                    + std::to_string(member.level + 1)
-                    + " for "
-                    + std::to_string(trainingCost(
-                        houseEntry,
-                        *pParty,
-                        effectiveReputationForWorld(pWorldRuntime)))
-                    + " gold";
+                label = UiText::translateTemplate(
+                    "Train to level {level} for {cost} gold",
+                    {{"{level}", std::to_string(member.level + 1)},
+                     {"{cost}", std::to_string(trainingCost(
+                                    houseEntry,
+                                    *pParty,
+                                    effectiveReputationForWorld(pWorldRuntime)))}});
             }
         }
 
@@ -1452,7 +1460,7 @@ std::vector<HouseActionOption> buildHouseActionOptions(
         {
             options.push_back(makeOption(
                 HouseActionId::OpenLearnSkillsMenu,
-                "Learn Skills",
+                UiText::translate("Learn Skills"),
                 isHouseOpenNow,
                 closedReason));
         }
@@ -1461,7 +1469,7 @@ std::vector<HouseActionOption> buildHouseActionOptions(
 
     if (serviceType == HouseServiceType::Bank)
     {
-        HouseActionOption deposit = makeOption(HouseActionId::BankDepositAll, "Deposit", isHouseOpenNow, closedReason);
+        HouseActionOption deposit = makeOption(HouseActionId::BankDepositAll, UiText::translate("Deposit"), isHouseOpenNow, closedReason);
         HouseActionOption withdraw = makeOption(
             HouseActionId::BankWithdrawAll,
             "Withdraw",
@@ -1475,8 +1483,8 @@ std::vector<HouseActionOption> buildHouseActionOptions(
 
     if (serviceType == HouseServiceType::Shop)
     {
-        options.push_back(makeOption(HouseActionId::ShopBuyStandard, "Buy Standard", isHouseOpenNow, closedReason));
-        options.push_back(makeOption(HouseActionId::ShopBuySpecial, "Buy Special", isHouseOpenNow, closedReason));
+        options.push_back(makeOption(HouseActionId::ShopBuyStandard, UiText::translate("Buy Standard"), isHouseOpenNow, closedReason));
+        options.push_back(makeOption(HouseActionId::ShopBuySpecial, UiText::translate("Buy Special"), isHouseOpenNow, closedReason));
 
         options.push_back(makeOption(
             HouseActionId::OpenShopEquipmentMenu,
@@ -1488,7 +1496,7 @@ std::vector<HouseActionOption> buildHouseActionOptions(
         {
             options.push_back(makeOption(
                 HouseActionId::OpenLearnSkillsMenu,
-                "Learn Skills",
+                UiText::translate("Learn Skills"),
                 isHouseOpenNow,
                 closedReason));
         }
@@ -1501,7 +1509,7 @@ std::vector<HouseActionOption> buildHouseActionOptions(
             && !hasGuildMembership(houseEntry, pParty, pWorldRuntime))
         {
             HouseActionOption learnSkills =
-                makeOption(HouseActionId::OpenLearnSkillsMenu, "Learn Skills", isHouseOpenNow, closedReason);
+                makeOption(HouseActionId::OpenLearnSkillsMenu, UiText::translate("Learn Skills"), isHouseOpenNow, closedReason);
             learnSkills.enabled = false;
             learnSkills.disabledReason = "You must be a member of this guild to study here.";
             options.push_back(std::move(learnSkills));
@@ -1529,7 +1537,8 @@ std::vector<HouseActionOption> buildHouseActionOptions(
                 {
                     HouseActionOption buy = makeOption(
                         HouseActionId::GuildBuySpellbooks,
-                        std::string("Buy ") + SchoolNames[schools[shelf]] + " Spells",
+                        UiText::translateTemplate("Buy {school} Spells",
+                                                  {{"{school}", UiText::translate(SchoolNames[schools[shelf]])}}),
                         isHouseOpenNow,
                         closedReason);
                     buy.argument = std::to_string(shelf);
@@ -1550,7 +1559,7 @@ std::vector<HouseActionOption> buildHouseActionOptions(
         if (!houseEntry.teachesNothing)
         {
             options.push_back(
-                makeOption(HouseActionId::OpenLearnSkillsMenu, "Learn Skills", isHouseOpenNow, closedReason));
+                makeOption(HouseActionId::OpenLearnSkillsMenu, UiText::translate("Learn Skills"), isHouseOpenNow, closedReason));
         }
         return finalizeHouseActionOptions(houseEntry, serviceType, menuId, pParty, pWorldRuntime, currentGameMinutes, std::move(options));
     }
@@ -1572,7 +1581,7 @@ std::vector<HouseActionOption> buildHouseActionOptions(
         const int currentFine = pParty != nullptr ? pParty->fineGold() : 0;
         HouseActionOption fine = makeOption(
             HouseActionId::TownHallCurrentFine,
-            "Current Fine: " + std::to_string(currentFine) + " gold",
+            UiText::translateTemplate("Current Fine: {cost} gold", {{"{cost}", std::to_string(currentFine)}}),
             true,
             std::string {});
         fine.enabled = false;
@@ -1591,7 +1600,7 @@ std::vector<HouseActionOption> buildHouseActionOptions(
         }
 
         options.push_back(std::move(payFine));
-        options.push_back(makeOption(HouseActionId::TownHallBountyHunt, "Bounty Hunt", isHouseOpenNow, closedReason));
+        options.push_back(makeOption(HouseActionId::TownHallBountyHunt, UiText::translate("Bounty Hunt"), isHouseOpenNow, closedReason));
         return finalizeHouseActionOptions(houseEntry, serviceType, menuId, pParty, pWorldRuntime, currentGameMinutes, std::move(options));
     }
 
@@ -1601,7 +1610,7 @@ std::vector<HouseActionOption> buildHouseActionOptions(
         {
             options.push_back(makeOption(
                 HouseActionId::LorettaPriceFixing,
-                pLorettaPriceFixingLabel,
+                UiText::translate(pLorettaPriceFixingLabel),
                 isHouseOpenNow,
                 closedReason));
         }
@@ -1639,12 +1648,11 @@ std::vector<HouseActionOption> buildHouseActionOptions(
                 adjustedTransportTravelDays(route, pEventRuntimeState, !isBoatHouse(houseEntry));
             HouseActionOption transport = makeOption(
                 HouseActionId::TransportRoute,
-                transportTravelDaysText(travelDays)
-                    + " to "
-                    + route.destinationName
-                    + " for "
-                    + std::to_string(price)
-                    + " gold",
+                UiText::translateTemplate(
+                    "{days} to {dest} for {cost} gold",
+                    {{"{days}", transportTravelDaysText(travelDays)},
+                     {"{dest}", UiText::translate(route.destinationName)},
+                     {"{cost}", std::to_string(price)}}),
                 isHouseOpenNow,
                 closedReason
             );
@@ -1667,7 +1675,7 @@ std::vector<HouseActionOption> buildHouseActionOptions(
     // teaches their Novice for gold, like a guild without membership: Hesper's service houses.
     if (serviceType == HouseServiceType::None && !houseEntry.offeredSkills.empty())
     {
-        options.push_back(makeOption(HouseActionId::OpenLearnSkillsMenu, "Learn Skills", isHouseOpenNow, closedReason));
+        options.push_back(makeOption(HouseActionId::OpenLearnSkillsMenu, UiText::translate("Learn Skills"), isHouseOpenNow, closedReason));
     }
 
     return finalizeHouseActionOptions(houseEntry, serviceType, menuId, pParty, pWorldRuntime, currentGameMinutes, std::move(options));
@@ -1823,11 +1831,13 @@ HouseActionResult performHouseAction(
             {
                 if (party.activeMemberNeedsHealing())
                 {
-                    result.messages.push_back("The temple staff cannot treat " + pMember->name + "'s condition.");
+                    result.messages.push_back(UiText::translateTemplate("The temple staff cannot treat {name}'s condition.",
+                    {{"{name}", pMember->name}}));
                 }
                 else
                 {
-                    result.messages.push_back("The temple staff says " + pMember->name + " is already well.");
+                    result.messages.push_back(UiText::translateTemplate("The temple staff says {name} is already well.",
+                    {{"{name}", pMember->name}}));
                 }
                 return result;
             }
@@ -1836,7 +1846,8 @@ HouseActionResult performHouseAction(
 
             if (party.gold() < price)
             {
-                result.messages.push_back("You need " + std::to_string(price) + " gold for healing.");
+                result.messages.push_back(UiText::translateTemplate("You need {gold} gold for healing.",
+                    {{"{gold}", std::to_string(price)}}));
                 result.soundType = HouseSoundType::GeneralNotEnoughGold;
                 result.speechId = SpeechId::NotEnoughGold;
                 return result;
@@ -1850,8 +1861,8 @@ HouseActionResult performHouseAction(
                 pHealedMember->conditions.reset();
                 pHealedMember->conditionStartGameMinutes.fill(0.0f);
             }
-            result.messages.push_back(
-                "The temple restores " + pMember->name + " for " + std::to_string(price) + " gold.");
+            result.messages.push_back(UiText::translateTemplate("The temple restores {name} for {gold} gold.",
+                    {{"{name}", pMember->name}, {"{gold}", std::to_string(price)}}));
             result.succeeded = true;
             return result;
         }
@@ -1868,7 +1879,8 @@ HouseActionResult performHouseAction(
 
             if (party.gold() < price)
             {
-                result.messages.push_back("You need " + std::to_string(price) + " gold to donate here.");
+                result.messages.push_back(UiText::translateTemplate("You need {gold} gold to donate here.",
+                    {{"{gold}", std::to_string(price)}}));
                 result.soundType = HouseSoundType::GeneralNotEnoughGold;
                 result.speechId = SpeechId::NotEnoughGold;
                 return result;
@@ -1918,7 +1930,8 @@ HouseActionResult performHouseAction(
 
             if (party.gold() < price)
             {
-                result.messages.push_back("You need " + std::to_string(price) + " gold to rent a room.");
+                result.messages.push_back(UiText::translateTemplate("You need {gold} gold to rent a room.",
+                    {{"{gold}", std::to_string(price)}}));
                 result.soundType = HouseSoundType::TavernNotEnoughGold;
                 result.speechId = SpeechId::NotEnoughGold;
                 return result;
@@ -1949,7 +1962,8 @@ HouseActionResult performHouseAction(
 
             if (party.gold() < price)
             {
-                result.messages.push_back("You need " + std::to_string(price) + " gold for provisions.");
+                result.messages.push_back(UiText::translateTemplate("You need {gold} gold for provisions.",
+                    {{"{gold}", std::to_string(price)}}));
                 result.soundType = HouseSoundType::TavernNotEnoughGold;
                 result.speechId = SpeechId::NotEnoughGold;
                 return result;
@@ -1957,7 +1971,8 @@ HouseActionResult performHouseAction(
 
             party.addGold(-price);
             party.addFood(foodTarget - party.food());
-            result.messages.push_back("The innkeeper fills your packs to " + std::to_string(foodTarget) + " days.");
+            result.messages.push_back(UiText::translateTemplate("The innkeeper fills your packs to {days} days.",
+                    {{"{days}", std::to_string(foodTarget)}}));
             result.succeeded = true;
             result.soundType = HouseSoundType::TavernBuyFood;
             return result;
@@ -1969,7 +1984,8 @@ HouseActionResult performHouseAction(
 
             if (party.gold() < DrinkPrice)
             {
-                result.messages.push_back("You need " + std::to_string(DrinkPrice) + " gold for a drink.");
+                result.messages.push_back(UiText::translateTemplate("You need {gold} gold for a drink.",
+                    {{"{gold}", std::to_string(DrinkPrice)}}));
                 result.soundType = HouseSoundType::TavernNotEnoughGold;
                 result.speechId = SpeechId::NotEnoughGold;
                 return result;
@@ -1996,7 +2012,8 @@ HouseActionResult performHouseAction(
 
             if (party.gold() < TipPrice)
             {
-                result.messages.push_back("You need " + std::to_string(TipPrice) + " gold for a tip.");
+                result.messages.push_back(UiText::translateTemplate("You need {gold} gold for a tip.",
+                    {{"{gold}", std::to_string(TipPrice)}}));
                 result.soundType = HouseSoundType::TavernNotEnoughGold;
                 result.speechId = SpeechId::NotEnoughGold;
                 return result;
@@ -2022,7 +2039,7 @@ HouseActionResult performHouseAction(
             }
 
             party.setQuestBit(*stableQuestBit, true);
-            result.messages.push_back(pLorettaPriceFixingMessage);
+            result.messages.push_back(UiText::translate(pLorettaPriceFixingMessage));
             result.succeeded = true;
 
             bool allStablesFixed = true;
@@ -2047,7 +2064,8 @@ HouseActionResult performHouseAction(
 
         case HouseActionId::TownHallCurrentFine:
         {
-            result.messages.push_back("Your current fine is " + std::to_string(party.fineGold()) + " gold.");
+            result.messages.push_back(UiText::translateTemplate("Your current fine is {gold} gold.",
+                    {{"{gold}", std::to_string(party.fineGold())}}));
             return result;
         }
 
@@ -2063,7 +2081,8 @@ HouseActionResult performHouseAction(
 
             if (party.gold() < fine)
             {
-                result.messages.push_back("You need " + std::to_string(fine) + " gold to pay your fine.");
+                result.messages.push_back(UiText::translateTemplate("You need {gold} gold to pay your fine.",
+                    {{"{gold}", std::to_string(fine)}}));
                 result.soundType = HouseSoundType::GeneralNotEnoughGold;
                 result.speechId = SpeechId::NotEnoughGold;
                 return result;
@@ -2145,19 +2164,16 @@ HouseActionResult performHouseAction(
 
             if (const std::optional<uint64_t> experienceShortfall = trainingExperienceShortfall(party, *pMember))
             {
-                result.messages.push_back(
-                    "You need "
-                    + std::to_string(*experienceShortfall)
-                    + " more experience to train to level "
-                    + std::to_string(pMember->level + 1)
-                );
+                result.messages.push_back(UiText::translateTemplate("You need {exp} more experience to train to level {level}.",
+                    {{"{exp}", std::to_string(*experienceShortfall)}, {"{level}", std::to_string(pMember->level + 1)}}));
                 result.soundType = HouseSoundType::TrainingCantTrain;
                 return result;
             }
 
             if (party.gold() < price)
             {
-                result.messages.push_back("You need " + std::to_string(price) + " gold for training.");
+                result.messages.push_back(UiText::translateTemplate("You need {gold} gold for training.",
+                    {{"{gold}", std::to_string(price)}}));
                 result.soundType = HouseSoundType::TrainingNotEnoughGold;
                 result.speechId = SpeechId::NotEnoughGold;
                 return result;
@@ -2206,14 +2222,8 @@ HouseActionResult performHouseAction(
                 }
             }
 
-            result.messages.push_back(
-                pMember->name
-                + " is now level "
-                + std::to_string(newLevel)
-                + " and has earned "
-                + std::to_string(skillPointsEarned)
-                + " skill points!"
-            );
+            result.messages.push_back(UiText::translateTemplate("{name} is now level {level} and has earned {points} skill points!",
+                    {{"{name}", pMember->name}, {"{level}", std::to_string(newLevel)}, {"{points}", std::to_string(skillPointsEarned)}}));
             result.succeeded = true;
             result.soundType = HouseSoundType::TrainingTrain;
             return result;
@@ -2237,8 +2247,8 @@ HouseActionResult performHouseAction(
 
             if (!party.canActiveMemberLearnSkill(action.argument))
             {
-                result.messages.push_back(
-                    pMember->name + " cannot learn " + displaySkillName(action.argument) + " here.");
+                result.messages.push_back(UiText::translateTemplate("{name} cannot learn {skill} here.",
+                    {{"{name}", pMember->name}, {"{skill}", UiText::translate(displaySkillName(action.argument))}}));
                 return result;
             }
 
@@ -2263,14 +2273,8 @@ HouseActionResult performHouseAction(
             }
 
             party.addGold(-price);
-            result.messages.push_back(
-                pMember->name
-                + " learns "
-                + displaySkillName(action.argument)
-                + " for "
-                + std::to_string(price)
-                + " gold."
-            );
+            result.messages.push_back(UiText::translateTemplate("{name} learns {skill} for {gold} gold.",
+                    {{"{name}", pMember->name}, {"{skill}", UiText::translate(displaySkillName(action.argument))}, {"{gold}", std::to_string(price)}}));
             result.succeeded = true;
             result.speechId = SpeechId::SkillLearned;
             return result;
@@ -2403,13 +2407,8 @@ HouseActionResult performHouseAction(
                 + " direction_degrees=" + std::to_string(route.directionDegrees));
             pEventRuntimeState->pendingMapMove = std::move(pendingMapMove);
 
-            result.messages.push_back(
-                "It will take "
-                + transportTravelDaysText(travelDays)
-                + " to travel to "
-                + route.destinationName
-                + "."
-            );
+            result.messages.push_back(UiText::translateTemplate("It will take {days} to travel to {destination}.",
+                    {{"{days}", transportTravelDaysText(travelDays)}, {"{destination}", route.destinationName}}));
             result.succeeded = true;
             result.soundType = HouseSoundType::TransportTravel;
             return result;
@@ -2454,7 +2453,8 @@ HouseActionResult performHouseAction(
                 return result;
             }
 
-            result.messages.push_back("Deposited " + std::to_string(depositedGold) + " gold.");
+            result.messages.push_back(UiText::translateTemplate("Deposited {gold} gold.",
+                    {{"{gold}", std::to_string(depositedGold)}}));
             result.succeeded = true;
             return result;
         }
@@ -2469,7 +2469,8 @@ HouseActionResult performHouseAction(
                 return result;
             }
 
-            result.messages.push_back("Withdrew " + std::to_string(withdrawnGold) + " gold.");
+            result.messages.push_back(UiText::translateTemplate("Withdrew {gold} gold.",
+                    {{"{gold}", std::to_string(withdrawnGold)}}));
             result.succeeded = true;
             return result;
         }

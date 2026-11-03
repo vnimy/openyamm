@@ -1,5 +1,7 @@
 #include "game/ui/GameplayUiController.h"
 
+#include "game/ui/UiText.h"
+
 #include <algorithm>
 #include <iostream>
 #include <optional>
@@ -88,6 +90,9 @@ bool GameplayUiController::loadGameplayLayouts(
     const LayoutLoader &loader) const
 {
     bool loadedAnyLayout = false;
+
+    // 游戏内界面同样走覆盖表：界面文案仍留在 ui/*.yml 与源码里，这里只装载一次。
+    UiText::load(assetFileSystem);
 
     for (const std::string &layoutFile : GameplayLayoutFiles)
     {

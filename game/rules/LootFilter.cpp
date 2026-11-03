@@ -1,5 +1,7 @@
 #include "game/rules/LootFilter.h"
 
+#include "game/ui/UiText.h"
+
 #include <algorithm>
 
 namespace OpenYAMM::Game
@@ -25,20 +27,26 @@ const LootFilterPresetDefinition &lootFilterPreset(RulesetLootFilterPreset prese
 const char *lootFilterGroupName(LootFilterGroup group)
 {
     constexpr std::array<const char *, LootFilterGroupCount> Names = {"Weapons", "Armour", "Jewellery"};
-    return Names[size_t(group)];
+    static std::string translated;
+    translated = UiText::translate(Names[size_t(group)]);
+    return translated.c_str();
 }
 
 const char *lootFilterRarityName(int rarity)
 {
     constexpr std::array<const char *, LootFilterRarityCount> Names = {
         "Common", "Uncommon", "Rare", "Epic", "Ancient", "Primordial"};
-    return rarity >= 1 && rarity <= LootFilterRarityCount ? Names[size_t(rarity - 1)] : "";
+    static std::string translated;
+    translated = UiText::translate(rarity >= 1 && rarity <= LootFilterRarityCount ? Names[size_t(rarity - 1)] : "");
+    return translated.c_str();
 }
 
 const char *lootFilterKindName(RulesetLootKind kind)
 {
     constexpr std::array<const char *, RulesetLootKindCount> Names = {"Wands", "Scrolls", "Potions", "Reagents", "Gems"};
-    return Names[size_t(kind)];
+    static std::string translated;
+    translated = UiText::translate(Names[size_t(kind)]);
+    return translated.c_str();
 }
 
 std::string lootFilterCellText(RulesetLootFilterPreset preset, LootFilterGroup group, int rarity)
@@ -47,15 +55,16 @@ std::string lootFilterCellText(RulesetLootFilterPreset preset, LootFilterGroup g
 
     if (rarity <= column.goldUpTo)
     {
-        return "gold";
+        return UiText::translate("gold");
     }
 
     if (rarity == column.goldUpTo + 1 && column.levelGap > 0)
     {
-        return "gold if " + std::to_string(column.levelGap) + "+ levels below";
+        return UiText::translateTemplate("gold if {levels}+ levels below",
+            {{"{levels}", std::to_string(column.levelGap)}});
     }
 
-    return "keep";
+    return UiText::translate("keep");
 }
 
 LootFilterVerdict evaluateLootFilter(const RulesetLootFilter &filter, const LootFilterFacts &facts, int partyLevel)

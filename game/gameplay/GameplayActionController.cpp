@@ -1,3 +1,4 @@
+#include "game/ui/UiText.h"
 #include "game/gameplay/GameplayActionController.h"
 
 #include "game/audio/GameAudioSystem.h"
@@ -1568,7 +1569,7 @@ bool GameplayActionController::tryUnstuckParty(
 
     if (!lift)
     {
-        statusText = "You can't do that yet";
+        statusText = UiText::translate("You can't do that yet");
         return false;
     }
 

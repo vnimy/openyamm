@@ -1,3 +1,4 @@
+#include "game/ui/UiText.h"
 #include "game/ui/GameplayLootSummaryRenderer.h"
 
 #include "game/items/InventoryBags.h"
@@ -76,7 +77,7 @@ std::vector<SummaryLine> buildLines(const GameplayUiController::LootSummaryOverl
     if (!state.leftItems.empty())
     {
         SummaryLine header;
-        header.header = "Left in satchels: no room in the bags";
+        header.header = UiText::translate("Left in satchels: no room in the bags");
         lines.push_back(header);
         appendItemLines(state.leftItems, nullptr, lines);
     }
@@ -185,9 +186,16 @@ void GameplayLootSummaryRenderer::render(GameplayScreenRuntime &context, int wid
     // The HUD under the summary must not answer item inspection; its own items do.
     context.gameplayUiRuntime().clearRenderedInspectableHudItems();
     GameplayUiSkin::renderPanel(context, *panel, false, 0.75f);
-    painter.label("LootSummaryTitle", "Map Looted");
-    painter.label("LootSummaryOverview", plural(state.satchelCount, "satchel", "satchels") + " emptied, "
-        + plural(state.takenItems.size(), "item", "items") + " taken");
+    painter.label("LootSummaryTitle", UiText::translate("Map Looted"));
+    painter.label("LootSummaryOverview",
+                  UiText::translateTemplate(
+                      "{satchels} emptied, {items} taken",
+                      {{"{satchels}", plural(state.satchelCount,
+                                             UiText::translate("satchel").c_str(),
+                                             UiText::translate("satchels").c_str())},
+                       {"{items}", plural(state.takenItems.size(),
+                                          UiText::translate("item").c_str(),
+                                          UiText::translate("items").c_str())}}));
     renderGold(context, painter, state.goldAmount, state.followerGoldShare);
 
     if (const std::optional<Rect> list = painter.rect("LootSummaryList"))
@@ -282,7 +290,7 @@ void GameplayLootSummaryRenderer::render(GameplayScreenRuntime &context, int wid
         if (lines.empty())
         {
             painter.text("LootSummaryRowLabel", {left + 4 * s, top, innerWidth, RowHeight * s, s},
-                "The satchels held only gold.", GameplayBenchColors::DimTextColor);
+                UiText::translate("The satchels held only gold."), GameplayBenchColors::DimTextColor);
         }
 
         const float visibleHeight = list->height / s - 2 * ListPadding;
@@ -291,7 +299,7 @@ void GameplayLootSummaryRenderer::render(GameplayScreenRuntime &context, int wid
             linesHeight > 0 ? visibleHeight / linesHeight : 1.0f, false);
     }
 
-    painter.button("LootSummaryCloseButton", "Close", true);
+    painter.button("LootSummaryCloseButton", UiText::translate("Close"), true);
 }
 
 bool GameplayLootSummaryRenderer::handleInput(

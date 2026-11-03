@@ -1,3 +1,4 @@
+#include "game/ui/UiText.h"
 #include "game/ui/GameplayMapProgressBar.h"
 
 #include <algorithm>
@@ -55,23 +56,33 @@ std::string GameplayMapProgressBar::popupBody(const RulesetMapProgress &progress
 
     if (progress.kind == RulesetMapProgress::Kind::Arena)
     {
-        lines.push_back("Wave level: " + std::to_string(progress.arenaLevel));
-        lines.push_back("This wave: " + percentText(progress.percent));
-        lines.push_back("The Arena is never completed");
+        lines.push_back(UiText::translateTemplate(
+            "Wave level: {level}", {{"{level}", std::to_string(progress.arenaLevel)}}));
+        lines.push_back(UiText::translateTemplate(
+            "This wave: {percent}", {{"{percent}", percentText(progress.percent)}}));
+        lines.push_back(UiText::translate("The Arena is never completed"));
     }
     else
     {
         if (progress.kind == RulesetMapProgress::Kind::DimensionRun)
         {
-            lines.push_back("Dimension run: power " + std::to_string(progress.dimensionPower) + ", "
-                + std::to_string(progress.dimensionAffixes)
-                + (progress.dimensionAffixes == 1 ? " affix" : " affixes"));
+            lines.push_back(UiText::translateTemplate(
+                "Dimension run: power {power}, {affixes}",
+                {{"{power}", std::to_string(progress.dimensionPower)},
+                 {"{affixes}", UiText::translateTemplate(
+                      progress.dimensionAffixes == 1 ? "{count} affix" : "{count} affixes",
+                      {{"{count}", std::to_string(progress.dimensionAffixes)}})}}));
         }
 
-        lines.push_back("Slain: " + std::to_string(progress.slain) + " of " + std::to_string(progress.counted));
-        lines.push_back("Needed to complete: " + std::to_string(progress.needed) + " ("
-            + percentText(progress.requiredShare * 100) + ")");
-        std::string alive = "Alive: " + std::to_string(std::max(0, progress.counted - progress.slain));
+        lines.push_back(UiText::translateTemplate(
+            "Slain: {slain} of {counted}",
+            {{"{slain}", std::to_string(progress.slain)}, {"{counted}", std::to_string(progress.counted)}}));
+        lines.push_back(UiText::translateTemplate(
+            "Needed to complete: {needed} ({share})",
+            {{"{needed}", std::to_string(progress.needed)},
+             {"{share}", percentText(progress.requiredShare * 100)}}));
+        std::string alive = UiText::translateTemplate(
+            "Alive: {alive}", {{"{alive}", std::to_string(std::max(0, progress.counted - progress.slain))}});
 
         if (progress.hidden > 0)
         {
@@ -82,11 +93,17 @@ std::string GameplayMapProgressBar::popupBody(const RulesetMapProgress &progress
 
         if (progress.revival)
         {
-            lines.push_back("Dead rise again on leaving: " + (progress.revivalPassed ? std::string("no longer")
-                : "until " + std::to_string(progress.revivalSlain) + " slain"));
+            lines.push_back(UiText::translateTemplate(
+                "Dead rise again on leaving: {revival}",
+                {{"{revival}", progress.revivalPassed
+                     ? UiText::translate("no longer")
+                     : UiText::translateTemplate("until {count} slain",
+                           {{"{count}", std::to_string(progress.revivalSlain)}})}}));
         }
 
-        lines.push_back("Reward: " + (progress.rewardPaid ? std::string("paid") : progress.reward));
+        lines.push_back(UiText::translateTemplate(
+            "Reward: {reward}",
+            {{"{reward}", progress.rewardPaid ? UiText::translate("paid") : progress.reward}}));
     }
 
     std::string body;

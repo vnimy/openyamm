@@ -1,3 +1,4 @@
+#include "game/ui/UiText.h"
 #include "game/gameplay/ArenaRuntime.h"
 
 #include "game/events/EventRuntime.h"
@@ -163,7 +164,7 @@ bool interactWithArena(IGameplayWorldRuntime &world, uint32_t npcId)
     }
     if (pArena == nullptr || pParty == nullptr || pMapData == nullptr)
     {
-        pState->messages.push_back("The Arena is unavailable here.");
+        pState->messages.push_back(UiText::translate("The Arena is unavailable here."));
         return false;
     }
 
@@ -175,12 +176,12 @@ bool interactWithArena(IGameplayWorldRuntime &world, uint32_t npcId)
         offer.npcId = npcId;
         offer.topicId = ArenaTopicId;
         pState->dialogueState.currentOffer = offer;
-        pState->messages.push_back("Welcome to the Arena. Choose the difficulty of your challenge.");
+        pState->messages.push_back(UiText::translate("Welcome to the Arena. Choose the difficulty of your challenge."));
         return false;
     }
     if (arenaVariable(*pState, ClaimedVariable) != 0)
     {
-        pState->messages.push_back("You have already won this Arena challenge. Come back for another tournament.");
+        pState->messages.push_back(UiText::translate("You have already won this Arena challenge. Come back for another tournament."));
         return false;
     }
 
@@ -226,7 +227,7 @@ bool startArenaChallenge(
         generateArenaChallenge(*pMonsters, *pArenaMap, *pParty, difficulty, seed);
     if (!challenge || challenge->monsterIds.size() > pArena->monsterPositions.size())
     {
-        pState->messages.push_back("The Arena cannot prepare opponents for this challenge.");
+        pState->messages.push_back(UiText::translate("The Arena cannot prepare opponents for this challenge."));
         return false;
     }
 

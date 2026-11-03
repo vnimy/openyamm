@@ -10,6 +10,7 @@
 #include "game/rules/GameRules.h"
 #include "game/rules/ItemRules.h"
 #include "game/tables/ItemTable.h"
+#include "game/ui/UiText.h"
 
 #include <optional>
 #include <string>
@@ -48,7 +49,10 @@ void notifyEventGrantedItemReceived(
         pParty->requestSound(SoundId::Gold);
     }
 
-    runtime.setStatusBarEvent("You found something (" + eventGrantedItemStatusName(item, itemTable) + ")!");
+    // 汉化：整句是拼出来的，覆盖表用 {item} 模板匹配。
+    runtime.setStatusBarEvent(UiText::translateTemplate(
+        "You found something ({item})!",
+        {{"{item}", eventGrantedItemStatusName(item, itemTable)}}));
 }
 } // namespace
 

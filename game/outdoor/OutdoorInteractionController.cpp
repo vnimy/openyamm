@@ -10,6 +10,7 @@
 #include "game/events/EvtEnums.h"
 #include "game/debug/GameplayDebugTrace.h"
 #include "game/gameplay/GameplayDialogContextBuilder.h"
+#include "game/ui/UiText.h"
 #include "game/gameplay/CorpseLootRuntime.h"
 #include "game/gameplay/GenericActorDialog.h"
 #include "game/gameplay/GameMechanics.h"
@@ -178,14 +179,15 @@ EventRuntimeState::MapNoteSourcePoint mapNoteSourcePointForInspectHit(
 
 std::string formatFoundItemStatusText(int goldAmount, const std::string &itemName)
 {
-    const std::string resolvedItemName = itemName.empty() ? "item" : itemName;
+    const std::string resolvedItemName = itemName.empty() ? UiText::translate("item") : itemName;
 
     if (goldAmount > 0)
     {
-        return "You found " + std::to_string(goldAmount) + " gold and an item (" + resolvedItemName + ")!";
+        return UiText::translateTemplate("You found {gold} gold and an item ({item})!",
+            {{"{gold}", std::to_string(goldAmount)}, {"{item}", resolvedItemName}});
     }
 
-    return "You found an item (" + resolvedItemName + ")!";
+    return UiText::translateTemplate("You found an item ({item})!", {{"{item}", resolvedItemName}});
 }
 
 uint32_t currentAnimationTicks()

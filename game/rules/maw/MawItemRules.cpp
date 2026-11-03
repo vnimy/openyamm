@@ -1,3 +1,4 @@
+#include "game/ui/UiText.h"
 #include "game/rules/maw/MawItemRules.h"
 
 #include "game/items/InventoryBags.h"
@@ -1945,7 +1946,7 @@ std::vector<ItemInspectLine> MawItemRules::inspectLines(
         const MawDimensionData &dimension = m_rules.dimensionData();
         const MawDimensionMap map = MawDimensionMap::fromFields(fields);
         const double strength = mawDimensionStrength(map.power, map.activeAffixCount());
-        lines.push_back({"Map Level: "
+        lines.push_back({UiText::translate("Map Level: ")
                 + std::to_string(mawDimensionMapLevel(map.power, m_rules.mapLevels().band(pMap->fileName))),
             0xffffff});
         lines.push_back({"+" + std::to_string(int(mawRound(strength / 8 * 1.5))) + "% craft items drop chances",
@@ -1971,7 +1972,7 @@ std::vector<ItemInspectLine> MawItemRules::inspectLines(
     {
         const int power =
             mawReagentBasePower(InventoryItemMixingRuntime::reagentPower(itemDefinition), fields.dropLevel);
-        lines.push_back({"Power: " + std::to_string(power), 0xffffff});
+        lines.push_back({UiText::translate("Power: ") + std::to_string(power), 0xffffff});
         return lines;
     }
 
@@ -2002,7 +2003,7 @@ std::vector<ItemInspectLine> MawItemRules::inspectLines(
 
         if (!pArtifact->onHitType.empty())
         {
-            lines.push_back({pArtifact->onHitType + " damage on hit" + (pArtifact->onHitSlow ? ", slows" : ""),
+            lines.push_back({pArtifact->onHitType + UiText::translate(" damage on hit") + (pArtifact->onHitSlow ? UiText::translate(", slows") : ""),
                 0xffbe5a});
         }
 
@@ -2015,15 +2016,15 @@ std::vector<ItemInspectLine> MawItemRules::inspectLines(
 
         for (const std::string &school : pArtifact->spellBonus)
         {
-            lines.push_back({"+50% skill in " + displaySkillName(school), 0x96c8ff});
+            lines.push_back({UiText::translate("+50% skill in ") + displaySkillName(school), 0x96c8ff});
         }
 
         if (pArtifact->attackDelayMultiplier < 1)
         {
-            lines.push_back({"Swift", 0x96c8ff});
+            lines.push_back({UiText::translate("Swift"), 0x96c8ff});
         }
 
-        lines.push_back({"Artifact level: " + std::to_string(int(mawRound(m_rules.state().totalLevel()))), 0x78f0ff});
+        lines.push_back({UiText::translate("Artifact level: ") + std::to_string(int(mawRound(m_rules.state().totalLevel()))), 0x78f0ff});
         return lines;
     }
 
@@ -2072,7 +2073,7 @@ std::vector<ItemInspectLine> MawItemRules::inspectLines(
             // Legendaries 21 and 22 with the monsters near the party now (Tooltip.lua:399-422).
             if (fields.legendaryAffixId == 21)
             {
-                lines.push_back({"Current bonus Damage: " + std::to_string(std::min(nearby * 5, 100)) + "%", 0xffff1e});
+                lines.push_back({UiText::translate("Current bonus Damage: ") + std::to_string(std::min(nearby * 5, 100)) + "%", 0xffff1e});
             }
             else if (fields.legendaryAffixId == 22)
             {
@@ -2086,7 +2087,7 @@ std::vector<ItemInspectLine> MawItemRules::inspectLines(
         if (MawRarity(fields.lootRarity) == MawRarity::Celestial)
         {
             const bool madness = m_rules.options().challengeMode == RulesetChallengeMode::BeyondMadness;
-            lines.push_back({"Grows with its wearer up to level "
+            lines.push_back({UiText::translate("Grows with its wearer up to level ")
                     + std::to_string(madness ? MadnessCelestialLevelCap : CelestialLevelCap),
                 0x78f0ff});
         }
@@ -2096,14 +2097,14 @@ std::vector<ItemInspectLine> MawItemRules::inspectLines(
     {
         const std::string skill = canonicalSkillName(itemDefinition.skillGroup);
         const bool twoHanded = pBase->twoHanded;
-        lines.push_back({"Attack speed: " + formatSpeed(mawItemRecovery(weaponBaseRecovery(skill),
+        lines.push_back({UiText::translate("Attack speed: ") + formatSpeed(mawItemRecovery(weaponBaseRecovery(skill),
                     fields.itemPower * 5, twoHanded)),
             0xffffff});
     }
 
     if (fields.qualityPercent > 0)
     {
-        lines.push_back({"Quality bonus: +" + std::to_string(fields.qualityPercent) + "%", 0xffbe5a});
+        lines.push_back({UiText::translate("Quality bonus: +") + std::to_string(fields.qualityPercent) + "%", 0xffbe5a});
     }
 
     // The held auras on a weapon in the viewer's hands (tooltipFireAura).
@@ -2120,17 +2121,17 @@ std::vector<ItemInspectLine> MawItemRules::inspectLines(
 
         if (m_rules.memberAura(91, *pViewer))
         {
-            lines.push_back({"Vampiric Aura: damage done will restore player HP.", 0xffff99});
+            lines.push_back({UiText::translate("Vampiric Aura: damage done will restore player HP."), 0xffff99});
         }
     }
 
-    lines.push_back({"Item level: " + std::to_string(fields.itemPower * 5), 0xc8c8c8});
+    lines.push_back({UiText::translate("Item level: ") + std::to_string(fields.itemPower * 5), 0xc8c8c8});
     const int requiredLevel = levelRequirement(itemDefinition, fields);
 
     if (requiredLevel > 1)
     {
         const bool tooLow = pViewer != nullptr && int(pViewer->level) < requiredLevel;
-        lines.push_back({"Level required: " + std::to_string(requiredLevel), tooLow ? 0xff3232u : 0xffffffu});
+        lines.push_back({UiText::translate("Level required: ") + std::to_string(requiredLevel), tooLow ? 0xff3232u : 0xffffffu});
     }
 
     return lines;

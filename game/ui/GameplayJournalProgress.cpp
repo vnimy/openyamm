@@ -1,4 +1,5 @@
 #include "game/ui/GameplayJournalProgress.h"
+#include "game/ui/UiText.h"
 
 #include "game/gameplay/GameplayRuntimeInterfaces.h"
 #include "game/gameplay/GameplayScreenRuntime.h"
@@ -165,7 +166,7 @@ std::array<Rect, JournalProgressFilterCount> chipRects(
 
     for (size_t index = 0; index < FilterNames.size(); ++index)
     {
-        const float width = textWidth(context, TextFont, FilterNames[index], scale) / page.scale + 2 * ChipPad;
+        const float width = textWidth(context, TextFont, UiText::translate(FilterNames[index]), scale) / page.scale + 2 * ChipPad;
         rects[index] = pageRect(page, x, ChipTop, width, ChipHeight);
         x += width + ChipGap;
     }
@@ -643,7 +644,7 @@ void renderJournalProgress(
         const bool on = index == journal.progressFilter;
         paint.fill(chips[index], on ? SelectedFill : PanelFill);
         paint.frame(chips[index], on ? SelectedBorder : PanelBorder);
-        paint.text(TextFont, TextHeight, on ? Ivory : Body, FilterNames[index],
+        paint.text(TextFont, TextHeight, on ? Ivory : Body, UiText::translate(FilterNames[index]),
             (chips[index].x - page.x) / page.scale + ChipPad, ChipTop + 2.5f);
     }
 
@@ -768,7 +769,7 @@ void renderJournalProgress(
         for (const MapFlag flag : mapFlags(map))
         {
             paint.glyph(flag, Left, y + 1, FlagSize);
-            paint.text(TextFont, 8.5f, Body, MapFlagNames[size_t(flag)], Left + FlagSize + 4, y);
+            paint.text(TextFont, 8.5f, Body, UiText::translate(MapFlagNames[size_t(flag)]), Left + FlagSize + 4, y);
             y += 11;
         }
 
@@ -800,7 +801,7 @@ void renderJournalProgress(
     // The name of the flag under the pointer.
     if (hoveredFlag)
     {
-        const std::string name = MapFlagNames[size_t(*hoveredFlag)];
+        const std::string name = UiText::translate(MapFlagNames[size_t(*hoveredFlag)]);
         const float nameWidth =
             textWidth(context, TextFont, name, fontScale(context, TextFont, 8.5f, page.scale)) / page.scale;
         const float tipX = std::min(pointerPageX + 8, PageWidth - nameWidth - 10);

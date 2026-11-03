@@ -3,6 +3,7 @@
 #include "game/ui/GameplayHudCommon.h"
 #include "game/ui/GameplayHudOverlaySupport.h"
 #include "game/ui/HouseShopLayout.h"
+#include "game/ui/UiText.h"
 #include "game/gameplay/GameplayInputFrame.h"
 #include "game/gameplay/GameplayScreenRuntime.h"
 
@@ -52,7 +53,7 @@ std::optional<std::string> pendingInputPromptHint(const GameplayScreenRuntime &v
         return std::nullopt;
     }
 
-    return std::string("Answer: _");
+    return UiText::translate("Answer: _");
 }
 
 constexpr uint16_t HudViewId = 2;
@@ -236,7 +237,7 @@ void renderMm9RudeDialogueOverlay(
             view,
             hovered ? *hoveredFont : *font,
             hovered ? hoveredFont->mainTextureHandle : normalFontTexture,
-            view.activeEventDialog().actions[actionIndex].label,
+            UiText::translate(view.activeEventDialog().actions[actionIndex].label),
             topicX,
             topicY,
             scale);
@@ -726,7 +727,7 @@ void GameplayDialogueRenderer::renderDialogueOverlay(
 
     if (view.houseBankState().inputActive())
     {
-        dialogueResponseHintText = "Type amount  Enter accept  E/Esc cancel";
+        dialogueResponseHintText = UiText::translate("Type amount  Enter accept  E/Esc cancel");
     }
 
     if (view.statusBarEventRemainingSeconds() > 0.0f && !view.statusBarEventText().empty())
@@ -747,17 +748,17 @@ void GameplayDialogueRenderer::renderDialogueOverlay(
         {
             if (view.inventoryNestedOverlay().mode == GameplayUiController::InventoryNestedOverlayMode::ShopSell)
             {
-                dialogueResponseHintText = "Select the Item to Sell";
+                dialogueResponseHintText = UiText::translate("Select the Item to Sell");
             }
             else if (view.inventoryNestedOverlay().mode
                 == GameplayUiController::InventoryNestedOverlayMode::ShopIdentify)
             {
-                dialogueResponseHintText = "Select the Item to Identify";
+                dialogueResponseHintText = UiText::translate("Select the Item to Identify");
             }
             else if (view.inventoryNestedOverlay().mode
                 == GameplayUiController::InventoryNestedOverlayMode::ShopRepair)
             {
-                dialogueResponseHintText = "Select the Item to Repair";
+                dialogueResponseHintText = UiText::translate("Select the Item to Repair");
             }
         }
 
@@ -862,7 +863,7 @@ void GameplayDialogueRenderer::renderDialogueOverlay(
         renderDialogueLabelById(
             view,
             "DialogueOkButton",
-            view.activeEventDialog().actions[0].label,
+            UiText::translate(view.activeEventDialog().actions[0].label),
             width,
             height,
             renderAboveHud);
@@ -1275,14 +1276,15 @@ void GameplayDialogueRenderer::renderHouseShopOverlay(
     if (rerollCost && pRerollLayout != nullptr
         && shouldRenderInCurrentPass(renderAboveHud, hudZThreshold, pRerollLayout->zIndex))
     {
-        const std::string label = "New stock: " + std::to_string(*rerollCost) + " gold";
+        const std::string label = UiText::translateTemplate("New stock: {cost} gold",
+            {{"{cost}", std::to_string(*rerollCost)}});
         GameplayUiSkin::renderButton(
             view, "DialogueShopRerollButton", width, height, false, party.gold() >= *rerollCost, &label);
     }
 
     if (!hoveredItem && (view.statusBarEventRemainingSeconds() <= 0.0f || view.statusBarEventText().empty()))
     {
-        dialogueResponseHintText = "LMB buy  RMB inspect  Esc close";
+        dialogueResponseHintText = UiText::translate("LMB buy  RMB inspect  Esc close");
     }
 }
 
@@ -1582,12 +1584,12 @@ void GameplayDialogueRenderer::renderDialogueEventPanel(
 
         if (shouldRenderInCurrentPass(renderAboveHud, hudZThreshold, pEffectiveHouseTitleLayout->zIndex))
         {
-            const std::string houseTitle =
+            const std::string houseTitle = UiText::translate(
                 isTransitionDialog
                     ? view.activeEventDialog().title
                     : (!view.activeEventDialog().houseTitle.empty()
                         ? view.activeEventDialog().houseTitle
-                        : pHostHouseEntry->name);
+                        : pHostHouseEntry->name));
             const float renderedTitleHeight =
                 renderWrappedCenteredDialogueTitle(
                     view,
@@ -1764,7 +1766,7 @@ void GameplayDialogueRenderer::renderDialogueEventPanel(
                 cardPortraitAreaX,
                 cardNameX,
                 cardNameWidth,
-                useTwoColumns ? std::string() : action.label,
+                useTwoColumns ? std::string() : UiText::translate(action.label),
                 pictureId,
                 action.participantVisual);
 
@@ -1906,9 +1908,9 @@ void GameplayDialogueRenderer::renderDialogueEventPanel(
 
             for (size_t actionIndex = 0; actionIndex < visibleActionCount; ++actionIndex)
             {
-                const std::string &label = showHoveredShopTopic
+                const std::string label = showHoveredShopTopic
                     ? *hoveredHouseServiceTopicText
-                    : view.activeEventDialog().actions[actionIndex].label;
+                    : UiText::translate(view.activeEventDialog().actions[actionIndex].label);
                 std::vector<std::string> wrappedLines = topicFont
                     ? view.wrapHudTextToWidth(*topicFont, label, topicTextWidth)
                     : std::vector<std::string>{label};
@@ -2001,7 +2003,7 @@ void GameplayDialogueRenderer::renderDialogueEventPanel(
                             resolvedRow,
                             showHoveredShopTopic
                                 ? *hoveredHouseServiceTopicText
-                                : view.activeEventDialog().actions[actionIndex].label);
+                                : UiText::translate(view.activeEventDialog().actions[actionIndex].label));
                     }
                 }
 

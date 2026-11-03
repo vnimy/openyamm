@@ -1,6 +1,7 @@
 #include "game/tables/MergedBaseTables.h"
 
 #include "game/party/SkillData.h"
+#include "game/ui/UiText.h"
 
 #include <yaml-cpp/yaml.h>
 
@@ -1205,7 +1206,7 @@ std::string MergedNpcProfessionTable::nameAndTitle(const std::string &name, uint
         return name;
     }
 
-    return name + " the " + pProfession->profession;
+    return UiText::titleWithName(name, pProfession->profession);
 }
 
 bool MergedNpcNameTable::loadFromRows(const std::vector<std::vector<std::string>> &rows)

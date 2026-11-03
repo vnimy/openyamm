@@ -1,4 +1,5 @@
 #include "game/ui/GameplayJournalAuras.h"
+#include "game/ui/UiText.h"
 
 #include "game/gameplay/GameMechanics.h"
 #include "game/gameplay/GameplayInputFrame.h"
@@ -483,7 +484,7 @@ public:
             {abgr(0x8fc3ff), abgr(0x4b6a80), abgr(0x0f1d2a, 0x66)},
         }};
         const std::array<uint32_t, 3> &colour = Colours[size_t(state)];
-        const std::string name = StateNames[size_t(state)];
+        const std::string name = UiText::translate(StateNames[size_t(state)]);
         const float textWidth = width(TextFont, SmallHeight, name);
         const Rect box = rect(x - textWidth / 2 - 4.5f, y, textWidth + 9, 11.5f);
         fill(box, colour[2]);
@@ -493,7 +494,7 @@ public:
 
     float pillWidth(AuraState state) const
     {
-        return width(TextFont, SmallHeight, StateNames[size_t(state)]) + 9;
+        return width(TextFont, SmallHeight, UiText::translate(StateNames[size_t(state)])) + 9;
     }
 
     // A Carved Obsidian menu button (the study's omenu_button_small or _danger plates) with its Fondamento label.
@@ -904,7 +905,8 @@ void activateJournalAuraTarget(
             // A cast as the new holder, as from the spellbook: they must be ready, and pay its recovery.
             if (!GameMechanics::canTakeGameplayAction(*pMember))
             {
-                context.setStatusBarEvent(pMember->name + " is not ready");
+                context.setStatusBarEvent(
+                    UiText::translateTemplate("{name} is not ready", {{"{name}", pMember->name}}));
                 journal.auraMoveMenuOpen = true;
                 break;
             }
@@ -1101,7 +1103,7 @@ void renderJournalAuras(
             school.resize(school.size() - 5);
         }
 
-        const std::string strength = school + " " + MasteryNames[size_t(std::clamp(entry.mastery, 0, 4))] + ", skill "
+        const std::string strength = school + " " + UiText::translate(MasteryNames[size_t(std::clamp(entry.mastery, 0, 4))]) + ", skill "
             + number(entry.skill, 0) + (entry.skillCapped ? " (cap)" : "") + Dot + "level "
             + std::to_string(entry.level);
         const std::string byLine = pHolder != nullptr ? "Held by " + holderName + Dot + strength

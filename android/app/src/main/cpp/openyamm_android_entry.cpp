@@ -20,6 +20,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <sstream>
 #include <streambuf>
 #include <string>
 #include <vector>
@@ -28,11 +29,15 @@ namespace
 {
 constexpr const char *LogTag = "OpenYAMM";
 constexpr size_t CopyBufferSize = 1024 * 1024;
+// The localized TrueType font is larger than any shader; this ceiling only rejects an absurd asset length.
+constexpr int64_t ExtractedAssetMaximumBytes = 64 * 1024 * 1024;
+constexpr const char *ModsAssetRoot = "mods";
+constexpr const char *ModsIndexAssetPath = "mods_index.txt";
 
 struct PackagedAsset
 {
-    const char *pApkPath;
-    const char *pExtractedPath;
+    std::string m_apkPath;
+    std::string m_extractedPath;
 };
 
 class AndroidLogBuffer final : public std::streambuf
@@ -225,80 +230,123 @@ void copyPackagedAssetToFile(SDL_IOStream &sourceStream, const std::filesystem::
     }
 }
 
-// SDL_IOFromFile tries Android internal storage before the APK for relative paths. Older extracted
-// shaders can therefore shadow their replacements even after an APK update. Read the APK explicitly.
-std::vector<uint8_t> readApkAsset(const char *pPath)
+// The APK's AssetManager belongs to the application and outlives the game; the JNI local references only have to
+// live until the pointer is taken.
+AAssetManager *apkAssetManager()
 {
     JNIEnv *pEnvironment = static_cast<JNIEnv *>(SDL_GetAndroidJNIEnv());
     jobject activity = static_cast<jobject>(SDL_GetAndroidActivity());
+
     if (pEnvironment == nullptr || activity == nullptr)
     {
         throw std::runtime_error("Android activity unavailable while opening APK assets");
     }
+
     jclass activityClass = pEnvironment->GetObjectClass(activity);
     jmethodID getAssets = pEnvironment->GetMethodID(activityClass, "getAssets", "()Landroid/content/res/AssetManager;");
     jobject assetManager = pEnvironment->CallObjectMethod(activity, getAssets);
     AAssetManager *pManager = AAssetManager_fromJava(pEnvironment, assetManager);
-    AAsset *pAsset = pManager != nullptr ? AAssetManager_open(pManager, pPath, AASSET_MODE_BUFFER) : nullptr;
     pEnvironment->DeleteLocalRef(assetManager);
     pEnvironment->DeleteLocalRef(activityClass);
     pEnvironment->DeleteLocalRef(activity);
+    return pManager;
+}
+
+AAsset *openApkAsset(const char *pPath)
+{
+    AAssetManager *pManager = apkAssetManager();
+
+    if (pManager == nullptr)
+    {
+        throw std::runtime_error("Android AssetManager unavailable while opening APK assets");
+    }
+
+    return AAssetManager_open(pManager, pPath, AASSET_MODE_BUFFER);
+}
+
+bool apkAssetExists(const char *pPath)
+{
+    AAsset *pAsset = openApkAsset(pPath);
+
+    if (pAsset == nullptr)
+    {
+        return false;
+    }
+
+    AAsset_close(pAsset);
+    return true;
+}
+
+// SDL_IOFromFile tries Android internal storage before the APK for relative paths. Older extracted shaders can
+// therefore shadow their replacements even after an APK update. Read the APK explicitly.
+std::vector<uint8_t> readApkAsset(const char *pPath)
+{
+    AAsset *pAsset = openApkAsset(pPath);
+
     if (pAsset == nullptr)
     {
         throw std::runtime_error(std::string("Missing APK asset: ") + pPath);
     }
+
     const off64_t length = AAsset_getLength64(pAsset);
-    // Only shaders are extracted through this path.
-    if (length <= 0 || length > 16 * 1024 * 1024)
+
+    if (length <= 0 || length > ExtractedAssetMaximumBytes)
     {
         AAsset_close(pAsset);
         throw std::runtime_error(std::string("Invalid APK runtime asset length: ") + pPath);
     }
+
     std::vector<uint8_t> bytes(size_t(length), uint8_t(0));
     size_t offset = 0;
+
     while (offset < bytes.size())
     {
         const int count = AAsset_read(pAsset, bytes.data() + offset, bytes.size() - offset);
+
         if (count <= 0)
         {
             AAsset_close(pAsset);
             throw std::runtime_error(std::string("Short APK runtime asset read: ") + pPath);
         }
+
         offset += size_t(count);
     }
+
     AAsset_close(pAsset);
     return bytes;
 }
 
-void extractPackagedAssetIfNeeded(const std::filesystem::path &storageRoot, const PackagedAsset &asset)
+// Returns true when the target file was written from the APK.
+bool extractPackagedAssetIfNeeded(const std::filesystem::path &storageRoot, const PackagedAsset &asset)
 {
-    const std::vector<uint8_t> sourceBytes = readApkAsset(asset.pApkPath);
+    const std::vector<uint8_t> sourceBytes = readApkAsset(asset.m_apkPath.c_str());
     SDL_IOStream *pSourceStream = SDL_IOFromConstMem(sourceBytes.data(), sourceBytes.size());
 
     if (pSourceStream == nullptr)
     {
-        throw std::runtime_error(std::string("Failed to open APK asset ") + asset.pApkPath + ": " + SDL_GetError());
+        throw std::runtime_error(
+            std::string("Failed to open APK asset ") + asset.m_apkPath + ": " + SDL_GetError());
     }
 
     const Sint64 sourceSize = SDL_GetIOSize(pSourceStream);
-    const std::filesystem::path targetPath = storageRoot / asset.pExtractedPath;
+    const std::filesystem::path targetPath = storageRoot / asset.m_extractedPath;
 
+    // Same size and same bytes: the extracted copy already matches this APK.
     if (extractedAssetIsCurrent(*pSourceStream, targetPath, sourceSize))
     {
         SDL_CloseIO(pSourceStream);
-        openYammLog("Asset current: %s", targetPath.string().c_str());
-        return;
+        return false;
     }
 
     if (SDL_SeekIO(pSourceStream, 0, SDL_IO_SEEK_SET) < 0)
     {
         SDL_CloseIO(pSourceStream);
-        throw std::runtime_error(std::string("Failed to rewind APK asset: ") + asset.pApkPath);
+        throw std::runtime_error(std::string("Failed to rewind APK asset: ") + asset.m_apkPath);
     }
 
     openYammLog(
         "Extracting %s to %s (%lld bytes)",
-        asset.pApkPath,
+        asset.m_apkPath.c_str(),
         targetPath.string().c_str(),
         static_cast<long long>(sourceSize));
 
@@ -317,16 +365,80 @@ void extractPackagedAssetIfNeeded(const std::filesystem::path &storageRoot, cons
 
     SDL_CloseIO(pSourceStream);
     openYammLog("Extracted %s", targetPath.string().c_str());
+    return true;
+}
+
+// The NDK lists the files of one asset directory but has no call for its subdirectories, so the build writes
+// mods_index.txt: one path relative to the APK's mods/ directory per line, '#' lines are comments.
+std::vector<std::string> readPackagedModPaths()
+{
+    const std::vector<uint8_t> indexBytes = readApkAsset(ModsIndexAssetPath);
+    const std::string indexText(indexBytes.begin(), indexBytes.end());
+    std::istringstream indexStream(indexText);
+    std::vector<std::string> relativePaths;
+    std::string line;
+
+    while (std::getline(indexStream, line))
+    {
+        if (!line.empty() && line.back() == '\r')
+        {
+            line.pop_back();
+        }
+
+        if (!line.empty() && line.front() != '#')
+        {
+            relativePaths.push_back(line);
+        }
+    }
+
+    return relativePaths;
+}
+
+// Extracts the packaged mods next to the game's settings and saves, where mountMods reads them (game/app/main.cpp).
+void extractPackagedModsIfNeeded(const std::filesystem::path &storageRoot)
+{
+    if (!apkAssetExists(ModsIndexAssetPath))
+    {
+        openYammLog("APK carries no %s: no mods are extracted", ModsIndexAssetPath);
+        return;
+    }
+
+    const std::vector<std::string> relativePaths = readPackagedModPaths();
+    size_t extractedCount = 0;
+
+    for (const std::string &relativePath : relativePaths)
+    {
+        const std::string apkPath = std::string(ModsAssetRoot) + "/" + relativePath;
+        const std::string extractedPath = (std::filesystem::path(ModsAssetRoot) / relativePath).generic_string();
+
+        if (extractPackagedAssetIfNeeded(storageRoot, {apkPath, extractedPath}))
+        {
+            ++extractedCount;
+        }
+    }
+
+    openYammLog(
+        "Android mods: %lld updated, %lld current in %s",
+        static_cast<long long>(extractedCount),
+        static_cast<long long>(relativePaths.size() - extractedCount),
+        (storageRoot / ModsAssetRoot).string().c_str());
 }
 
 void prepareAndroidAssetRoot()
 {
     const std::filesystem::path storageRoot = getAndroidExternalStorageRoot();
+    size_t currentShaderCount = 0;
 
     for (const char *pShaderPath : OpenYAMM::Game::AndroidShaderPaths)
     {
-        extractPackagedAssetIfNeeded(storageRoot, {pShaderPath, pShaderPath});
+        if (!extractPackagedAssetIfNeeded(storageRoot, {pShaderPath, pShaderPath}))
+        {
+            ++currentShaderCount;
+        }
     }
+
+    openYammLog("Android shaders: %lld current", static_cast<long long>(currentShaderCount));
+    extractPackagedModsIfNeeded(storageRoot);
 
     std::filesystem::current_path(storageRoot);
     openYammLog("Android working directory: %s", storageRoot.string().c_str());

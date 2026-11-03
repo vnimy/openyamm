@@ -2,6 +2,7 @@
 #include "game/items/InventoryBags.h"
 #include "game/ui/InventoryBagOverview.h"
 #include "game/ui/GameplayHudOverlaySupport.h"
+#include "game/ui/UiText.h"
 #include "game/ui/GameplayClock.h"
 #include "game/ui/RestHourglassAnimation.h"
 #include "engine/SpriteAtlas.h"
@@ -2136,14 +2137,7 @@ const CharacterDollEntry *resolveCharacterDollEntry(
 
 std::string skillPageMasteryDisplayName(SkillMastery mastery)
 {
-    const std::string displayName = masteryDisplayName(mastery);
-
-    if (displayName == "Grandmaster")
-    {
-        return "Grand";
-    }
-
-    return displayName;
+    return localizedSkillPageMasteryName(mastery);
 }
 
 // The size of the overview's bag under the point against the full-size grid, or 1 elsewhere.
@@ -2246,7 +2240,7 @@ void setSkillRowRaiseCost(CharacterSkillUiRow &row, const std::optional<SkillRai
 {
     if (cost)
     {
-        row.raiseCost = std::to_string(cost->cost) + " pts";
+        row.raiseCost = UiText::translateTemplate("{points} pts", {{"{points}", std::to_string(cost->cost)}});
         row.raiseCostShared = cost->cost < cost->fullCost;
     }
 }
@@ -2278,7 +2272,7 @@ void appendCharacterSkillUiRows(
 
         if (character.rulesetState.skillSwitchedOff(canonicalName))
         {
-            row.label += " (off)";
+            row.label += UiText::translate(" (off)");
         }
 
         row.level = std::to_string(pSkill->level);
@@ -2352,7 +2346,7 @@ CharacterSkillUiData buildCharacterSkillUiData(const Character *pCharacter, cons
 
         if (pCharacter->rulesetState.skillSwitchedOff(canonicalName))
         {
-            row.label += " (off)";
+            row.label += UiText::translate(" (off)");
         }
 
         row.level = std::to_string(skill.level);
@@ -2669,18 +2663,24 @@ std::string resolveItemInspectDetailText(
 
         if (rulesetStats->maximumDamage > 0)
         {
-            detail = std::string(equipStat == "Missile" ? "Shoot: +" : "Attack: +")
-                + std::to_string(rulesetStats->attackBonus) + "   Damage: "
-                + std::to_string(rulesetStats->minimumDamage) + "-" + std::to_string(rulesetStats->maximumDamage);
+            detail = UiText::translateTemplate(
+                equipStat == "Missile" ? "Shoot: +{bonus}   Damage: {min}-{max}"
+                                       : "Attack: +{bonus}   Damage: {min}-{max}",
+                {{"{bonus}", std::to_string(rulesetStats->attackBonus)},
+                    {"{min}", std::to_string(rulesetStats->minimumDamage)},
+                    {"{max}", std::to_string(rulesetStats->maximumDamage)}});
         }
         else if (rulesetStats->armorClass > 0)
         {
-            detail = "Armor: +" + std::to_string(rulesetStats->armorClass);
+            detail = UiText::translateTemplate(
+                "Armor: +{armor}", {{"{armor}", std::to_string(rulesetStats->armorClass)}});
         }
 
         if (!detail.empty() || equipStat != "WeaponW")
         {
-            return isBroken ? (detail.empty() ? "Broken" : "Broken   " + detail) : detail;
+            return isBroken ? (detail.empty() ? UiText::translate("Broken")
+                                              : UiText::translateTemplate("Broken   {detail}", {{"{detail}", detail}}))
+                            : detail;
         }
     }
     int mod1Value = 0;
@@ -2696,13 +2696,15 @@ std::string resolveItemInspectDetailText(
     if (equipStat == "Bottle" && pItemState != nullptr
         && (pItemState->standardEnchantPower > 0 || potionRulesShowPower))
     {
-        std::string text = "Power: " + std::to_string(pItemState->standardEnchantPower);
+        std::string text = UiText::translateTemplate(
+            "Power: {power}", {{"{power}", std::to_string(pItemState->standardEnchantPower)}});
 
         // A bottle of several drinks (MAW) shows those left; no charges is a full bottle.
         if (pPotion != nullptr && pPotion->charges > 1)
         {
             const int uses = pItemState->currentCharges > 0 ? int(pItemState->currentCharges) : pPotion->charges;
-            text += "   Uses: " + std::to_string(uses);
+            text = UiText::translateTemplate("Power: {power}   Uses: {uses}",
+                {{"{power}", std::to_string(pItemState->standardEnchantPower)}, {"{uses}", std::to_string(uses)}});
         }
 
         return text;
@@ -2710,7 +2712,7 @@ std::string resolveItemInspectDetailText(
 
     if (equipStat == "Reagent" && hasMod1Int && mod1Value > 0)
     {
-        return "Power: " + std::to_string(mod1Value);
+        return UiText::translateTemplate("Power: {power}", {{"{power}", std::to_string(mod1Value)}});
     }
 
     if (equipStat == "Weapon" || equipStat == "Weapon2" || equipStat == "Weapon1or2")
@@ -2720,11 +2722,12 @@ std::string resolveItemInspectDetailText(
 
         if (damageText.empty())
         {
-            return isBroken ? "Broken" : std::string {};
+            return isBroken ? UiText::translate("Broken") : std::string {};
         }
 
-        const std::string detail = "Attack: +" + std::to_string(attackBonus) + "   Damage: " + damageText;
-        return isBroken ? "Broken   " + detail : detail;
+        const std::string detail = UiText::translateTemplate("Attack: +{bonus}   Damage: {damage}",
+            {{"{bonus}", std::to_string(attackBonus)}, {"{damage}", damageText}});
+        return isBroken ? UiText::translateTemplate("Broken   {detail}", {{"{detail}", detail}}) : detail;
     }
 
     if (equipStat == "Missile")
@@ -2734,11 +2737,12 @@ std::string resolveItemInspectDetailText(
 
         if (damageText.empty())
         {
-            return isBroken ? "Broken" : std::string {};
+            return isBroken ? UiText::translate("Broken") : std::string {};
         }
 
-        const std::string detail = "Shoot: +" + std::to_string(shootBonus) + "   Damage: " + damageText;
-        return isBroken ? "Broken   " + detail : detail;
+        const std::string detail = UiText::translateTemplate("Shoot: +{bonus}   Damage: {damage}",
+            {{"{bonus}", std::to_string(shootBonus)}, {"{damage}", damageText}});
+        return isBroken ? UiText::translateTemplate("Broken   {detail}", {{"{detail}", detail}}) : detail;
     }
 
     if (equipStat == "WeaponW")
@@ -2754,12 +2758,12 @@ std::string resolveItemInspectDetailText(
 
         if (maxCharges > 0)
         {
-            const std::string detail =
-                "Charges: " + std::to_string(currentCharges) + "/" + std::to_string(maxCharges);
-            return isBroken ? "Broken   " + detail : detail;
+            const std::string detail = UiText::translateTemplate("Charges: {current}/{max}",
+                {{"{current}", std::to_string(currentCharges)}, {"{max}", std::to_string(maxCharges)}});
+            return isBroken ? UiText::translateTemplate("Broken   {detail}", {{"{detail}", detail}}) : detail;
         }
 
-        return isBroken ? "Broken" : std::string {};
+        return isBroken ? UiText::translate("Broken") : std::string {};
     }
 
     if (equipStat == "Armor"
@@ -2776,14 +2780,15 @@ std::string resolveItemInspectDetailText(
 
         if (armorValue > 0)
         {
-            const std::string detail = "Armor: +" + std::to_string(armorValue);
-            return isBroken ? "Broken   " + detail : detail;
+            const std::string detail =
+                UiText::translateTemplate("Armor: +{armor}", {{"{armor}", std::to_string(armorValue)}});
+            return isBroken ? UiText::translateTemplate("Broken   {detail}", {{"{detail}", detail}}) : detail;
         }
 
-        return isBroken ? "Broken" : std::string {};
+        return isBroken ? UiText::translate("Broken") : std::string {};
     }
 
-    return isBroken ? "Broken" : std::string {};
+    return isBroken ? UiText::translate("Broken") : std::string {};
 }
 
 std::string formatItemInspectDuration(float remainingSeconds)
@@ -2798,37 +2803,37 @@ std::string formatItemInspectDuration(float remainingSeconds)
     int hours = totalMinutes / 60;
     int minutes = totalMinutes % 60;
 
-    std::string text = "Duration:";
+    std::string text = UiText::translate("Duration:");
     bool formatting = false;
 
     formatting = formatting || years != 0;
     if (formatting)
     {
-        text += " " + std::to_string(years) + ":yr";
+        text += " " + UiText::translateTemplate("{value}:yr", {{"{value}", std::to_string(years)}});
     }
 
     formatting = formatting || months != 0;
     if (formatting)
     {
-        text += " " + std::to_string(months) + ":mo";
+        text += " " + UiText::translateTemplate("{value}:mo", {{"{value}", std::to_string(months)}});
     }
 
     formatting = formatting || days != 0;
     if (formatting)
     {
-        text += " " + std::to_string(days) + ":dy";
+        text += " " + UiText::translateTemplate("{value}:dy", {{"{value}", std::to_string(days)}});
     }
 
     formatting = formatting || hours != 0;
     if (formatting)
     {
-        text += " " + std::to_string(hours) + ":hr";
+        text += " " + UiText::translateTemplate("{value}:hr", {{"{value}", std::to_string(hours)}});
     }
 
     formatting = formatting || minutes != 0;
     if (formatting)
     {
-        text += " " + std::to_string(minutes) + ":mn";
+        text += " " + UiText::translateTemplate("{value}:mn", {{"{value}", std::to_string(minutes)}});
     }
 
     return text;
@@ -3787,7 +3792,7 @@ void GameplayPartyOverlayRenderer::renderKeyboardOverlay(GameplayScreenRuntime &
             context,
             *font,
             labelColor,
-            std::vector<std::string>{std::string(definition.label)},
+            std::vector<std::string>{UiText::translate(std::string(definition.label))},
             labelX + keyboardLayout->textPaddingX,
             textY,
             fontScale);
@@ -3999,7 +4004,7 @@ void GameplayPartyOverlayRenderer::renderVideoOptionsOverlay(GameplayScreenRunti
     {
         drawSolid("cinematic_button", 0xff302820, button->x, button->y, button->width, button->height);
         drawLabel("VideoOptionsCinematicButton",
-            settings.cinematicGrading ? "Cinematic grading: On" : "Cinematic grading: Off");
+            UiText::translate(settings.cinematicGrading ? "Cinematic grading: On" : "Cinematic grading: Off"));
     }
     drawLabel("VideoOptionsCinematicStrengthLabel", "Strength: " + std::to_string(settings.cinematicStrength) + "%");
     const auto track = resolveLayout("VideoOptionsCinematicStrengthTrack");
@@ -4992,7 +4997,8 @@ void GameplayPartyOverlayRenderer::renderJournalOverlay(GameplayScreenRuntime &c
 
             if (noteTexts.empty() && !search.empty())
             {
-                bodyLines = {"No notes match \"" + journalScreen.notesSearch + "\"."};
+                bodyLines = {UiText::translateTemplate("No notes match \"{search}\".",
+                    {{"{search}", journalScreen.notesSearch}})};
                 bodyParagraphEnds = {1};
             }
 
@@ -5680,7 +5686,8 @@ void GameplayPartyOverlayRenderer::renderUtilitySpellOverlay(GameplayScreenRunti
         {
             const LloydBeacon &beacon = *pCaster->lloydsBeacons[index];
             primaryText = beacon.locationName.empty() ? beacon.mapName : beacon.locationName;
-            secondaryText = formatUtilityDurationText(beacon.remainingSeconds) + " remaining";
+            secondaryText = UiText::translateTemplate(
+                "{time} remaining", {{"{time}", formatUtilityDurationText(beacon.remainingSeconds)}});
             primaryColor = textColor;
             secondaryColor = makeAbgrColor(122, 204, 136);
         }
@@ -6267,9 +6274,13 @@ void GameplayPartyOverlayRenderer::renderItemInspectOverlay(GameplayScreenRuntim
             {
                 setName.front() = static_cast<char>(std::toupper(static_cast<unsigned char>(setName.front())));
             }
-            setDescription = "Set: " + setName + " (" + std::to_string(equippedPieces) + "/"
-                + std::to_string(foundSet->requiredPieceCount) + ", "
-                + (equippedPieces >= foundSet->requiredPieceCount ? "active" : "inactive") + ")";
+            const bool setActive = equippedPieces >= foundSet->requiredPieceCount;
+            setDescription = UiText::translateTemplate(
+                "Set: {name} ({owned}/{total}, {state})",
+                {{"{name}", UiText::translate(setName)},
+                 {"{owned}", std::to_string(equippedPieces)},
+                 {"{total}", std::to_string(foundSet->requiredPieceCount)},
+                 {"{state}", UiText::translate(setActive ? "active" : "inactive")}});
         }
     }
 
@@ -6280,7 +6291,8 @@ void GameplayPartyOverlayRenderer::renderItemInspectOverlay(GameplayScreenRuntim
     {
         if (!enchantDescription.empty())
         {
-            itemSpecialDetail = "Special: " + enchantDescription;
+            itemSpecialDetail =
+                UiText::translateTemplate("Special: {text}", {{"{text}", enchantDescription}});
         }
         if (!setDescription.empty())
         {
@@ -6291,7 +6303,8 @@ void GameplayPartyOverlayRenderer::renderItemInspectOverlay(GameplayScreenRuntim
         if (const WorkshopModDefinition *pMod = resolvedItemState.workshopModId != 0
                 ? context.itemTable()->workshopMod(resolvedItemState.workshopModId) : nullptr)
         {
-            itemSpecialDetail += (itemSpecialDetail.empty() ? std::string {} : "\n") + "Mod: " + pMod->name;
+            itemSpecialDetail += (itemSpecialDetail.empty() ? std::string {} : "\n")
+                + UiText::translateTemplate("Mod: {name}", {{"{name}", UiText::translate(pMod->name)}});
         }
 
         rulesetLines = itemRules.inspectLines(
@@ -6312,7 +6325,8 @@ void GameplayPartyOverlayRenderer::renderItemInspectOverlay(GameplayScreenRuntim
         ? std::string {}
         : itemRules.itemDescription(resolvedItemState, pViewer).value_or(pItemDefinition->notes);
     const std::string itemStatusText =
-        showBrokenOnly ? "Broken item" : (showUnidentifiedOnly ? "Not identified" : std::string {});
+        showBrokenOnly ? UiText::translate("Broken item")
+                       : (showUnidentifiedOnly ? UiText::translate("Not identified") : std::string {});
     const bool showStatusOnly = !itemStatusText.empty();
     const bool showDuration =
         !showStatusOnly
@@ -7042,7 +7056,10 @@ void GameplayPartyOverlayRenderer::renderCharacterInspectOverlay(GameplayScreenR
         showGrandmaster
             ? resolveWrappedMasteryLines(*pGrandmasterLayout, overlay.grandmaster.text)
             : std::vector<std::string>{};
-    const std::string skillBonusText = showSkillBonus ? "Skill bonus: +" + std::to_string(overlay.skillBonus) : "";
+    const std::string skillBonusText = showSkillBonus
+        ? UiText::translateTemplate(
+              "Skill bonus: +{points}", {{"{points}", std::to_string(overlay.skillBonus)}})
+        : "";
     const std::vector<std::string> skillBonusLines =
         showSkillBonus ? resolveWrappedMasteryLines(*pSkillBonusLayout, skillBonusText) : std::vector<std::string>{};
     float masteryHeight = 0.0f;
@@ -7334,7 +7351,7 @@ void GameplayPartyOverlayRenderer::renderCharacterInspectOverlay(GameplayScreenR
 
 
 
-                const std::string label = "Skill bonus: ";
+                const std::string label = UiText::translate("Skill bonus: ");
                 const std::string value = "+" + std::to_string(skillBonus);
                 const float labelX = std::round(baseResolved.x + baseLayout.textPadX * popupScale);
                 const float valueX = labelX + context.measureHudTextWidth(*pFont, label) * popupScale;
@@ -8924,7 +8941,8 @@ void GameplayPartyOverlayRenderer::renderCharacterOverlay(
         earthResistanceValue = formatSheetValue(summary.earthResistance);
         mindResistanceValue = formatSheetValue(summary.mindResistance);
         bodyResistanceValue = formatSheetValue(summary.bodyResistance);
-        awards = "Awards earned: " + std::to_string(frameData->awardCount);
+        awards = UiText::translateTemplate(
+            "Awards earned: {count}", {{"{count}", std::to_string(frameData->awardCount)}});
 
         if (context.rosterTable() != nullptr && pCharacter->rosterId != 0)
         {
@@ -10299,8 +10317,12 @@ void GameplayPartyOverlayRenderer::renderCharacterOverlay(
                     deaths ? "Death Count: " + std::to_string(*deaths) : std::string());
             }
             label = replaceAllText(label, "{character_name}", pCharacter != nullptr ? pCharacter->name : "");
+            // 中文里没有「the 某某」这种冠词语序，装上覆盖表时只留译好的职业名。
+            const std::string characterClass = pCharacter != nullptr
+                ? party.rules().classes.displayName(party, *pCharacter)
+                : std::string();
             label = replaceAllText(label, "{character_class}", pCharacter != nullptr
-                ? "the " + party.rules().classes.displayName(party, *pCharacter)
+                ? (UiText::hasOverrides() ? UiText::translate(characterClass) : "the " + characterClass)
                 : "");
             label = replaceAllText(
                 label,

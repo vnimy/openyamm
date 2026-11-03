@@ -1,3 +1,4 @@
+#include "game/ui/UiText.h"
 #include "game/rules/maw/MawSpellRules.h"
 
 #include "game/gameplay/GameMechanics.h"
@@ -241,7 +242,7 @@ std::string MawSpellRules::spellName(const Character &caster, const SpellEntry &
 {
     if (const MawClassSpell *pClassSpell = mawClassSpell(caster.className, uint32_t(spell.id)))
     {
-        return pClassSpell->pName;
+        return UiText::translate(pClassSpell->pName);
     }
 
     // MAW's renames (Chain Lightning, Vampiric Aura...); saves keep the table's name.
@@ -376,7 +377,8 @@ SpellTooltipText MawSpellRules::spellTooltip(const Party &party, const Character
 
     if (pClassSpell != nullptr && pClassSpell->comboCost > 0)
     {
-        text.description += "\n\nNeeds " + std::to_string(pClassSpell->comboCost) + " combo points.";
+        text.description += "\n\n" + UiText::translateTemplate("Needs {combo} combo points.",
+            {{"{combo}", std::to_string(pClassSpell->comboCost)}});
     }
 
     if (pAura != nullptr)
@@ -386,31 +388,34 @@ SpellTooltipText MawSpellRules::spellTooltip(const Party &party, const Character
 
         if (reservesNothing(caster))
         {
-            reserve = "Holding it reserves no spell points.";
+            reserve = UiText::translate("Holding it reserves no spell points.");
         }
         else if (pAura->utility)
         {
             // A legendary 32 wearer holds back hit points instead (SP:2461-2480).
             const double points = mawUtilityAuraReservation(pAura->cost, enlightenment);
-            reserve = "Holding it reserves "
-                + mawFillText(reservesHealth(caster) ? "<good>{n} hit points</>." : "<mana>{n} spell points</>.",
-                    {{"n", points}});
+            reserve = mawFillText(
+                UiText::translate(reservesHealth(caster) ? "Holding it reserves <good>{n} hit points</>."
+                                                         : "Holding it reserves <mana>{n} spell points</>."),
+                {{"n", points}});
         }
         else
         {
             const bool health = reservesHealth(caster);
             const double factor = health ? classHealthFactor(party, caster) : classSpellFactor(party, caster);
             const double percent = mawAuraReservedPercent(pAura->cost, factor, enlightenment);
-            reserve = "Holding it reserves "
-                + mawFillText(
-                    health ? "<good>{p:1} %</> of maximum hit points." : "<mana>{p:1} %</> of maximum spell points.",
-                    {{"p", percent}});
+            reserve = mawFillText(
+                UiText::translate(health ? "Holding it reserves <good>{p:1} %</> of maximum hit points."
+                                         : "Holding it reserves <mana>{p:1} %</> of maximum spell points."),
+                {{"p", percent}});
         }
 
         const std::optional<std::string> holder = heldBuffText(party, spellId);
         text.description += "\n\n" + reserve + "\n"
             + mawFillText(
-                holder ? "<good>" + *holder + ".</>" : "<bad>Not held:</> cast it to hold it, again to let it go.", {});
+                holder ? "<good>" + *holder + ".</>"
+                       : UiText::translate("<bad>Not held:</> cast it to hold it, again to let it go."),
+                {});
     }
 
     // An Elementalist's cast time follows its stacks, which the rules move on each cast.
@@ -463,7 +468,7 @@ std::optional<std::string> MawSpellRules::castRefusal(const Party &party, size_t
         return std::nullopt;
     }
 
-    return "Not enough combo points";
+    return UiText::translate("Not enough combo points");
 }
 
 void MawSpellRules::afterCast(
@@ -975,8 +980,9 @@ std::optional<std::string> MawSpellRules::heldBuffText(const Party &party, uint3
     if (held != m_rules.state().auraHolders.end() && held->second == MawGameState::FixedAuraHolder)
     {
         const auto fixed = m_rules.state().fixedAuraMaps.find(spellId);
-        return fixed != m_rules.state().fixedAuraMaps.end() && fixed->second.empty() ? "Temple blessing"
-                                                                                     : "Blessing of this place";
+        return UiText::translate(
+            fixed != m_rules.state().fixedAuraMaps.end() && fixed->second.empty() ? "Temple blessing"
+                                                                                 : "Blessing of this place");
     }
 
     const Character *pHolder = held != m_rules.state().auraHolders.end() ? party.member(held->second) : nullptr;
@@ -986,7 +992,7 @@ std::optional<std::string> MawSpellRules::heldBuffText(const Party &party, uint3
         return std::nullopt;
     }
 
-    return "Held by " + pHolder->name;
+    return UiText::translateTemplate("Held by {name}", {{"{name}", pHolder->name}});
 }
 
 SpellSplash MawSpellRules::spellSplash(uint32_t spellId, SkillMastery mastery) const
@@ -1602,7 +1608,7 @@ std::optional<std::string> MawSpellRules::removeAllBuffs(Party &) const
 {
     m_rules.state().auraHolders.clear();
     m_rules.state().fixedAuraMaps.clear();
-    return "All buffs have been removed";
+    return UiText::translate("All buffs have been removed");
 }
 
 bool MawSpellRules::tabCyclesSpellbookSchools() const

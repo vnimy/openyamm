@@ -1,6 +1,7 @@
 #include "game/gameplay/GameplayInteractionController.h"
 
 #include "game/ui/GameplayQuickItems.h"
+#include "game/ui/UiText.h"
 
 #include "game/gameplay/GameplayHeldItemController.h"
 #include "game/gameplay/GameplayInputController.h"
@@ -399,12 +400,10 @@ std::string contextActionDefaultLabelFromMetadata(
 
 std::string contextActionLabelWithName(const char *pVerb, const std::string &name)
 {
-    if (name.empty())
-    {
-        return pVerb != nullptr ? pVerb : "";
-    }
-
-    return std::string(pVerb != nullptr ? pVerb : "") + " (" + name + ")";
+    // 汉化：世界对象的交互提示是「动词 (名字)」拼出来的，直接改覆盖表匹配不到整串，所以走模板。
+    return UiText::translateTemplate(
+        "{verb} ({name})",
+        {{"{verb}", UiText::translate(pVerb != nullptr ? pVerb : "")}, {"{name}", name}});
 }
 
 GameplayContextActionKind classifyEventTargetContextAction(const GameplayWorldHit &hit)
@@ -512,6 +511,9 @@ std::optional<GameplayContextAction> buildContextAction(
     {
         action.iconId = contextActionIconId(action.kind);
     }
+
+    // 汉化：世界对象/角色的交互提示按钮文本在这里统一过一遍覆盖表（渲染层也会译，重复无副作用）。
+    action.label = UiText::translate(action.label);
     return action;
 }
 
@@ -544,8 +546,9 @@ void setSingleContextAction(
 
 std::string formatFoundItemStatusText(const std::string &itemName)
 {
-    const std::string resolvedItemName = itemName.empty() ? "item" : itemName;
-    return "You found an item (" + resolvedItemName + ")!";
+    const std::string resolvedItemName = itemName.empty() ? UiText::translate("item") : itemName;
+    // 汉化：整句是拼出来的，覆盖表用 {item} 模板匹配。
+    return UiText::translateTemplate("You found an item ({item})!", {{"{item}", resolvedItemName}});
 }
 
 std::string heldItemDisplayName(const GameplayScreenRuntime &runtime)
@@ -555,14 +558,16 @@ std::string heldItemDisplayName(const GameplayScreenRuntime &runtime)
     const ItemDefinition *pItemDefinition =
         pItemTable != nullptr ? pItemTable->get(heldItem.item.objectDescriptionId) : nullptr;
 
-    return pItemDefinition != nullptr ? ItemRuntime::displayName(heldItem.item, *pItemDefinition) : "item";
+    return pItemDefinition != nullptr
+        ? ItemRuntime::displayName(heldItem.item, *pItemDefinition)
+        : UiText::translate("item");
 }
 
 void setHeldItemDropContextAction(GameplayScreenRuntime &runtime)
 {
     GameplayContextAction action = {};
     action.kind = GameplayContextActionKind::DropHeldItem;
-    action.label = "Drop " + heldItemDisplayName(runtime);
+    action.label = UiText::translateTemplate("Drop {item}", {{"{item}", heldItemDisplayName(runtime)}});
     action.iconId = contextActionIconId(action.kind);
 
     GameplayContextActionState &state = runtime.contextActionState();
@@ -594,7 +599,8 @@ bool dropHeldItemToActiveWorld(
 
     if (pWorldRuntime == nullptr || !droppable)
     {
-        runtime.setStatusBarEvent("Can't drop " + itemName);
+        runtime.setStatusBarEvent(
+            UiText::translateTemplate("Can't drop {item}", {{"{item}", itemName}}));
         return false;
     }
 
@@ -603,11 +609,12 @@ bool dropHeldItemToActiveWorld(
 
     if (!pWorldRuntime->dropHeldItemToWorld(resolvedDropRequest))
     {
-        runtime.setStatusBarEvent("Can't drop " + itemName);
+        runtime.setStatusBarEvent(
+            UiText::translateTemplate("Can't drop {item}", {{"{item}", itemName}}));
         return false;
     }
 
-    runtime.setStatusBarEvent("Dropped " + itemName);
+    runtime.setStatusBarEvent(UiText::translateTemplate("Dropped {item}", {{"{item}", itemName}}));
     GameplayHeldItemController::clearHeldInventoryItem(heldItem);
     if (Party *pParty = runtime.party())
     {
@@ -623,7 +630,7 @@ std::string worldItemDisplayName(
     const ItemDefinition *pItemDefinition =
         pItemTable != nullptr ? pItemTable->get(worldItemState.item.objectDescriptionId) : nullptr;
 
-    return pItemDefinition != nullptr ? ItemRuntime::foundItemName(*pItemDefinition) : "item";
+    return pItemDefinition != nullptr ? ItemRuntime::foundItemName(*pItemDefinition) : UiText::translate("item");
 }
 
 bool canStoreWorldItemInInventory(
@@ -703,7 +710,7 @@ bool tryActivateWorldItem(
     {
         if (!worldItemState.isGold && !canStoreInInventory && heldItem.active)
         {
-            runtime.setStatusBarEvent("Pack is Full!");
+            runtime.setStatusBarEvent(UiText::translate("Pack is Full!"));
             runtime.playSpeechReaction(pParty->activeMemberIndex(), SpeechId::InventoryRoom, true);
         }
 
@@ -1387,7 +1394,7 @@ std::optional<std::string> GameplayInteractionController::resolveHoverStatusText
         }
 
         std::string text = !heldItemActive && hit.worldItem->distance < WorldItemGetStatusDistance
-            ? "Get " + hit.worldItem->displayName
+            ? UiText::translateTemplate("Get {item}", {{"{item}", hit.worldItem->displayName}})
             : hit.worldItem->displayName;
 
         // An item drawing the missing-model placeholder says so, so that players report it.

@@ -1,3 +1,4 @@
+#include "game/ui/UiText.h"
 #include "game/rules/maw/MawCraftingRules.h"
 
 #include "game/items/ItemEnchantRuntime.h"
@@ -194,13 +195,13 @@ std::string specialName(const CraftingContext &context, uint16_t specialId)
 {
     const SpecialItemEnchantEntry *pEntry =
         context.pSpecialEnchantTable != nullptr ? context.pSpecialEnchantTable->get(specialId) : nullptr;
-    return pEntry != nullptr ? pEntry->suffix : "a special enchantment";
+    return pEntry != nullptr ? pEntry->suffix : UiText::translate("a special enchantment");
 }
 
 std::string itemName(const CraftingContext &context, uint32_t itemId)
 {
     const ItemDefinition *pDefinition = context.pItemTable != nullptr ? context.pItemTable->get(itemId) : nullptr;
-    return pDefinition != nullptr ? pDefinition->name : std::string("the item");
+    return pDefinition != nullptr ? pDefinition->name : UiText::translate("the item");
 }
 
 CraftResult refuse(CraftResult result, std::string reason)
@@ -273,29 +274,29 @@ std::string MawCraftingRules::materialAction(uint32_t itemId) const
     switch (operation)
     {
         case MawCraftOperation::RaiseEnchant:
-            return "Gem: raise the weaker enchantment";
+            return UiText::translate("Gem: raise the weaker enchantment");
         case MawCraftOperation::AddSpecial:
-            return "Add a special enchantment";
+            return UiText::translate("Add a special enchantment");
         case MawCraftOperation::AddSecondEnchant:
-            return "Add a second enchantment";
+            return UiText::translate("Add a second enchantment");
         case MawCraftOperation::RefineQuality:
-            return "Refine damage or armour";
+            return UiText::translate("Refine damage or armour");
         case MawCraftOperation::DuplicateItem:
-            return "Copy the item";
+            return UiText::translate("Copy the item");
         case MawCraftOperation::UpgradeBaseType:
-            return "Upgrade to a stronger base item";
+            return UiText::translate("Upgrade to a stronger base item");
         case MawCraftOperation::RemoveRandomEnchant:
-            return "Remove an enchantment";
+            return UiText::translate("Remove an enchantment");
         case MawCraftOperation::TransferLegendaryAffix:
-            return "Move a legendary power";
+            return UiText::translate("Move a legendary power");
         case MawCraftOperation::TransferCelestial:
-            return "Move Celestial status";
+            return UiText::translate("Move Celestial status");
         case MawCraftOperation::AddPotionCharges:
-            return "Add drinks to a potion";
+            return UiText::translate("Add drinks to a potion");
         case MawCraftOperation::AddItemPower:
-            return "Raise item power";
+            return UiText::translate("Raise item power");
         case MawCraftOperation::AddFirstEnchant:
-            return "Add a first enchantment";
+            return UiText::translate("Add a first enchantment");
         case MawCraftOperation::None:
             break;
     }
@@ -333,7 +334,7 @@ std::vector<std::string> MawCraftingRules::craftOutlook(
         return lines;
     }
 
-    lines.push_back("Item Bonus Power: " + std::to_string(target.rulesetFields.itemPower) + "/"
+    lines.push_back(UiText::translate("Item Bonus Power: ") + std::to_string(target.rulesetFields.itemPower) + "/"
         + std::to_string(std::min(context.ownerLevel / 5, ItemPowerCap)));
 
     // The strongest gem's reach on each base enchantment.
@@ -344,8 +345,10 @@ std::vector<std::string> MawCraftingRules::craftOutlook(
     {
         const auto reach = [&](int type, int power, bool skill)
         {
-            lines.push_back(mawEnchantStatName(context.pStandardEnchantTable, type) + " +" + std::to_string(power)
-                + ", gems raise it to " + std::to_string(gemCap(topTier, slot, skill)));
+            lines.push_back(UiText::translateTemplate("{stat} +{power}, gems raise it to {cap}",
+                {{"{stat}", mawEnchantStatName(context.pStandardEnchantTable, type)},
+                    {"{power}", std::to_string(power)},
+                    {"{cap}", std::to_string(gemCap(topTier, slot, skill))}}));
         };
 
         if (target.standardEnchantId != 0)
@@ -378,7 +381,9 @@ std::vector<std::string> MawCraftingRules::craftOutlook(
 
         if (result.possible && !result.hiddenOutcome)
         {
-            lines.push_back(itemName(context, materialId) + ": " + result.summary);
+            lines.push_back(
+                UiText::translateTemplate("{item}: {summary}", {{"{item}", itemName(context, materialId)},
+                    {"{summary}", result.summary}}));
         }
     }
 
@@ -418,7 +423,8 @@ std::string MawCraftingRules::levelRefusal(
 {
     const int required = m_rules.itemRules().levelRequirement(definition, item.rulesetFields);
     return required > context.ownerLevel
-        ? "Needs level " + std::to_string(required) + "; its owner is level " + std::to_string(context.ownerLevel)
+        ? UiText::translateTemplate("Needs level {required}; its owner is level {owner}",
+            {{"{required}", std::to_string(required)}, {"{owner}", std::to_string(context.ownerLevel)}})
         : std::string();
 }
 
@@ -442,7 +448,7 @@ CraftResult MawCraftingRules::craft(
 
     if (pDefinition == nullptr || operation == MawCraftOperation::None)
     {
-        return refuse(result, "Nothing to craft");
+        return refuse(result, UiText::translate("Nothing to craft"));
     }
 
     // Dimension maps take the Eye, the Hourglass, the Emerald and the Crafting Cube; the Endless Potion works on
@@ -450,7 +456,7 @@ CraftResult MawCraftingRules::craft(
     if (isExtraTarget(target))
     {
         result = pMaterial != nullptr ? craftDimensionMap(result, material, operation)
-                                      : refuse(result, "Does not work on maps");
+                                      : refuse(result, UiText::translate("Does not work on maps"));
     }
     else if (operation == MawCraftOperation::AddPotionCharges)
     {
@@ -465,13 +471,14 @@ CraftResult MawCraftingRules::craft(
         if (!base && !(takesArtifacts && artifact))
         {
             return refuse(result,
-                artifact ? itemName(context, material.objectDescriptionId) + " does not work on artifacts"
-                         : "Works on weapons, armour and jewellery only");
+                artifact ? UiText::translateTemplate("{item} does not work on artifacts",
+                               {{"{item}", itemName(context, material.objectDescriptionId)}})
+                         : UiText::translate("Works on weapons, armour and jewellery only"));
         }
 
         if (!target.identified)
         {
-            return refuse(result, "Identify the item first");
+            return refuse(result, UiText::translate("Identify the item first"));
         }
 
         const uint32_t streamSeed = itemCraftSeed(target);
@@ -514,7 +521,7 @@ CraftResult MawCraftingRules::craft(
                 result = addFirstEnchant(result, *pDefinition, material, context, rng);
                 break;
             default:
-                return refuse(result, "Nothing to craft");
+                return refuse(result, UiText::translate("Nothing to craft"));
         }
 
         if (result.possible)
@@ -551,23 +558,26 @@ CraftResult MawCraftingRules::craftDimensionMap(
             // The next stored affix becomes active (AL:1038-1074).
             if (map.activeSlots == 0 || map.activeSlots >= 4)
             {
-                return refuse(result, "Every affix of this map is already active");
+                return refuse(result, UiText::translate("Every affix of this map is already active"));
             }
 
             const uint8_t affix = map.affixes[map.activeSlots];
             ++map.activeSlots;
-            result.summary = affix != 0 ? "Activates: " + data.affixLine(affix, map.power) : "Opens an empty slot";
+            result.summary = affix != 0
+                ? UiText::translateTemplate("Activates: {affix}", {{"{affix}", data.affixLine(affix, map.power)}})
+                : UiText::translate("Opens an empty slot");
             break;
         }
         case MawCraftOperation::UpgradeBaseType:
         {
             if (map.power >= 255)
             {
-                return refuse(result, "The map's power is at its limit");
+                return refuse(result, UiText::translate("The map's power is at its limit"));
             }
 
             map.power = uint8_t(std::min(map.power + 5, 255));
-            result.summary = "Power " + std::to_string(map.power) + ": monsters 50 levels stronger";
+            result.summary = UiText::translateTemplate("Power {power}: monsters 50 levels stronger",
+                {{"{power}", std::to_string(map.power)}});
             break;
         }
         case MawCraftOperation::AddItemPower:
@@ -597,7 +607,7 @@ CraftResult MawCraftingRules::craftDimensionMap(
 
             if (others.empty())
             {
-                return refuse(result, "You have cleared no other place of this kind");
+                return refuse(result, UiText::translate("You have cleared no other place of this kind"));
             }
 
             std::mt19937 rng = craftStream(m_rules.randomRootSeed(), itemCraftSeed(item), item.rulesetFields.craftCount,
@@ -605,12 +615,13 @@ CraftResult MawCraftingRules::craftDimensionMap(
             map.mapId = others[size_t(uniform(rng, 0, int(others.size()) - 1))];
             const MapStatsEntry *pNew = pMapTable->findById(map.mapId);
             result.hiddenOutcome = true;
-            result.summary = "Moves the map to another cleared place";
-            result.outcome = "The map now opens " + (pNew != nullptr ? pNew->name : std::string("another place"));
+            result.summary = UiText::translate("Moves the map to another cleared place");
+            result.outcome = UiText::translateTemplate("The map now opens {place}",
+                {{"{place}", pNew != nullptr ? pNew->name : UiText::translate("another place")}});
             break;
         }
         default:
-            return refuse(result, "Does not work on maps");
+            return refuse(result, UiText::translate("Does not work on maps"));
     }
 
     const uint32_t streamSeed = itemCraftSeed(item);
@@ -632,7 +643,7 @@ CraftResult MawCraftingRules::raiseEnchant(
 
     if (rarityOf(item) == MawRarity::Celestial)
     {
-        return refuse(result, "Celestial items grow with their wearer; gems cannot raise them");
+        return refuse(result, UiText::translate("Celestial items grow with their wearer; gems cannot raise them"));
     }
 
     if (const std::string refusal = levelRefusal(item, definition, context); !refusal.empty())
@@ -642,7 +653,7 @@ CraftResult MawCraftingRules::raiseEnchant(
 
     if (item.standardEnchantId == 0 && !hasSecondEnchant(item))
     {
-        return refuse(result, "No enchantments to raise");
+        return refuse(result, UiText::translate("No enchantments to raise"));
     }
 
     // The enchantment furthest below its own cap rises: +3, +1 on a skill.
@@ -658,18 +669,21 @@ CraftResult MawCraftingRules::raiseEnchant(
     if (fraction1 <= fraction2 && item.standardEnchantPower < cap1)
     {
         item.standardEnchantPower = uint16_t(std::min(item.standardEnchantPower + (skill ? 1 : 3), cap1));
-        result.summary = mawEnchantStatName(context.pStandardEnchantTable, item.standardEnchantId) + " +"
-            + std::to_string(skill ? 1 : 3) + " (cap " + std::to_string(cap1) + ")";
+        result.summary = UiText::translateTemplate("{stat} +{gain} (cap {cap})",
+            {{"{stat}", mawEnchantStatName(context.pStandardEnchantTable, item.standardEnchantId)},
+                {"{gain}", std::to_string(skill ? 1 : 3)}, {"{cap}", std::to_string(cap1)}});
     }
     else if (fraction2 <= fraction1 && strength2 < cap2 && strength2 < SecondEnchantMaxStrength)
     {
         strength2 = uint16_t(std::min({strength2 + 3, cap2, SecondEnchantMaxStrength}));
-        result.summary = mawEnchantStatName(context.pStandardEnchantTable, item.rulesetFields.secondStandardEnchantId)
-            + " +3 (cap " + std::to_string(cap2) + ")";
+        result.summary = UiText::translateTemplate("{stat} +{gain} (cap {cap})",
+            {{"{stat}", mawEnchantStatName(context.pStandardEnchantTable,
+                  item.rulesetFields.secondStandardEnchantId)},
+                {"{gain}", "3"}, {"{cap}", std::to_string(cap2)}});
     }
     else
     {
-        return refuse(result, "At this gem's cap; a higher tier raises it further");
+        return refuse(result, UiText::translate("At this gem's cap; a higher tier raises it further"));
     }
 
     result.possible = true;
@@ -694,19 +708,19 @@ CraftResult MawCraftingRules::addSpecial(
 
         if (pDefinition != nullptr && material.standardEnchantPower < pDefinition->minimumPower)
         {
-            return refuse(result, "This potion has not enough power (" + std::to_string(pDefinition->minimumPower)
-                + " needed)");
+            return refuse(result, UiText::translateTemplate("This potion has not enough power ({power} needed)",
+                {{"{power}", std::to_string(pDefinition->minimumPower)}}));
         }
 
         if (!takesWeaponPotion(definition))
         {
-            return refuse(result, "Only weapons take this potion");
+            return refuse(result, UiText::translate("Only weapons take this potion"));
         }
     }
 
     if (item.specialEnchantId != 0)
     {
-        return refuse(result, "Already has a special enchantment");
+        return refuse(result, UiText::translate("Already has a special enchantment"));
     }
 
     uint16_t specialId = 0;
@@ -719,7 +733,9 @@ CraftResult MawCraftingRules::addSpecial(
 
         for (uint16_t choice : pPotion->specialChoices)
         {
-            result.summary += (result.summary.empty() ? "Adds one at random: " : ", ") + specialName(context, choice);
+            result.summary += (result.summary.empty() ? UiText::translate("Adds one at random: ")
+                                                       : UiText::translate(", "))
+                + specialName(context, choice);
         }
     }
     else if (context.pSpecialEnchantTable != nullptr)
@@ -731,13 +747,13 @@ CraftResult MawCraftingRules::addSpecial(
 
     if (specialId == 0)
     {
-        return refuse(result, "This item cannot take a special enchantment");
+        return refuse(result, UiText::translate("This item cannot take a special enchantment"));
     }
 
     item.specialEnchantId = specialId;
     result.possible = true;
     result.materialConsumed = true;
-    result.outcome = "Adds " + specialName(context, specialId);
+    result.outcome = UiText::translateTemplate("Adds {special}", {{"{special}", specialName(context, specialId)}});
 
     if (!result.hiddenOutcome)
     {
@@ -756,12 +772,12 @@ CraftResult MawCraftingRules::addSecondEnchant(
 
     if (item.standardEnchantId == 0 || item.standardEnchantPower == 0)
     {
-        return refuse(result, "Needs a first enchantment to copy");
+        return refuse(result, UiText::translate("Needs a first enchantment to copy"));
     }
 
     if (hasSecondEnchant(item))
     {
-        return refuse(result, "Already has a second enchantment");
+        return refuse(result, UiText::translate("Already has a second enchantment"));
     }
 
     // A stat (rings: also a resistance) other than the first, near its strength: x (1 to 1.25), capped at 100 x the
@@ -783,8 +799,8 @@ CraftResult MawCraftingRules::addSecondEnchant(
     item.rulesetFields.secondStandardEnchantPower = uint16_t(strength);
     result.possible = true;
     result.materialConsumed = true;
-    result.summary =
-        "Adds " + mawEnchantStatName(context.pStandardEnchantTable, type) + " +" + std::to_string(strength);
+    result.summary = UiText::translateTemplate("Adds {stat} +{strength}",
+        {{"{stat}", mawEnchantStatName(context.pStandardEnchantTable, type)}, {"{strength}", std::to_string(strength)}});
     return result;
 }
 
@@ -797,7 +813,7 @@ CraftResult MawCraftingRules::refineQuality(
 
     if (!takesQuality(definition))
     {
-        return refuse(result, "Only weapons and armour can be refined");
+        return refuse(result, UiText::translate("Only weapons and armour can be refined"));
     }
 
     if (const std::string refusal = levelRefusal(item, definition, context); !refusal.empty())
@@ -809,14 +825,14 @@ CraftResult MawCraftingRules::refineQuality(
 
     if (quality >= MaxQualityPercent)
     {
-        return refuse(result, "Item quality reached its limit");
+        return refuse(result, UiText::translate("Item quality reached its limit"));
     }
 
     const int step = ItemRuntime::isArtifact(definition) ? ArtifactQualityStep : qualityStep(rarityOf(item));
     quality = uint8_t(std::min(quality + step, MaxQualityPercent));
     result.possible = true;
     result.materialConsumed = true;
-    result.summary = "Quality " + std::to_string(quality) + " %";
+    result.summary = UiText::translateTemplate("Quality {quality} %", {{"{quality}", std::to_string(quality)}});
     return result;
 }
 
@@ -832,7 +848,7 @@ CraftResult MawCraftingRules::duplicateItem(CraftResult result, const ItemDefini
     copy.rulesetFields.craftCount = 0;
     result.materialAfter = copy;
     result.possible = true;
-    result.summary = "Becomes a copy";
+    result.summary = UiText::translate("Becomes a copy");
     return result;
 }
 
@@ -878,7 +894,7 @@ CraftResult MawCraftingRules::upgradeBaseType(
 
     if (upgradeId == 0)
     {
-        return refuse(result, "Already the strongest of its kind");
+        return refuse(result, UiText::translate("Already the strongest of its kind"));
     }
 
     const ItemDefinition *pUpgrade = context.pItemTable->get(upgradeId);
@@ -887,11 +903,12 @@ CraftResult MawCraftingRules::upgradeBaseType(
     item.height = pUpgrade->inventoryHeight;
     result.possible = true;
     result.materialConsumed = true;
-    result.summary = "Becomes " + pUpgrade->name;
+    result.summary = UiText::translateTemplate("Becomes {item}", {{"{item}", pUpgrade->name}});
 
     if (m_rules.itemRules().levelRequirement(*pUpgrade, item.rulesetFields) > context.ownerLevel)
     {
-        result.confirmation = "Its owner will be too low in level to use the " + pUpgrade->name;
+        result.confirmation = UiText::translateTemplate("Its owner will be too low in level to use the {item}",
+            {{"{item}", pUpgrade->name}});
     }
 
     return result;
@@ -918,7 +935,7 @@ CraftResult MawCraftingRules::removeRandomEnchant(
 
     if (present.empty())
     {
-        return refuse(result, "No enchantments to remove");
+        return refuse(result, UiText::translate("No enchantments to remove"));
     }
 
     // One of the enchantments, uniformly; losing the first moves the second up. A gamble: the preview lists them all.
@@ -929,7 +946,7 @@ CraftResult MawCraftingRules::removeRandomEnchant(
         const uint16_t enchant = candidate == 1 ? item.standardEnchantId : item.rulesetFields.secondStandardEnchantId;
         const std::string name = candidate == 3 ? specialName(context, item.specialEnchantId)
                                                 : mawEnchantStatName(context.pStandardEnchantTable, enchant);
-        candidates += (candidates.empty() ? "" : ", ") + name;
+        candidates += (candidates.empty() ? "" : UiText::translate(", ")) + name;
     }
 
     const int slot = present[size_t(uniform(rng, 0, int(present.size()) - 1))];
@@ -959,9 +976,13 @@ CraftResult MawCraftingRules::removeRandomEnchant(
     result.possible = true;
     result.materialConsumed = true;
     result.hiddenOutcome = present.size() > 1;
-    result.summary = result.hiddenOutcome ? "Removes one at random: " + candidates : "Removes " + removed;
-    result.outcome = "Removed " + removed;
-    result.confirmation = result.hiddenOutcome ? "Remove one enchantment at random?" : "Remove " + removed + "?";
+    result.summary = result.hiddenOutcome
+        ? UiText::translateTemplate("Removes one at random: {list}", {{"{list}", candidates}})
+        : UiText::translateTemplate("Removes {enchantment}", {{"{enchantment}", removed}});
+    result.outcome = UiText::translateTemplate("Removed {enchantment}", {{"{enchantment}", removed}});
+    result.confirmation = result.hiddenOutcome
+        ? UiText::translate("Remove one enchantment at random?")
+        : UiText::translateTemplate("Remove {enchantment}?", {{"{enchantment}", removed}});
     return result;
 }
 
@@ -975,7 +996,7 @@ CraftResult MawCraftingRules::transferLegendaryAffix(CraftResult result, const I
     {
         if (affix == 0)
         {
-            return refuse(result, "The orb is empty: choose a legendary item to draw its power from");
+            return refuse(result, UiText::translate("The orb is empty: choose a legendary item to draw its power from"));
         }
 
         // The empty orb draws the affix out and is kept.
@@ -984,19 +1005,19 @@ CraftResult MawCraftingRules::transferLegendaryAffix(CraftResult result, const I
         item.rulesetFields.legendaryAffixId = 0;
         result.materialAfter = charged;
         result.possible = true;
-        result.summary = "The orb takes the legendary power";
-        result.confirmation = "Move the legendary power into the orb?";
+        result.summary = UiText::translate("The orb takes the legendary power");
+        result.confirmation = UiText::translate("Move the legendary power into the orb?");
         return result;
     }
 
     item.rulesetFields.legendaryAffixId = stored;
     result.possible = true;
     result.materialConsumed = true;
-    result.summary = "Gains the orb's legendary power";
+    result.summary = UiText::translate("Gains the orb's legendary power");
 
     if (affix != 0)
     {
-        result.confirmation = "Replace the item's legendary power?";
+        result.confirmation = UiText::translate("Replace the item's legendary power?");
     }
 
     return result;
@@ -1013,7 +1034,7 @@ CraftResult MawCraftingRules::transferCelestial(CraftResult result, const Invent
         item.rulesetFields.lootRarity = uint8_t(MawRarity::Celestial);
         result.possible = true;
         result.materialConsumed = true;
-        result.summary = "Becomes Celestial";
+        result.summary = UiText::translate("Becomes Celestial");
         return result;
     }
 
@@ -1025,12 +1046,13 @@ CraftResult MawCraftingRules::transferCelestial(CraftResult result, const Invent
         filled.rulesetFields.craftState = 1;
         result.materialAfter = filled;
         result.possible = true;
-        result.summary = "The orb takes the Celestial status";
-        result.confirmation = "Move the Celestial status into the orb?";
+        result.summary = UiText::translate("The orb takes the Celestial status");
+        result.confirmation = UiText::translate("Move the Celestial status into the orb?");
         return result;
     }
 
-    return refuse(result, charged ? "Already Celestial" : "The orb is empty: choose a Celestial item");
+    return refuse(result,
+        UiText::translate(charged ? "Already Celestial" : "The orb is empty: choose a Celestial item"));
 }
 
 CraftResult MawCraftingRules::addPotionCharges(
@@ -1047,8 +1069,9 @@ CraftResult MawCraftingRules::addPotionCharges(
         || std::find(pMaterial->targets.begin(), pMaterial->targets.end(), potion.objectDescriptionId)
             == pMaterial->targets.end())
     {
-        return refuse(result, "Refills Protection, Meditation, Regeneration, Magic Protection, Champion's, Paladin's, "
-                              "Divine Blessing and Divine Resistance potions");
+        return refuse(result,
+            UiText::translate("Refills Protection, Meditation, Regeneration, Magic Protection, Champion's, "
+                              "Paladin's, Divine Blessing and Divine Resistance potions"));
     }
 
     // A full bottle (no charges) holds its potion's drinks.
@@ -1057,7 +1080,7 @@ CraftResult MawCraftingRules::addPotionCharges(
     potion.currentCharges = uint16_t(std::min(drinks + added, int(std::numeric_limits<uint16_t>::max())));
     result.possible = true;
     result.materialConsumed = true;
-    result.summary = "+" + std::to_string(added) + " drinks";
+    result.summary = UiText::translateTemplate("+{drinks} drinks", {{"{drinks}", std::to_string(added)}});
     return result;
 }
 
@@ -1070,22 +1093,24 @@ CraftResult MawCraftingRules::addItemPower(
 
     if (rarityOf(item) == MawRarity::Celestial)
     {
-        return refuse(result, "Celestial items grow with their wearer");
+        return refuse(result, UiText::translate("Celestial items grow with their wearer"));
     }
 
     const int cap = std::min(context.ownerLevel / 5, ItemPowerCap);
 
     if (item.rulesetFields.itemPower >= cap)
     {
-        return refuse(result, "Item power reached the limit for its owner's level (" + std::to_string(cap) + ")");
+        return refuse(result, UiText::translateTemplate(
+                                 "Item power reached the limit for its owner's level ({cap})",
+                                 {{"{cap}", std::to_string(cap)}}));
     }
 
     const int step = isWeapon(definition) || definition.equipStat == "Armor" ? 2 : 4;
     item.rulesetFields.itemPower = uint16_t(std::min(item.rulesetFields.itemPower + step, cap));
     result.possible = true;
     result.materialConsumed = true;
-    result.summary = "Item power " + std::to_string(item.rulesetFields.itemPower) + " (cap " + std::to_string(cap)
-        + ")";
+    result.summary = UiText::translateTemplate("Item power {power} (cap {cap})",
+        {{"{power}", std::to_string(item.rulesetFields.itemPower)}, {"{cap}", std::to_string(cap)}});
     return result;
 }
 
@@ -1100,7 +1125,7 @@ CraftResult MawCraftingRules::addFirstEnchant(
 
     if (item.standardEnchantId != 0 || hasSecondEnchant(item) || item.specialEnchantId != 0)
     {
-        return refuse(result, "Enchant Item works on items without enchantments");
+        return refuse(result, UiText::translate("Enchant Item works on items without enchantments"));
     }
 
     // A tenth are skill enchantments; rings also roll resistances. Strength: a fifth of the power (up to 500) times
@@ -1129,8 +1154,9 @@ CraftResult MawCraftingRules::addFirstEnchant(
     item.standardEnchantPower = uint16_t(std::max(1, int(strength)));
     result.possible = true;
     result.materialConsumed = true;
-    result.summary = "Adds " + mawEnchantStatName(context.pStandardEnchantTable, type) + " +"
-        + std::to_string(item.standardEnchantPower);
+    result.summary = UiText::translateTemplate("Adds {stat} +{strength}",
+        {{"{stat}", mawEnchantStatName(context.pStandardEnchantTable, type)},
+            {"{strength}", std::to_string(item.standardEnchantPower)}});
     return result;
 }
 

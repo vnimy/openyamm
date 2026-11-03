@@ -145,6 +145,9 @@ function(openyamm_configure_ffmpeg)
 
     file(MAKE_DIRECTORY "${OPENYAMM_FFMPEG_BUILD_DIR}")
 
+    # A tree that already carries the built libraries (a packaged or cross build) does not need to reconfigure and
+    # rebuild them, which also keeps the MSYS configure out of native Windows rebuilds.
+    if (NOT EXISTS "${OPENYAMM_FFMPEG_LIBAVCODEC}")
     add_custom_command(
         OUTPUT
             "${OPENYAMM_FFMPEG_LIBAVFORMAT}"
@@ -154,6 +157,9 @@ function(openyamm_configure_ffmpeg)
             "${OPENYAMM_FFMPEG_LIBAVUTIL}"
         COMMAND bash "${OPENYAMM_FFMPEG_SOURCE_DIR}/configure"
             ${openyammFfmpegConfigureArgs}
+        # An MSYS configure writes /d/... paths into its makefiles; a native make needs drive paths instead.
+        COMMAND ${CMAKE_COMMAND} -Ddirectory=${OPENYAMM_FFMPEG_BUILD_DIR}
+            -P ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/RewriteMsysPaths.cmake
         COMMAND ${OPENYAMM_FFMPEG_MAKE_PROGRAM} -j4
         COMMAND ${OPENYAMM_FFMPEG_MAKE_PROGRAM} install
         WORKING_DIRECTORY "${OPENYAMM_FFMPEG_BUILD_DIR}"
@@ -163,6 +169,7 @@ function(openyamm_configure_ffmpeg)
         COMMENT "Building bundled FFmpeg static libraries for house video playback"
         VERBATIM
     )
+    endif()
 
     add_custom_target(openyamm_ffmpeg_build
         DEPENDS

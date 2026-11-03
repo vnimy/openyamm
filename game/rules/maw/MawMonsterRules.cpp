@@ -1,3 +1,4 @@
+#include "game/ui/UiText.h"
 #include "game/rules/maw/MawMonsterRules.h"
 
 #include "game/gameplay/GameplayMonsterSpawn.h"
@@ -367,7 +368,7 @@ std::string mawBossAffixName(MawBossAffix affix)
         "", "Summoner", "Venomous", "Plagueborn", "Fixator", "Exploding", "Thorn", "Reflecting", "Adamantite",
         "Swapper", "Regenerating", "Puller", "Leecher", "Swift", "Shadow", "Broodlord", "Broodling", "Omnipotent",
     };
-    return size_t(affix) < Names.size() ? Names[size_t(affix)] : "";
+    return size_t(affix) < Names.size() ? UiText::translate(Names[size_t(affix)]) : "";
 }
 
 bool mawHasBossAffix(const ActorRulesetFacts &facts, MawBossAffix affix)
@@ -452,7 +453,7 @@ std::optional<RulesetMapProgress> mawMapProgress(const MapKillProgress &progress
 
     if (openRun && facts.completedBefore && !facts.beyondMadness)
     {
-        result.reward = "counts for the Dimensional Maps quest";
+        result.reward = UiText::translate("counts for the Dimensional Maps quest");
     }
     else if (facts.completedBefore && !openRun)
     {
@@ -460,7 +461,8 @@ std::optional<RulesetMapProgress> mawMapProgress(const MapKillProgress &progress
     }
     else
     {
-        result.reward = facts.austerity ? "experience and gold" : "experience, gold, materials";
+        result.reward = UiText::translate(
+            facts.austerity ? "experience and gold" : "experience, gold, materials");
     }
 
     return result;
@@ -1136,9 +1138,11 @@ CorpseLoot MawMonsterRules::corpseLoot(const CorpseLootContext &context) const
 
 std::string MawMonsterRules::actorDisplayName(const ActorRulesetFacts &facts, const std::string &name) const
 {
-    const std::string named =
-        facts.bossAffix != 0 ? mawBossAffixName(MawBossAffix(facts.bossAffix)) + " " + name : name;
-    return facts.risen ? "Resurrected " + named : named;
+    const std::string named = facts.bossAffix != 0
+        ? UiText::translateTemplate("{affix} {name}",
+            {{"{affix}", mawBossAffixName(MawBossAffix(facts.bossAffix))}, {"{name}", name}})
+        : name;
+    return facts.risen ? UiText::translateTemplate("Resurrected {name}", {{"{name}", named}}) : named;
 }
 
 float MawMonsterRules::actorDrawScale(const ActorRulesetFacts &facts, bool indoor) const
@@ -1310,7 +1314,7 @@ std::optional<std::string> MawMonsterRules::bountyRefusal(const IGameplayWorldRu
     if (world.mapKillProgress(progress)
         && !m_rules.state().clearedSinceRefill.contains(lowerFileName(progress.mapFileName)))
     {
-        return "You need to clear the area COMPLETELY first.";
+        return UiText::translate("You need to clear the area COMPLETELY first.");
     }
 
     return std::nullopt;
@@ -1370,7 +1374,7 @@ std::optional<BountyTarget> MawMonsterRules::spawnBountyTarget(
     // The bounty texts name the boss as spawned and a "Bounty" note marks its spot (BountyHunt.lua:216-231).
     BountyTarget result;
     result.monsterId = int16_t(target.id);
-    result.mapNote = "Bounty";
+    result.mapNote = UiText::translate("Bounty");
     GameplayRuntimeActorState huntedState = {};
 
     if (!hunted.empty() && world.actorRuntimeState(hunted.front(), huntedState))
@@ -1493,8 +1497,9 @@ std::optional<std::string> MawMonsterRules::mapResetOffer(const std::string &map
     }
 
     const int resets = m_rules.state().resetCount(fileName);
-    return "You have cleared this dungeon. Resetting it brings every monster back "
-        + std::to_string(20 * (resets + 1)) + " levels stronger than at first, with no second completion reward.";
+    return UiText::translateTemplate("You have cleared this dungeon. Resetting it brings every monster back "
+        "{levels} levels stronger than at first, with no second completion reward.",
+        {{"{levels}", std::to_string(20 * (resets + 1))}});
 }
 
 void MawMonsterRules::resetMap(const std::string &mapFileName) const
@@ -1997,7 +2002,8 @@ void MawMonsterRules::updateMonsters(IGameplayWorldRuntime &world, float deltaSe
         if (pRuntimeState != nullptr && m_rules.options().difficulty >= RulesetDifficulty::Hard
             && mawFlightMap(m_announcedMap))
         {
-            pRuntimeState->statusMessages.push_back("Fly is allowed without restrictions here");
+            pRuntimeState->statusMessages.push_back(
+                UiText::translate("Fly is allowed without restrictions here"));
         }
     }
 
@@ -2018,7 +2024,8 @@ void MawMonsterRules::updateMonsters(IGameplayWorldRuntime &world, float deltaSe
             if (mark != weakenedMark(m_rules, progress.mapFileName))
             {
                 mark = weakenedMark(m_rules, progress.mapFileName);
-                pRuntimeState->statusMessages.push_back("Monsters are weakened and can no longer resurrect");
+                pRuntimeState->statusMessages.push_back(
+                    UiText::translate("Monsters are weakened and can no longer resurrect"));
             }
         }
     }
@@ -2169,7 +2176,7 @@ bool MawMonsterRules::teleportBlockedNearEnemies() const
 std::string MawMonsterRules::teleportBlockedText(bool townPortal) const
 {
     return townPortal && m_rules.options().challengeMode == RulesetChallengeMode::BeyondMadness
-        ? "Madness is not a place for cowards"
+        ? UiText::translate("Madness is not a place for cowards")
         : MonsterRules::teleportBlockedText(townPortal);
 }
 
@@ -2265,7 +2272,7 @@ std::optional<std::string> MawMonsterRules::rulesTopic(const std::string &topic,
 
         if (!party.tryGrantInventoryItem(item))
         {
-            return std::string("Your packs are too full to take the map.");
+            return UiText::translate("Your packs are too full to take the map.");
         }
 
         quest.mapGiven = true;

@@ -1,12 +1,15 @@
 #include "game/ui/MenuDesignScreen.h"
 
 #include "engine/FontAsset.h"
+#include "engine/TextLayout.h"
 #include "game/audio/GameAudioSystem.h"
 #include "game/audio/SoundIds.h"
 #include "game/render/WaterMath.h"
+#include "game/ui/UiText.h"
 
 #include <algorithm>
 #include <cmath>
+#include <optional>
 #include <sstream>
 #include <stdexcept>
 
@@ -14,16 +17,68 @@ namespace OpenYAMM::Game
 {
 namespace
 {
+// 解码 UTF-8 首个码点，返回字节数；损坏序列按单字节处理，避免死循环。
+size_t decodeUtf8(const std::string &text, size_t offset, uint32_t &codePoint)
+{
+    const unsigned char lead = static_cast<unsigned char>(text[offset]);
+    if (lead < 0x80)
+    {
+        codePoint = lead;
+        return 1;
+    }
+    size_t length = 0;
+    uint32_t value = 0;
+    if ((lead & 0xe0) == 0xc0)
+    {
+        length = 2;
+        value = lead & 0x1fu;
+    }
+    else if ((lead & 0xf0) == 0xe0)
+    {
+        length = 3;
+        value = lead & 0x0fu;
+    }
+    else if ((lead & 0xf8) == 0xf0)
+    {
+        length = 4;
+        value = lead & 0x07u;
+    }
+    else
+    {
+        codePoint = lead;
+        return 1;
+    }
+    if (offset + length > text.size())
+    {
+        codePoint = lead;
+        return 1;
+    }
+    for (size_t i = 1; i < length; ++i)
+    {
+        const unsigned char cont = static_cast<unsigned char>(text[offset + i]);
+        if ((cont & 0xc0) != 0x80)
+        {
+            codePoint = lead;
+            return 1;
+        }
+        value = value << 6 | (cont & 0x3fu);
+    }
+    codePoint = value;
+    return length;
+}
+} // namespace
+
+namespace
+{
 constexpr float CanvasWidth = 853.333333f;
 constexpr float CanvasHeight = 480.0f;
 constexpr float BrowserToLogical = 8.0f / 15.0f;
 const std::string ArtRoot = "hud_x2/menus/omenu_";
 
-// SDL_iconv knows WINDOWS-1252 only when SDL is built on the system's iconv; its own converter lacks it, which left
-// UTF-8 bytes drawn as CP1252 glyphs ("Ã—0.50") on some builds. Imported game names may already be CP1252.
+// Text is UTF-8 end to end now: the font atlas is keyed by code point, so layout text passes through untouched.
 std::string menuEncoding(const std::string &text)
 {
-    return Engine::utf8ToCp1252(text);
+    return text;
 }
 } // namespace
 
@@ -33,6 +88,8 @@ MenuDesignScreen::MenuDesignScreen(const Engine::AssetFileSystem &assetFileSyste
 {
     setRenderViewId(MenuDesignView);
     setClearBackground(!overGameplay);
+    // 菜单文案硬编码在源码里，汉化补丁通过覆盖表整串替换。
+    UiText::load(assetFileSystem);
 }
 
 bool MenuDesignScreen::rendersOverGameplay() const
@@ -267,24 +324,87 @@ void MenuDesignScreen::drawDesign()
 }
 
 // The lines of one paragraph word-wrapped to width (pixels); an empty paragraph is one empty line.
+// Latin words break at spaces; Han characters break between any two characters, and closing punctuation never opens
+// a line. A "unit" is either a Latin word or one wide character with any following line-leading-prohibited marks.
 std::vector<std::string> MenuDesignScreen::wrapParagraph(const std::string &paragraph, const std::string &font,
                                                          float scale, float width)
 {
-    std::vector<std::string> lines;
-    std::istringstream words(paragraph);
-    std::string word, line;
-    while (words >> word)
+    std::vector<std::string> units;
+    std::vector<bool> unitIsWide;
+    std::string word;
+    bool wordIsWide = false;
+    size_t i = 0;
+    while (i < paragraph.size())
     {
-        const std::string candidate = line.empty() ? word : line + " " + word;
+        uint32_t codePoint = 0;
+        const size_t length = decodeUtf8(paragraph, i, codePoint);
+        if (codePoint == ' ')
+        {
+            if (!word.empty())
+            {
+                units.push_back(word);
+                unitIsWide.push_back(wordIsWide);
+                word.clear();
+                wordIsWide = false;
+            }
+        }
+        else if (Engine::isWideBreakable(codePoint))
+        {
+            if (!word.empty())
+            {
+                units.push_back(word);
+                unitIsWide.push_back(wordIsWide);
+                word.clear();
+            }
+            std::string unit = paragraph.substr(i, length);
+            // 闭合标点不允许出现在行首，把它和前面的字绑成一个单元。
+            i += length;
+            while (i < paragraph.size())
+            {
+                uint32_t next = 0;
+                const size_t nextLength = decodeUtf8(paragraph, i, next);
+                if (!Engine::isLineLeadingProhibited(next))
+                {
+                    break;
+                }
+                unit += paragraph.substr(i, nextLength);
+                i += nextLength;
+            }
+            units.push_back(unit);
+            unitIsWide.push_back(true);
+            continue;
+        }
+        else
+        {
+            word += paragraph.substr(i, length);
+            wordIsWide = wordIsWide || Engine::isWideBreakable(codePoint);
+        }
+        i += length;
+    }
+    if (!word.empty())
+    {
+        units.push_back(word);
+        unitIsWide.push_back(wordIsWide);
+    }
+
+    std::vector<std::string> lines;
+    std::string line;
+    bool previousWide = true;
+    for (size_t k = 0; k < units.size(); ++k)
+    {
+        const std::string &unit = units[k];
+        const std::string candidate =
+            line.empty() ? unit : line + (previousWide || unitIsWide[k] ? "" : " ") + unit;
         if (!line.empty() && measureTextWidth(font, candidate, scale) > width + 0.5f)
         {
             lines.push_back(line);
-            line = word;
+            line = unit;
         }
         else
         {
             line = candidate;
         }
+        previousWide = unitIsWide[k];
     }
     lines.push_back(line);
     return lines;
@@ -293,9 +413,10 @@ std::vector<std::string> MenuDesignScreen::wrapParagraph(const std::string &para
 void MenuDesignScreen::textInRect(const Rect &rect, const std::string &text, const std::string &font, float logicalSize,
                                   uint32_t color, bool centered)
 {
+    const std::string translated = UiText::translate(text);
     const int faceHeight = std::max(1, fontHeight(font));
     float scale = designScale() * logicalSize / faceHeight;
-    std::string encoded = menuEncoding(text);
+    std::string encoded = menuEncoding(translated);
     if (encoded.find('\n') == std::string::npos && rect.height < logicalSize * designScale() * 1.9f)
     {
         const float width = measureTextWidth(font, encoded, scale);
@@ -343,9 +464,10 @@ void MenuDesignScreen::textInRect(const Rect &rect, const std::string &text, con
 float MenuDesignScreen::textBlockHeight(const std::string &text, const std::string &font, float logicalSize,
                                        float width)
 {
+    const std::string translated = UiText::translate(text);
     const float scale = designScale() * logicalSize / std::max(1, fontHeight(font));
     size_t lineCount = 0;
-    std::istringstream paragraphs(menuEncoding(text));
+    std::istringstream paragraphs(menuEncoding(translated));
     std::string paragraph;
     while (std::getline(paragraphs, paragraph))
     {
@@ -370,8 +492,9 @@ void MenuDesignScreen::label(const std::string &id, const std::string &text, uin
     const float size = fontHeight(pElement->fontName) * pElement->textScale;
     if (pElement->textAlignX == UiLayoutManager::TextAlignX::Right)
     {
+        const std::string translated = UiText::translate(text);
         const float width =
-            measureTextWidth(pElement->fontName, menuEncoding(text), pElement->textScale * designScale());
+            measureTextWidth(pElement->fontName, menuEncoding(translated), pElement->textScale * designScale());
         rect.x += std::max(0.0f, rect.width - width);
         rect.width = std::min(rect.width, width);
     }
@@ -605,7 +728,8 @@ void MenuDesignScreen::drawConfirmation()
     if (!list && !twoColumns)
     {
         size_t bodyLines = 0;
-        std::istringstream paragraphs(menuEncoding(m_confirmation->body));
+        // 按译文量行数：中文比原文短或长，面板高度要贴着实际折行算，否则末行会被截掉。
+        std::istringstream paragraphs(menuEncoding(UiText::translate(m_confirmation->body)));
         std::string paragraph;
         while (std::getline(paragraphs, paragraph))
         {

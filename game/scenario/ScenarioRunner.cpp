@@ -1,3 +1,4 @@
+#include "game/items/ItemEnchantRuntime.h"
 #include "game/items/ItemGenerator.h"
 #include "game/scenario/ScenarioRunner.h"
 
@@ -2635,6 +2636,67 @@ bool readScenarioRuleset(
     return true;
 }
 
+// report_items / rolled_items_min：列出背包里每件物品的全名（displayName，含词缀）与规则集字段。
+// 汉化验收用：物品名是「基础名 + 词缀」拼出来的，只有打印真实渲染路径的字符串才能确认译文生效。
+bool reportPartyItems(
+    ScenarioExecutionContext &context,
+    const ScenarioStep &step,
+    const YAML::Node &node,
+    std::vector<std::string> &failures)
+{
+    if (!node.IsMap() || (!node["rolled_items_min"] && !node["report_items"])
+        || context.runtimeDriver == nullptr || context.runtimeDriver->party() == nullptr)
+    {
+        return true;
+    }
+
+    const Party &party = *context.runtimeDriver->party();
+    size_t rolledItems = 0;
+
+    for (const Character &member : party.members())
+    {
+        for (const InventoryItem &item : member.inventory)
+        {
+            rolledItems += item.rulesetFields.lootRarity != 0 ? 1 : 0;
+
+            if (node["report_items"] && node["report_items"].as<bool>() && party.itemTable() != nullptr)
+            {
+                const ItemDefinition *pDefinition = party.itemTable()->get(item.objectDescriptionId);
+                InventoryItem identified = item;
+                identified.identified = true;
+                std::cout << "ruleset item: "
+                          << (pDefinition != nullptr
+                                  ? ItemRuntime::displayName(identified, *pDefinition,
+                                        party.standardItemEnchantTable(), party.specialItemEnchantTable())
+                                  : std::string("?"))
+                          << " rarity=" << int(item.rulesetFields.lootRarity)
+                          << " power=" << item.rulesetFields.itemPower
+                          << " drop_level=" << item.rulesetFields.dropLevel
+                          << " enchant1=" << item.standardEnchantId << "/" << item.standardEnchantPower
+                          << " enchant2=" << item.rulesetFields.secondStandardEnchantId << "/"
+                          << item.rulesetFields.secondStandardEnchantPower
+                          << " special=" << item.specialEnchantId
+                          << " legendary=" << item.rulesetFields.legendaryAffixId
+                          // 详情面板里 "Special:" 后面那行也是拼的（词缀名 + 数值），一并转出来。
+                          << " special_line=\""
+                          << ItemEnchantRuntime::buildEnchantDescription(
+                                 item, party.standardItemEnchantTable(), party.specialItemEnchantTable())
+                          << '"' << '\n';
+            }
+        }
+    }
+
+    if (node["rolled_items_min"] && rolledItems < node["rolled_items_min"].as<size_t>())
+    {
+        failures.push_back(stepLocation(step) + ": expected at least "
+            + node["rolled_items_min"].as<std::string>() + " items the ruleset rolled, found "
+            + std::to_string(rolledItems));
+        return false;
+    }
+
+    return true;
+}
+
 bool assertRuleset(
     ScenarioExecutionContext &context,
     const ScenarioStep &step,
@@ -2645,6 +2707,26 @@ bool assertRuleset(
     if (!node)
     {
         return true;
+    }
+
+    // 只带 report_items / rolled_items_min 的断言纯粹是转储背包物品，不比较规则集本身，
+    // 因此不需要（也不该要求）场景里装着对应的规则集。
+    if (node.IsMap() && !node["id"])
+    {
+        bool dumpOnly = true;
+        for (const auto &entry : node)
+        {
+            const std::string key = entry.first.as<std::string>();
+            if (key != "report_items" && key != "rolled_items_min")
+            {
+                dumpOnly = false;
+                break;
+            }
+        }
+        if (dumpOnly)
+        {
+            return reportPartyItems(context, step, node, failures);
+        }
     }
 
     RulesetSelection expected;
@@ -2732,48 +2814,7 @@ bool assertRuleset(
         }
     }
 
-    // Items the ruleset rolled (a loot rarity on the item) in the party's packs; the report lists every pack item.
-    if (node.IsMap() && (node["rolled_items_min"] || node["report_items"]) && context.runtimeDriver->party() != nullptr)
-    {
-        const Party &party = *context.runtimeDriver->party();
-        size_t rolledItems = 0;
-
-        for (const Character &member : party.members())
-        {
-            for (const InventoryItem &item : member.inventory)
-            {
-                rolledItems += item.rulesetFields.lootRarity != 0 ? 1 : 0;
-
-                if (node["report_items"] && node["report_items"].as<bool>() && party.itemTable() != nullptr)
-                {
-                    const ItemDefinition *pDefinition = party.itemTable()->get(item.objectDescriptionId);
-                    InventoryItem identified = item;
-                    identified.identified = true;
-                    std::cout << "ruleset item: "
-                              << (pDefinition != nullptr
-                                      ? ItemRuntime::displayName(identified, *pDefinition,
-                                            party.standardItemEnchantTable(), party.specialItemEnchantTable())
-                                      : std::string("?"))
-                              << " rarity=" << int(item.rulesetFields.lootRarity)
-                              << " power=" << item.rulesetFields.itemPower
-                              << " drop_level=" << item.rulesetFields.dropLevel
-                              << " enchant1=" << item.standardEnchantId << "/" << item.standardEnchantPower
-                              << " enchant2=" << item.rulesetFields.secondStandardEnchantId << "/"
-                              << item.rulesetFields.secondStandardEnchantPower
-                              << " special=" << item.specialEnchantId
-                              << " legendary=" << item.rulesetFields.legendaryAffixId << '\n';
-                }
-            }
-        }
-
-        if (node["rolled_items_min"] && rolledItems < node["rolled_items_min"].as<size_t>())
-        {
-            failures.push_back(stepLocation(step) + ": expected at least "
-                + node["rolled_items_min"].as<std::string>() + " items the ruleset rolled, found "
-                + std::to_string(rolledItems));
-            return false;
-        }
-    }
+    return reportPartyItems(context, step, node, failures);
 
     // member_classes: the members' classes in order (canonical names).
     if (node.IsMap() && node["member_classes"] && node["member_classes"].IsSequence()
@@ -9656,12 +9697,15 @@ ScenarioRunResult ScenarioRunner::run(
         && !envFlagEnabled("OPENYAMM_SCENARIO_NO_COLOR");
     context.totalStepCount = document.steps.size();
 
+    // 与真机一致：release 包之上的 mods/ 也要挂载，否则无头场景读到的是游戏自带原文，
+    // 汉化改动在场景里永远验证不出来。
     if (!context.assetFileSystem.initialize(
             basePath,
             scenarioConfig.assetRoot,
             scenarioConfig.assetScaleTier,
             scenarioConfig.assetScaleProfile,
-            scenarioConfig.activeWorldId))
+            scenarioConfig.activeWorldId,
+            scenarioConfig.installedContent))
     {
         result.failures.push_back("could not initialize asset file system");
         return result;

@@ -109,17 +109,19 @@ TEST_CASE("HUD text colour codes take no room, carry across wrapped lines and ti
 {
     using namespace OpenYAMM::Game;
     GameplayHudFontData font;
-    font.firstChar = 32;
-    font.lastChar = 126;
     font.fontHeight = 10;
     font.atlasCellWidth = 6;
     font.atlasWidth = 256;
     font.atlasHeight = 256;
     font.atlasScale = 1;
 
-    for (int character = font.firstChar; character <= font.lastChar; ++character)
+    for (uint32_t codePoint = 32; codePoint <= 126; ++codePoint)
     {
-        font.glyphMetrics[size_t(character)] = {0, 5, 1, 0};
+        OpenYAMM::Engine::FontGlyph glyph;
+        glyph.metrics = {0, 5, 1, 0};
+        glyph.cellWidth = 5;
+        glyph.cellHeight = 10;
+        font.glyphs[codePoint] = glyph;
     }
 
     font.mainTextureHandle = bgfx::TextureHandle {1};

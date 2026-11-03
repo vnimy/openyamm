@@ -18,10 +18,12 @@
 
 #include <SDL3/SDL.h>
 
+#if OPENYAMM_HOUSE_VIDEOS
 extern "C"
 {
 #include <libavutil/log.h>
 }
+#endif
 
 #include <cctype>
 #include <cstdlib>
@@ -400,7 +402,9 @@ std::string updateChannelUrl()
 int runGame(int argc, char **argv, OpenYAMM::Engine::LogFile &logFile)
 {
     setGameplayProfilingEnabled(false);
+#if OPENYAMM_HOUSE_VIDEOS
     av_log_set_level(AV_LOG_ERROR);
+#endif
 
     OpenYAMM::Engine::ApplicationConfig config = OpenYAMM::Engine::ApplicationConfig::createDefault();
     std::vector<std::string> arguments;
@@ -460,11 +464,10 @@ int runGame(int argc, char **argv, OpenYAMM::Engine::LogFile &logFile)
         return 2;
     }
 
-#if !defined(__ANDROID__)
-    // Mounted only over a release's packs (packaging/MODDING.md).
+    // Mounted over a release's packs (packaging/MODDING.md) or over the Android APK's packs, which the entry point
+    // extracts into the working directory (openyamm_android_entry.cpp).
     std::error_code currentPathError;
     config.installedContent.modsRoot = std::filesystem::current_path(currentPathError) / "mods";
-#endif
 
     const bool headlessCommand = !arguments.empty() && arguments[0].rfind("--headless-", 0) == 0;
 

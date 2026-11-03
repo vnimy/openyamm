@@ -1,3 +1,4 @@
+#include "game/ui/UiText.h"
 #include "game/gameplay/GameplayAlchemyBenchInputController.h"
 
 #include "game/gameplay/GameplayCraftingBenchInputController.h"
@@ -124,7 +125,7 @@ void placeInSlot(
 
     if (itemId == otherSlotItemId && (pIngredient == nullptr || pIngredient->count < 2))
     {
-        context.setStatusBarEvent("The party carries only one of those.");
+        context.setStatusBarEvent(UiText::translate("The party carries only one of those."));
         return;
     }
 

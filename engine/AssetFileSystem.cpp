@@ -574,6 +574,14 @@ bool AssetFileSystem::initialize(
             shutdown();
             return false;
         }
+
+        // The Android entry point extracts the APK's mods into the working directory before the game starts. They
+        // mount over the packs in the APK exactly like mods over a release's packs (packaging/MODDING.md).
+        if (!mountMods(m_installedContentOptions.modsRoot))
+        {
+            shutdown();
+            return false;
+        }
     }
     else if (packagedAssetRoot)
     {
@@ -1484,6 +1492,7 @@ std::optional<std::string> AssetFileSystem::readTextFile(const std::string &virt
     {
         return std::nullopt;
     }
+
 
     return std::string(fileBytes->begin(), fileBytes->end());
 }

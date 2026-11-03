@@ -1,3 +1,4 @@
+#include "game/ui/UiText.h"
 #include "game/indoor/IndoorWorldRuntime.h"
 
 #include "game/gameplay/InteractiveDecorationRules.h"
@@ -815,8 +816,8 @@ uint32_t monsterActorAttackSeed(
 
 std::string formatFoundItemStatusText(const std::string &itemName)
 {
-    const std::string resolvedItemName = itemName.empty() ? "item" : itemName;
-    return "You found an item (" + resolvedItemName + ")!";
+    const std::string resolvedItemName = itemName.empty() ? UiText::translate("item") : itemName;
+    return UiText::translateTemplate("You found an item ({item})!", {{"{item}", resolvedItemName}});
 }
 
 constexpr float ActiveActorUpdateRange = 10240.0f;
@@ -13600,7 +13601,7 @@ bool IndoorWorldRuntime::tryStealFromActor(size_t actorIndex, uint32_t successRo
     {
         if (m_pGameplayView != nullptr)
         {
-            m_pGameplayView->setStatusBarEvent("You need Stealing skill.");
+            m_pGameplayView->setStatusBarEvent(UiText::translate("You need Stealing skill."));
         }
 
         return true;
@@ -13639,7 +13640,8 @@ bool IndoorWorldRuntime::tryStealFromActor(size_t actorIndex, uint32_t successRo
 
         if (m_pGameplayView != nullptr)
         {
-            m_pGameplayView->setStatusBarEvent("You found " + std::to_string(std::max(0, stolenGold)) + " gold!");
+            m_pGameplayView->setStatusBarEvent(UiText::translateTemplate(
+            "You found {gold} gold!", {{ "{gold}", std::to_string(std::max(0, stolenGold)) }}));
         }
 
         return true;
@@ -13671,7 +13673,7 @@ bool IndoorWorldRuntime::tryStealFromActor(size_t actorIndex, uint32_t successRo
     {
         if (m_pGameplayView != nullptr)
         {
-            m_pGameplayView->setStatusBarEvent("Pack is Full!");
+            m_pGameplayView->setStatusBarEvent(UiText::translate("Pack is Full!"));
         }
 
         return true;
@@ -13685,7 +13687,8 @@ bool IndoorWorldRuntime::tryStealFromActor(size_t actorIndex, uint32_t successRo
             m_pItemTable != nullptr ? m_pItemTable->get(inventoryItem.objectDescriptionId) : nullptr;
         const std::string itemName =
             pDefinition != nullptr ? ItemRuntime::foundItemName(*pDefinition) : "item";
-        m_pGameplayView->setStatusBarEvent("You found an item (" + itemName + ")!");
+        m_pGameplayView->setStatusBarEvent(
+            UiText::translateTemplate("You found an item ({item})!", {{ "{item}", itemName }}));
     }
 
     return true;

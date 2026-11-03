@@ -1,6 +1,9 @@
 include(Ffmpeg)
 include(FetchContent)
-openyamm_configure_ffmpeg()
+option(OPENYAMM_HOUSE_VIDEOS "Decode the house videos with the bundled FFmpeg (needs make at configure time)." ON)
+if (OPENYAMM_HOUSE_VIDEOS)
+    openyamm_configure_ffmpeg()
+endif()
 
 FetchContent_GetProperties(imgui SOURCE_DIR OPENYAMM_IMGUI_SOURCE_DIR)
 FetchContent_GetProperties(bgfx SOURCE_DIR OPENYAMM_BGFX_FETCH_SOURCE_DIR)
@@ -25,6 +28,7 @@ add_library(openyamm_game STATIC
     debug/GameplayDebugTrace.cpp
     debug/MawTestParties.cpp
     debug/GameImGuiBgfxRenderer.cpp
+    debug/ImGuiCjkFont.cpp
     debug/ScreenshotCaptureService.cpp
     debug/ScreenshotTour.cpp
     debug/MenuInputTour.cpp
@@ -336,6 +340,7 @@ add_library(openyamm_game STATIC
     ui/UiLayoutManager.cpp
     ui/MenuSettingsModel.cpp
     ui/MenuDesignScreen.cpp
+    ui/UiText.cpp
     ui/screens/MainMenuLootFilter.cpp
     ui/screens/MainMenuScreen.cpp
     ui/screens/ArcomageScreen.cpp
@@ -374,7 +379,7 @@ target_include_directories(openyamm_game
 )
 
 set_property(
-    SOURCE debug/GameImGuiBgfxRenderer.cpp
+    SOURCE debug/GameImGuiBgfxRenderer.cpp debug/ImGuiCjkFont.cpp
     APPEND
     PROPERTY INCLUDE_DIRECTORIES
         ${OPENYAMM_IMGUI_SOURCE_DIR}
@@ -406,7 +411,12 @@ target_link_libraries(openyamm_game
 
 target_compile_features(openyamm_game PRIVATE cxx_std_20)
 add_dependencies(openyamm_game openyamm_runtime_shaders)
-openyamm_target_link_ffmpeg(openyamm_game)
+if (OPENYAMM_HOUSE_VIDEOS)
+    target_compile_definitions(openyamm_game PRIVATE OPENYAMM_HOUSE_VIDEOS=1)
+    openyamm_target_link_ffmpeg(openyamm_game)
+else()
+    target_compile_definitions(openyamm_game PRIVATE OPENYAMM_HOUSE_VIDEOS=0)
+endif()
 
 find_library(OPENYAMM_M_LIBRARY m)
 if (OPENYAMM_M_LIBRARY)

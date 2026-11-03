@@ -1,4 +1,5 @@
 #include "game/ui/GameplayAlchemyBenchView.h"
+#include "game/ui/UiText.h"
 
 #include "game/gameplay/GameplayScreenRuntime.h"
 #include "game/tables/ItemTable.h"
@@ -208,7 +209,8 @@ std::optional<GameplayAlchemyBenchModel> GameplayAlchemyBenchView::buildModel(Ga
     if (state.showAllRecipes && state.recipeSearch.empty() && undiscovered > 0)
     {
         model.rows.push_back({GameplayAlchemyBenchRowKind::Undiscovered, 0,
-            "??? (" + std::to_string(undiscovered) + " undiscovered)", model.rowsHeight, RecipeRowHeight});
+            UiText::translateTemplate("??? ({count} undiscovered)",
+                {{"{count}", std::to_string(undiscovered)}}), model.rowsHeight, RecipeRowHeight});
         model.rowsHeight += RecipeRowHeight;
     }
 

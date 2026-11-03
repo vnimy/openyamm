@@ -5,6 +5,7 @@
 #include "game/rules/GameRules.h"
 #include "game/tables/ItemTable.h"
 #include "game/tables/MonsterTable.h"
+#include "game/ui/UiText.h"
 
 #include <algorithm>
 #include <limits>
@@ -1693,7 +1694,17 @@ std::string ItemEnchantRuntime::displayName(
     const StandardItemEnchantTable *pStandardTable,
     const SpecialItemEnchantTable *pSpecialTable)
 {
-    const std::string baseName = itemDefinition.name.empty() ? "Unknown item" : itemDefinition.name;
+    const std::string baseName =
+        UiText::translate(itemDefinition.name.empty() ? "Unknown item" : itemDefinition.name);
+
+    // 词缀名在英文里靠语序区分前后（"Ring of Fire" / "Nameless Ring"），中文两种情况都读作
+    // 「词缀+物品名」。语序交给覆盖表的 "{item} {suffix}" 条目，表里缺条目时退回英文语序。
+    const auto withSuffix = [&baseName](const std::string &suffix)
+    {
+        return UiText::translateTemplate(
+            "{item} {suffix}",
+            {{"{item}", baseName}, {"{suffix}", UiText::translate(suffix)}});
+    };
 
     if (item.standardEnchantId != 0 && pStandardTable != nullptr)
     {
@@ -1701,7 +1712,7 @@ std::string ItemEnchantRuntime::displayName(
         {
             if (!pEntry->suffix.empty())
             {
-                return baseName + " " + pEntry->suffix;
+                return withSuffix(pEntry->suffix);
             }
         }
     }
@@ -1712,7 +1723,7 @@ std::string ItemEnchantRuntime::displayName(
         {
             if (!pEntry->suffix.empty())
             {
-                return pEntry->displayAsPrefix ? (pEntry->suffix + " " + baseName) : (baseName + " " + pEntry->suffix);
+                return withSuffix(pEntry->suffix);
             }
         }
     }
@@ -1806,7 +1817,10 @@ std::string ItemEnchantRuntime::buildEnchantDescription(
         {
             if (!pEntry->statName.empty() && item.standardEnchantPower > 0)
             {
-                return pEntry->statName + " +" + std::to_string(item.standardEnchantPower);
+                return UiText::translateTemplate(
+                    "{stat} +{value}",
+                    {{"{stat}", UiText::translate(pEntry->statName)},
+                     {"{value}", std::to_string(item.standardEnchantPower)}});
             }
         }
     }
@@ -1815,7 +1829,7 @@ std::string ItemEnchantRuntime::buildEnchantDescription(
     {
         if (const SpecialItemEnchantEntry *pEntry = pSpecialTable->get(item.specialEnchantId))
         {
-            return pEntry->description;
+            return UiText::translate(pEntry->description);
         }
     }
 

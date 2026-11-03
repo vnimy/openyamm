@@ -1,3 +1,4 @@
+#include "game/ui/UiText.h"
 #include "game/gameplay/BountyHuntRuntime.h"
 
 #include "game/events/EvtEnums.h"
@@ -376,7 +377,7 @@ BountyHuntInteractionResult performBountyHuntInteraction(
 
     if (pMonsterTable == nullptr)
     {
-        result.messages.push_back("The bounty office is unavailable right now.");
+        result.messages.push_back(UiText::translate("The bounty office is unavailable right now."));
         return result;
     }
 
@@ -384,7 +385,7 @@ BountyHuntInteractionResult performBountyHuntInteraction(
 
     if (pEventRuntimeState == nullptr)
     {
-        result.messages.push_back("The bounty office is unavailable right now.");
+        result.messages.push_back(UiText::translate("The bounty office is unavailable right now."));
         return result;
     }
 
@@ -467,7 +468,7 @@ BountyHuntInteractionResult performBountyHuntInteraction(
 
         if (!monsterId.has_value())
         {
-            result.messages.push_back("There is no bounty this month.");
+            result.messages.push_back(UiText::translate("There is no bounty this month."));
             return result;
         }
 
@@ -504,7 +505,7 @@ BountyHuntInteractionResult performBountyHuntInteraction(
 
     if (pTableStats == nullptr)
     {
-        result.messages.push_back("The bounty office is unavailable right now.");
+        result.messages.push_back(UiText::translate("The bounty office is unavailable right now."));
         return result;
     }
 

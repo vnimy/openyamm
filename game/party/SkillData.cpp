@@ -1,3 +1,4 @@
+#include "game/ui/UiText.h"
 #include "game/party/SkillData.h"
 
 #include <algorithm>
@@ -392,10 +393,10 @@ std::string displaySkillName(const std::string &skillName)
 
     if (displayIt != DisplaySkillNames.end())
     {
-        return displayIt->second;
+        return UiText::translate(displayIt->second);
     }
 
-    return canonicalName;
+    return UiText::translate(canonicalName);
 }
 
 void setSkillDisplayNameOverrides(const std::map<std::string, std::string> &displayNames)
@@ -418,6 +419,26 @@ std::string masteryDisplayName(SkillMastery mastery)
         default:
             return "None";
     }
+}
+
+std::string localizedMasteryName(SkillMastery mastery)
+{
+    const std::string raw = masteryDisplayName(mastery);
+
+    // A skill level and the monk's final class are both spelled "Master" in English; sharing one key would
+    // translate the class name as a level. The level looks up its own prefixed key first.
+    const std::string prefixed = UiText::translate("SkillMastery: " + raw);
+    return prefixed == "SkillMastery: " + raw ? UiText::translate(raw) : prefixed;
+}
+
+std::string localizedSkillPageMasteryName(SkillMastery mastery)
+{
+    // The sheet abbreviates the top level to "Grand" so it fits the narrow column; the level keeps its own key
+    // so the translation of the abbreviation is independent of the full name.
+    const std::string raw = masteryDisplayName(mastery) == "Grandmaster" ? "Grand" : masteryDisplayName(mastery);
+    const std::string prefixed = UiText::translate("SkillMastery: " + raw);
+
+    return prefixed == "SkillMastery: " + raw ? UiText::translate(raw) : prefixed;
 }
 
 std::vector<std::string> allCanonicalSkillNames()

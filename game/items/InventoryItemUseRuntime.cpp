@@ -1,3 +1,4 @@
+#include "game/ui/UiText.h"
 #include "game/items/InventoryItemUseRuntime.h"
 
 #include "game/gameplay/GameMechanics.h"
@@ -1352,7 +1353,7 @@ InventoryItemUseResult InventoryItemUseRuntime::useItemOnMember(
             pTargetMember->skillPoints += 2;
             result.handled = true;
             result.consumed = true;
-            result.statusText = "+2 Skill Points!";
+            result.statusText = UiText::translate("+2 Skill Points!");
             result.soundId = SoundId::Quest;
             result.speechId = SpeechId::QuestGot;
             return result;
@@ -1374,7 +1375,7 @@ InventoryItemUseResult InventoryItemUseRuntime::useItemOnMember(
         {
             result.handled = true;
             result.consumed = party.chargePersonalShield(targetMemberIndex);
-            result.statusText = result.consumed ? "Shield charged" : "";
+            result.statusText = result.consumed ? UiText::translate("Shield charged") : "";
             result.soundId = result.consumed ? SoundId::Drink : SoundId::Error;
             return result;
         }
@@ -1383,7 +1384,7 @@ InventoryItemUseResult InventoryItemUseRuntime::useItemOnMember(
         {
             result.handled = true;
             result.consumed = party.burstPersonalShields();
-            result.statusText = result.consumed ? "Shields charged" : "No shields to charge";
+            result.statusText = result.consumed ? UiText::translate("Shields charged") : UiText::translate("No shields to charge");
             result.soundId = result.consumed ? SoundId::Drink : SoundId::Error;
             return result;
         }
@@ -1415,7 +1416,7 @@ InventoryItemUseResult InventoryItemUseRuntime::useItemOnMember(
 
             result.handled = true;
             result.consumed = true;
-            result.statusText = "The charge blows!";
+            result.statusText = UiText::translate("The charge blows!");
             return result;
         }
 
@@ -1428,7 +1429,7 @@ InventoryItemUseResult InventoryItemUseRuntime::useItemOnMember(
 
             result.handled = true;
             result.consumed = true;
-            result.statusText = "EMP!";
+            result.statusText = UiText::translate("EMP!");
             return result;
         }
 

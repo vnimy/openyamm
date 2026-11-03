@@ -79,47 +79,17 @@ bool GameImGuiBgfxRenderer::initialize()
     }
 
     ImGuiIO &io = ImGui::GetIO();
-    unsigned char *pPixels = nullptr;
-    int textureWidth = 0;
-    int textureHeight = 0;
-    io.Fonts->GetTexDataAsRGBA32(&pPixels, &textureWidth, &textureHeight);
-
-    if (pPixels == nullptr || textureWidth <= 0 || textureHeight <= 0)
-    {
-        shutdown();
-        return false;
-    }
-
-    m_fontTextureHandle = bgfx::createTexture2D(
-        static_cast<uint16_t>(textureWidth),
-        static_cast<uint16_t>(textureHeight),
-        false,
-        1,
-        bgraTextureUploadFormat(),
-        0,
-        bgfx::copy(pPixels, static_cast<uint32_t>(textureWidth * textureHeight * 4)));
-
-    if (!bgfx::isValid(m_fontTextureHandle))
-    {
-        shutdown();
-        return false;
-    }
-
-    io.Fonts->SetTexID(static_cast<ImTextureID>(m_fontTextureHandle.idx + 1));
     io.BackendRendererName = "openyamm_game_imgui_bgfx";
     io.BackendFlags |= ImGuiBackendFlags_RendererHasVtxOffset;
+    // The font atlas grows while the game runs: ImGui 1.92 rasterizes a glyph the first time a size needs it
+    // and hands the block over through ImTextureData. Claiming this flag is what keeps that path open.
+    io.BackendFlags |= ImGuiBackendFlags_RendererHasTextures;
     m_initialized = true;
     return true;
 }
 
 void GameImGuiBgfxRenderer::shutdown()
 {
-    if (bgfx::isValid(m_fontTextureHandle))
-    {
-        bgfx::destroy(m_fontTextureHandle);
-        m_fontTextureHandle = BGFX_INVALID_HANDLE;
-    }
-
     if (bgfx::isValid(m_textureSamplerHandle))
     {
         bgfx::destroy(m_textureSamplerHandle);
@@ -137,6 +107,91 @@ void GameImGuiBgfxRenderer::shutdown()
 
 void GameImGuiBgfxRenderer::newFrame()
 {
+}
+
+namespace
+{
+bgfx::TextureHandle textureHandleFromId(ImTextureID textureId)
+{
+    bgfx::TextureHandle handle = BGFX_INVALID_HANDLE;
+    handle.idx = static_cast<uint16_t>(static_cast<uintptr_t>(textureId) - 1);
+    return handle;
+}
+}
+
+void GameImGuiBgfxRenderer::updateTextures()
+{
+    if (!m_initialized)
+    {
+        return;
+    }
+
+    for (ImTextureData *pTexture : ImGui::GetPlatformIO().Textures)
+    {
+        if (pTexture == nullptr)
+        {
+            continue;
+        }
+
+        if (pTexture->Status == ImTextureStatus_WantCreate)
+        {
+            const bgfx::TextureFormat::Enum format = pTexture->Format == ImTextureFormat_Alpha8
+                ? bgfx::TextureFormat::A8
+                : bgraTextureUploadFormat();
+            const bgfx::Memory *pMemory = bgfx::copy(
+                pTexture->Pixels, static_cast<uint32_t>(pTexture->GetSizeInBytes()));
+            const bgfx::TextureHandle handle = bgfx::createTexture2D(
+                static_cast<uint16_t>(pTexture->Width),
+                static_cast<uint16_t>(pTexture->Height),
+                false,
+                1,
+                format,
+                0,
+                pMemory);
+
+            if (!bgfx::isValid(handle))
+            {
+                continue;
+            }
+
+            pTexture->SetTexID(static_cast<ImTextureID>(handle.idx + 1));
+            pTexture->SetStatus(ImTextureStatus_OK);
+        }
+        else if (pTexture->Status == ImTextureStatus_WantUpdates)
+        {
+            const bgfx::TextureHandle handle = textureHandleFromId(pTexture->GetTexID());
+
+            if (!bgfx::isValid(handle))
+            {
+                pTexture->SetStatus(ImTextureStatus_WantCreate);
+                continue;
+            }
+
+            for (const ImTextureRect &rect : pTexture->Updates)
+            {
+                const unsigned char *pSource =
+                    pTexture->Pixels + (rect.x + size_t(rect.y) * size_t(pTexture->Width)) * size_t(pTexture->BytesPerPixel);
+                bgfx::updateTexture2D(handle, 0, 0, rect.x, rect.y, rect.w, rect.h,
+                    bgfx::copy(pSource, static_cast<uint32_t>(size_t(rect.w) * size_t(rect.h)
+                        * size_t(pTexture->BytesPerPixel))),
+                    pTexture->GetPitch());
+            }
+
+            pTexture->SetStatus(ImTextureStatus_OK);
+        }
+        else if (pTexture->Status == ImTextureStatus_WantDestroy)
+        {
+            const bgfx::TextureHandle handle = textureHandleFromId(pTexture->GetTexID());
+
+            if (bgfx::isValid(handle))
+            {
+                bgfx::destroy(handle);
+            }
+
+            pTexture->SetTexID(ImTextureID_Invalid);
+            pTexture->SetStatus(ImTextureStatus_Destroyed);
+        }
+    }
 }
 
 void GameImGuiBgfxRenderer::renderDrawData(const ImDrawData *pDrawData)
@@ -239,13 +294,14 @@ void GameImGuiBgfxRenderer::renderDrawData(const ImDrawData *pDrawData)
                 continue;
             }
 
-            bgfx::TextureHandle textureHandle = m_fontTextureHandle;
             const ImTextureID textureId = drawCommand.GetTexID();
 
-            if (textureId != ImTextureID_Invalid)
+            if (textureId == ImTextureID_Invalid)
             {
-                textureHandle.idx = static_cast<uint16_t>(static_cast<uintptr_t>(textureId) - 1);
+                continue;
             }
+
+            const bgfx::TextureHandle textureHandle = textureHandleFromId(textureId);
 
             pEncoder->setScissor(scissorX, scissorY, scissorWidth, scissorHeight);
             pEncoder->setState(

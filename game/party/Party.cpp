@@ -1,3 +1,4 @@
+#include "game/ui/UiText.h"
 #include "game/party/Party.h"
 
 #include "game/events/EventRuntime.h"
@@ -1814,12 +1815,13 @@ bool identifyInventoryItemInstance(InventoryItem &item, const ItemDefinition &it
 {
     if (item.identified || !ItemRuntime::requiresIdentification(itemDefinition))
     {
-        statusText = "Already identified.";
+        statusText = UiText::translate("Already identified.");
         return false;
     }
 
     item.identified = true;
-    statusText = "Identified " + ItemRuntime::displayName(item, itemDefinition) + ".";
+    statusText = UiText::translateTemplate("Identified {item}.",
+                                   {{"{item}", ItemRuntime::displayName(item, itemDefinition)}});
     return true;
 }
 
@@ -1827,13 +1829,14 @@ bool repairInventoryItemInstance(InventoryItem &item, const ItemDefinition &item
 {
     if (!item.broken)
     {
-        statusText = "Nothing to repair.";
+        statusText = UiText::translate("Nothing to repair.");
         return false;
     }
 
     item.broken = false;
     item.identified = true;
-    statusText = "Repaired " + ItemRuntime::displayName(item, itemDefinition) + ".";
+    statusText = UiText::translateTemplate("Repaired {item}.",
+                                   {{"{item}", ItemRuntime::displayName(item, itemDefinition)}});
     return true;
 }
 
@@ -1841,7 +1844,7 @@ bool identifyEquippedItemInstance(EquippedItemRuntimeState &runtimeState, const 
 {
     if (runtimeState.identified || !ItemRuntime::requiresIdentification(itemDefinition))
     {
-        statusText = "Already identified.";
+        statusText = UiText::translate("Already identified.");
         return false;
     }
 
@@ -1855,7 +1858,8 @@ bool identifyEquippedItemInstance(EquippedItemRuntimeState &runtimeState, const 
     displayItem.specialEnchantId = runtimeState.specialEnchantId;
     displayItem.artifactId = runtimeState.artifactId;
     displayItem.rarity = runtimeState.rarity;
-    statusText = "Identified " + ItemRuntime::displayName(displayItem, itemDefinition) + ".";
+    statusText = UiText::translateTemplate("Identified {item}.",
+                                   {{"{item}", ItemRuntime::displayName(displayItem, itemDefinition)}});
     return true;
 }
 
@@ -1863,7 +1867,7 @@ bool repairEquippedItemInstance(EquippedItemRuntimeState &runtimeState, const It
 {
     if (!runtimeState.broken)
     {
-        statusText = "Nothing to repair.";
+        statusText = UiText::translate("Nothing to repair.");
         return false;
     }
 
@@ -1878,7 +1882,8 @@ bool repairEquippedItemInstance(EquippedItemRuntimeState &runtimeState, const It
     displayItem.specialEnchantId = runtimeState.specialEnchantId;
     displayItem.artifactId = runtimeState.artifactId;
     displayItem.rarity = runtimeState.rarity;
-    statusText = "Repaired " + ItemRuntime::displayName(displayItem, itemDefinition) + ".";
+    statusText = UiText::translateTemplate("Repaired {item}.",
+                                   {{"{item}", ItemRuntime::displayName(displayItem, itemDefinition)}});
     return true;
 }
 }
@@ -5734,7 +5739,7 @@ bool Party::tryIdentifyMemberInventoryItem(
 
     if (pItem == nullptr)
     {
-        statusText = "No item there.";
+        statusText = UiText::translate("No item there.");
         logItemInteractionResult(
             "identify",
             pInspector,
@@ -5764,7 +5769,7 @@ bool Party::tryIdentifyMemberInventoryItem(
 
     if (pItem->identified || !ItemRuntime::requiresIdentification(*pItemDefinition))
     {
-        statusText = "Already identified.";
+        statusText = UiText::translate("Already identified.");
         logItemInteractionResult(
             "identify",
             pInspector,
@@ -5778,7 +5783,7 @@ bool Party::tryIdentifyMemberInventoryItem(
 
     if (!canIdentifyItem(*pItemDefinition))
     {
-        statusText = "Identify Failed";
+        statusText = UiText::translate("Identify Failed");
         logItemInteractionResult(
             "identify",
             pInspector,
@@ -5830,7 +5835,7 @@ bool Party::tryRepairMemberInventoryItem(
 
     if (pItem == nullptr)
     {
-        statusText = "No item there.";
+        statusText = UiText::translate("No item there.");
         logItemInteractionResult(
             "repair",
             pInspector,
@@ -5860,7 +5865,7 @@ bool Party::tryRepairMemberInventoryItem(
 
     if (!pItem->broken)
     {
-        statusText = "Nothing to repair.";
+        statusText = UiText::translate("Nothing to repair.");
         logItemInteractionResult(
             "repair",
             pInspector,
@@ -5874,7 +5879,7 @@ bool Party::tryRepairMemberInventoryItem(
 
     if (!canRepairItem(*pItemDefinition))
     {
-        statusText = "Repair Failed";
+        statusText = UiText::translate("Repair Failed");
         logItemInteractionResult(
             "repair",
             pInspector,
@@ -5924,7 +5929,7 @@ bool Party::identifyMemberInventoryItem(
 
     if (pItem == nullptr)
     {
-        statusText = "No item there.";
+        statusText = UiText::translate("No item there.");
         logItemInteractionResult(
             "identify",
             nullptr,
@@ -5989,7 +5994,7 @@ bool Party::repairMemberInventoryItem(
 
     if (pItem == nullptr)
     {
-        statusText = "No item there.";
+        statusText = UiText::translate("No item there.");
         logItemInteractionResult(
             "repair",
             nullptr,
@@ -6057,7 +6062,7 @@ bool Party::tryIdentifyEquippedItem(
 
     if (itemId == 0)
     {
-        statusText = "No item there.";
+        statusText = UiText::translate("No item there.");
         logItemInteractionResult(
             "identify",
             pInspector,
@@ -6088,7 +6093,7 @@ bool Party::tryIdentifyEquippedItem(
 
     if (runtimeState.identified || !ItemRuntime::requiresIdentification(*pItemDefinition))
     {
-        statusText = "Already identified.";
+        statusText = UiText::translate("Already identified.");
         logItemInteractionResult(
             "identify",
             pInspector,
@@ -6102,7 +6107,7 @@ bool Party::tryIdentifyEquippedItem(
 
     if (!canIdentifyItem(*pItemDefinition))
     {
-        statusText = "Identify Failed";
+        statusText = UiText::translate("Identify Failed");
         logItemInteractionResult(
             "identify",
             pInspector,
@@ -6153,7 +6158,7 @@ bool Party::tryRepairEquippedItem(
 
     if (itemId == 0)
     {
-        statusText = "No item there.";
+        statusText = UiText::translate("No item there.");
         logItemInteractionResult(
             "repair",
             pInspector,
@@ -6184,7 +6189,7 @@ bool Party::tryRepairEquippedItem(
 
     if (!runtimeState.broken)
     {
-        statusText = "Nothing to repair.";
+        statusText = UiText::translate("Nothing to repair.");
         logItemInteractionResult(
             "repair",
             pInspector,
@@ -6198,7 +6203,7 @@ bool Party::tryRepairEquippedItem(
 
     if (!canRepairItem(*pItemDefinition))
     {
-        statusText = "Repair Failed";
+        statusText = UiText::translate("Repair Failed");
         logItemInteractionResult(
             "repair",
             pInspector,
@@ -6244,7 +6249,7 @@ bool Party::identifyEquippedItem(size_t memberIndex, EquipmentSlot slot, std::st
 
     if (itemId == 0)
     {
-        statusText = "No item there.";
+        statusText = UiText::translate("No item there.");
         logItemInteractionResult(
             "identify",
             nullptr,
@@ -6306,7 +6311,7 @@ bool Party::repairEquippedItem(size_t memberIndex, EquipmentSlot slot, std::stri
 
     if (itemId == 0)
     {
-        statusText = "No item there.";
+        statusText = UiText::translate("No item there.");
         logItemInteractionResult(
             "repair",
             nullptr,

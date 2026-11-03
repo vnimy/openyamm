@@ -11,6 +11,7 @@
 #include "game/rules/GameRules.h"
 #include "game/tables/ItemTable.h"
 #include "game/ui/GameplayHudCommon.h"
+#include "game/ui/UiText.h"
 #include "game/ui/GameplayJournalAuras.h"
 #include "game/ui/GameplayMapProgressBar.h"
 #include "game/ui/GameplayPortraitGems.h"
@@ -145,7 +146,7 @@ std::string attackRecoveryInspectSupplement(
             *context.itemTable(), context.standardItemEnchantTable(), context.specialItemEnchantTable());
         ticks && (statName == "Attack" || profile.canShoot))
     {
-        return "Recovery time: " + std::to_string(*ticks);
+        return UiText::translateTemplate("Recovery time: {ticks}", {{"{ticks}", std::to_string(*ticks)}});
     }
 
     if (statName == "Attack")
@@ -154,15 +155,17 @@ std::string attackRecoveryInspectSupplement(
             mainHandAttackUsesBlasterRecovery(character, *context.itemTable())
                 ? profile.rangedRecoverySeconds
                 : profile.meleeRecoverySeconds;
-        return "Recovery time: " + std::to_string(recoveryTicksFromSeconds(recoverySeconds));
+        return UiText::translateTemplate(
+            "Recovery time: {ticks}", {{"{ticks}", std::to_string(recoveryTicksFromSeconds(recoverySeconds))}});
     }
 
     if (!profile.canShoot)
     {
-        return "Recovery time: N/A";
+        return UiText::translate("Recovery time: N/A");
     }
 
-    return "Recovery time: " + std::to_string(recoveryTicksFromSeconds(profile.rangedRecoverySeconds));
+    return UiText::translateTemplate("Recovery time: {ticks}",
+        {{"{ticks}", std::to_string(recoveryTicksFromSeconds(profile.rangedRecoverySeconds))}});
 }
 
 // A member buff's name: the rules' name for its spell when they rename it (MAW's Vampiric Aura), else the slot's.
@@ -182,11 +185,11 @@ std::string personalBuffName(
 
         if (name != pSpell->name)
         {
-            return name;
+            return UiText::translate(name);
         }
     }
 
-    return GameplayPersonalBuffNames[buffIndex];
+    return UiText::translate(GameplayPersonalBuffNames[buffIndex]);
 }
 
 // A buff's time left, or the rules' text while a member holds it as an aura.
@@ -204,7 +207,7 @@ std::string formatCharacterDetailDuration(float remainingSeconds)
 {
     if (std::isinf(remainingSeconds))
     {
-        return "Constant";
+        return UiText::translate("Constant");
     }
     const int totalSeconds = std::max(0, int(std::lround(remainingSeconds)));
     const int hours = totalSeconds / 3600;
@@ -214,22 +217,25 @@ std::string formatCharacterDetailDuration(float remainingSeconds)
 
     if (hours > 0)
     {
-        parts.push_back(std::to_string(hours) + (hours == 1 ? " Hour" : " Hours"));
+        parts.push_back(UiText::translateTemplate(
+            hours == 1 ? "{value} Hour" : "{value} Hours", {{"{value}", std::to_string(hours)}}));
     }
 
     if (minutes > 0)
     {
-        parts.push_back(std::to_string(minutes) + (minutes == 1 ? " Minute" : " Minutes"));
+        parts.push_back(UiText::translateTemplate(
+            minutes == 1 ? "{value} Minute" : "{value} Minutes", {{"{value}", std::to_string(minutes)}}));
     }
 
     if (hours == 0 && seconds > 0)
     {
-        parts.push_back(std::to_string(seconds) + (seconds == 1 ? " Second" : " Seconds"));
+        parts.push_back(UiText::translateTemplate(
+            seconds == 1 ? "{value} Second" : "{value} Seconds", {{"{value}", std::to_string(seconds)}}));
     }
 
     if (parts.empty())
     {
-        return "0 Seconds";
+        return UiText::translate("0 Seconds");
     }
 
     std::string result;
@@ -328,14 +334,7 @@ constexpr std::array<CharacterStatRowDefinition, 30> CharacterStatRows = {{
 
 std::string skillPageMasteryDisplayName(SkillMastery mastery)
 {
-    const std::string displayName = masteryDisplayName(mastery);
-
-    if (displayName == "Grandmaster")
-    {
-        return "Grand";
-    }
-
-    return displayName;
+    return localizedSkillPageMasteryName(mastery);
 }
 
 void appendCharacterSkillUiRows(
@@ -468,7 +467,7 @@ std::string GameplayHudOverlaySupport::formatRemainingDuration(float remainingSe
 {
     if (std::isinf(remainingSeconds))
     {
-        return "Constant";
+        return UiText::translate("Constant");
     }
     const int totalSeconds = std::max(0, int(std::lround(remainingSeconds)));
     const int hours = totalSeconds / 3600;
@@ -479,23 +478,25 @@ std::string GameplayHudOverlaySupport::formatRemainingDuration(float remainingSe
     {
         if (minutes > 0)
         {
-            return std::to_string(hours) + "h " + std::to_string(minutes) + "m";
+            return UiText::translateTemplate("{hours}h {minutes}m",
+                {{"{hours}", std::to_string(hours)}, {"{minutes}", std::to_string(minutes)}});
         }
 
-        return std::to_string(hours) + "h";
+        return UiText::translateTemplate("{hours}h", {{"{hours}", std::to_string(hours)}});
     }
 
     if (minutes > 0)
     {
         if (seconds > 0 && minutes < 5)
         {
-            return std::to_string(minutes) + "m " + std::to_string(seconds) + "s";
+            return UiText::translateTemplate("{minutes}m {seconds}s",
+                {{"{minutes}", std::to_string(minutes)}, {"{seconds}", std::to_string(seconds)}});
         }
 
-        return std::to_string(minutes) + "m";
+        return UiText::translateTemplate("{minutes}m", {{"{minutes}", std::to_string(minutes)}});
     }
 
-    return std::to_string(seconds) + "s";
+    return UiText::translateTemplate("{seconds}s", {{"{seconds}", std::to_string(seconds)}});
 }
 
 bool GameplayHudOverlaySupport::tryPopulateItemInspectOverlayFromRenderedHudItems(
@@ -855,28 +856,28 @@ void GameplayHudOverlaySupport::updateCharacterInspectOverlay(
                     grandmasterDescription = ruled.masteryLines[3];
                 }
 
-                overlay.normal.text = "Normal: " + normalDescription;
+                overlay.normal.text = UiText::translate("Normal: ") + normalDescription;
                 overlay.normal.availability = skillMasteryAvailability(
                     context.classSkillTable(),
                     pCharacter,
                     row.canonicalName,
                     SkillMastery::Normal);
                 overlay.normal.visible = !normalDescription.empty();
-                overlay.expert.text = "Expert: " + expertDescription;
+                overlay.expert.text = UiText::translate("Expert: ") + expertDescription;
                 overlay.expert.availability = skillMasteryAvailability(
                     context.classSkillTable(),
                     pCharacter,
                     row.canonicalName,
                     SkillMastery::Expert);
                 overlay.expert.visible = !expertDescription.empty();
-                overlay.master.text = "Master: " + masterDescription;
+                overlay.master.text = UiText::translate("Master: ") + masterDescription;
                 overlay.master.availability = skillMasteryAvailability(
                     context.classSkillTable(),
                     pCharacter,
                     row.canonicalName,
                     SkillMastery::Master);
                 overlay.master.visible = !masterDescription.empty();
-                overlay.grandmaster.text = "Grandmaster: " + grandmasterDescription;
+                overlay.grandmaster.text = UiText::translate("Grandmaster: ") + grandmasterDescription;
                 overlay.grandmaster.availability = skillMasteryAvailability(
                     context.classSkillTable(),
                     pCharacter,
@@ -1024,7 +1025,7 @@ void GameplayHudOverlaySupport::updateBuffInspectOverlay(
         {
             continue;
         }
-        overlay.title = "Active Party Buffs";
+        overlay.title = UiText::translate("Active Party Buffs");
         overlay.body.clear();
         for (PartyBuffId id : sortedGameplayBuffs(*pParty))
         {
@@ -1032,17 +1033,17 @@ void GameplayHudOverlaySupport::updateBuffInspectOverlay(
             if (definition.presentation == panel)
             {
                 const PartyBuffState &buff = *pParty->partyBuff(id);
-                appendPopupBodyLine(overlay.body, std::string(definition.pName) + " - "
+                appendPopupBodyLine(overlay.body, UiText::translate(definition.pName) + " - "
                     + formatBuffDuration(*pParty, buff.spellId, buff.remainingSeconds, formatRemainingDuration));
             }
         }
         if (overlay.body.empty())
         {
-            overlay.body = "No active buffs";
+            overlay.body = UiText::translate("No active buffs");
         }
         if (journalHasAuraPanel(context))
         {
-            appendPopupBodyLine(overlay.body, "Click: open the aura panel");
+            appendPopupBodyLine(overlay.body, UiText::translate("Click: open the aura panel"));
         }
         anchor(*rect);
         return;
@@ -1061,11 +1062,11 @@ void GameplayHudOverlaySupport::updateBuffInspectOverlay(
     if (inspected)
     {
         const PartyBuffState *pBuff = pParty->partyBuff(inspected->id);
-        overlay.title = GameplayBuffHudDefinitions[size_t(inspected->id)].pName;
+        overlay.title = UiText::translate(GameplayBuffHudDefinitions[size_t(inspected->id)].pName);
         overlay.body = formatBuffDuration(*pParty, pBuff->spellId, pBuff->remainingSeconds, formatRemainingDuration);
         if (pBuff->power > 0)
         {
-            appendPopupBodyLine(overlay.body, "Power: " + std::to_string(pBuff->power));
+            appendPopupBodyLine(overlay.body, UiText::translate("Power: ") + std::to_string(pBuff->power));
         }
         anchor(inspected->rect);
     }
@@ -1144,7 +1145,7 @@ void GameplayHudOverlaySupport::updateCharacterDetailOverlay(
     overlay.active = true;
     const std::string characterName = pCharacter->name.empty() ? "Member" : pCharacter->name;
     const std::string characterClass = party.rules().classes.displayName(party, *pCharacter);
-    overlay.title = characterClass.empty() ? characterName : characterName + " the " + characterClass;
+    overlay.title = characterClass.empty() ? characterName : UiText::titleWithName(characterName, characterClass);
     overlay.body.clear();
     overlay.portraitTextureName = defaultCharacterPortraitTextureName(*pCharacter);
     overlay.hitPointsText = std::to_string(summary.health.current) + " / " + std::to_string(summary.health.maximum);

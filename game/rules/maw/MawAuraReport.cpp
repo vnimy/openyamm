@@ -1,3 +1,4 @@
+#include "game/ui/UiText.h"
 #include "game/rules/maw/MawSpellRules.h"
 
 #include "game/party/Party.h"
@@ -241,39 +242,39 @@ void describe(AuraEffect &effect, const EffectRef &ref, uint32_t spellId, const 
             effect.kind = AuraValueKind::BonusPercent;
             return;
         case Effect::Armour:
-            effect.label = hour ? "Stone Skin, armour" : "Armour class";
+            effect.label = UiText::translate(hour ? "Stone Skin, armour" : "Armour class");
             effect.kind = AuraValueKind::Bonus;
             return;
         case Effect::Attack:
-            effect.label = "Attack, melee and ranged";
+            effect.label = UiText::translate("Attack, melee and ranged");
             effect.kind = AuraValueKind::Bonus;
             return;
         case Effect::HitChance:
-            effect.label = "Chance to hit";
+            effect.label = UiText::translate("Chance to hit");
             effect.kind = AuraValueKind::BonusPercent;
             return;
         case Effect::Haste:
-            effect.label = hour ? "Haste, recovery" : "Faster recovery";
+            effect.label = UiText::translate(hour ? "Haste, recovery" : "Faster recovery");
             effect.kind = AuraValueKind::BonusPercent;
             return;
         case Effect::Shield:
-            effect.label = hour ? "Shield, magic damage taken" : "Magic damage taken";
+            effect.label = UiText::translate(hour ? "Shield, magic damage taken" : "Magic damage taken");
             effect.kind = AuraValueKind::ReductionPercent;
             return;
         case Effect::Fate:
-            effect.label = hour ? "Fate, critical chance" : "Critical chance";
+            effect.label = UiText::translate(hour ? "Fate, critical chance" : "Critical chance");
             effect.kind = AuraValueKind::BonusPercent;
             return;
         case Effect::Heroism:
-            effect.label = "Melee damage";
+            effect.label = UiText::translate("Melee damage");
             effect.kind = AuraValueKind::BonusPercent;
             return;
         case Effect::Hammerhands:
-            effect.label = "Unarmed damage";
+            effect.label = UiText::translate("Unarmed damage");
             effect.kind = AuraValueKind::BonusPercent;
             return;
         case Effect::EmpowerMagic:
-            effect.label = "Damage spells";
+            effect.label = UiText::translate("Damage spells");
             effect.kind = AuraValueKind::BonusPercent;
             return;
         case Effect::Text:
@@ -285,51 +286,51 @@ void describe(AuraEffect &effect, const EffectRef &ref, uint32_t spellId, const 
     switch (spellId)
     {
         case 1:
-            effect.label = "Light around the party";
+            effect.label = UiText::translate("Light around the party");
             effect.text = "power " + std::to_string(std::max(source.mastery, 0) + 1);
             break;
         case 4:
-            effect.label = "Weapons and arrows burn";
+            effect.label = UiText::translate("Weapons and arrows burn");
             effect.text = std::to_string(10 + 5 * (std::clamp(source.mastery, 1, 4) - 1)) + " % of level damage";
             break;
         case 8:
-            effect.label = "Burns nearby monsters";
+            effect.label = UiText::translate("Burns nearby monsters");
             effect.text = "10 + 1-30 per skill point";
             break;
         case 12:
-            effect.label = "Minimap";
+            effect.label = UiText::translate("Minimap");
             effect.text = "monsters and points of interest";
             break;
         case 27:
-            effect.label = "Walking on water";
+            effect.label = UiText::translate("Walking on water");
             effect.text = "the whole party";
             break;
         case 50:
-            effect.label = "Death";
+            effect.label = UiText::translate("Death");
             effect.text = "delayed at massive hit point loss";
             break;
         case 56:
-            effect.label = "Spell points";
+            effect.label = UiText::translate("Spell points");
             effect.text = "regained over time";
             break;
         case 71:
-            effect.label = "Hit points";
+            effect.label = UiText::translate("Hit points");
             effect.text = "regained over time";
             break;
         case 75:
-            effect.label = "Immune to";
+            effect.label = UiText::translate("Immune to");
             effect.text = "poison, disease, stone, death";
             break;
         case 91:
-            effect.label = "Attacks heal";
+            effect.label = UiText::translate("Attacks heal");
             effect.text = "part of the damage dealt";
             break;
         case 95:
-            effect.label = "Monsters that hit";
+            effect.label = UiText::translate("Monsters that hit");
             effect.text = "take what they inflict";
             break;
         default:
-            effect.label = "Effect";
+            effect.label = UiText::translate("Effect");
             effect.text = "party-wide";
             break;
     }

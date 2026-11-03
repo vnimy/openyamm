@@ -58,6 +58,11 @@ std::string displaySkillName(const std::string &skillName);
 // The active ruleset's names for skills it shows differently (MAW: Learning is Ascension); empty for Standard.
 void setSkillDisplayNameOverrides(const std::map<std::string, std::string> &displayNames);
 std::string masteryDisplayName(SkillMastery mastery);
+// The translated level name (大师/专家…). Mastery names share their spelling with class names, so the
+// lookup uses the "SkillMastery: <name>" key and only falls back to the bare name when that key is absent.
+std::string localizedMasteryName(SkillMastery mastery);
+// The skill sheet's short level label ("Grand" for grandmaster), translated the same way.
+std::string localizedSkillPageMasteryName(SkillMastery mastery);
 // Every skill in id order, the technology skills last.
 std::vector<std::string> allCanonicalSkillNames();
 std::optional<std::string> skillNameForSkillId(uint32_t skillId);
