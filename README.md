@@ -8,14 +8,50 @@ SDL3）。上游的文本系统是「单字节 CP1252 + 256 个字形槽」，�
 
 | | |
 |---|---|
-| 上游基线 | tag `v1.19`（commit `efe8ad0`） |
-| 配套补丁版本 | 1.19.3 |
+| 上游基线 | tag `v1.20`（commit `1add1d3`） |
+| 配套补丁版本 | 1.20.0 |
 | 上游原始说明 | [上游 README](https://github.com/pjasicek/openyamm) |
 | 汉化语料与发布包 | [vnimy/openyamm-zh-cn](https://github.com/vnimy/openyamm-zh-cn) |
 | 许可 | GPL-3.0（见 [LICENSE](LICENSE)） |
 
 > 这个仓库**不含译文数据，也不含任何游戏资产**。它只提供「能渲染中文的引擎」。
 > 译文、中文字体、打包脚本都在 [openyamm-zh-cn](https://github.com/vnimy/openyamm-zh-cn)。
+
+---
+
+## 资源包（游戏内容）怎么下载、怎么用
+
+游戏资产（PC 约 5.41 GiB）**不在 GitHub 上**，由作者自建频道提供；GitHub Releases 里只有几十 MB 的「启动器 + 程序」小包。
+
+| 平台 | 频道清单 | 包数 / 总大小 |
+|---|---|---|
+| PC（windows-x64） | `https://jasicek.net/openyamm/updates/channels/stable/windows-x64.json` | 166 个 / 5.41 GiB |
+| Android（arm64） | `https://jasicek.net/openyamm/updates/channels/stable/android-arm64.json` | 112 个 / 3.24 GiB |
+
+- 单个包：`https://jasicek.net/openyamm/updates/packs/<sha256>.zip`（文件名就是内容哈希，不可变、支持 Range 断点续传）
+- 程序包：`https://jasicek.net/openyamm/updates/apps/<sha256>.zip` / `.apk`；玩家下载页 `https://jasicek.net/openyamm/downloads/1.20/`
+- 清单带 Ed25519 签名（同名 `.sig`），公钥编在游戏里；`jasicek.net` 直连即可，不需要代理。
+
+### PC
+
+1. **全自动（推荐）**：主菜单点 *Update to OpenYAMM 1.20*，按清单只下缺的包，落到 `<安装目录>/assets/packs/`，
+   同时写好 `app/1.20/index.json` 并切换 `app/current`。
+2. **自动检查开关**：`settings.ini`
+   ```ini
+   [updates]
+   check_for_updates=ask     ; ask | auto | off
+   url=https://jasicek.net/openyamm/updates/
+   ```
+3. **命令行**（不开界面）：`openyamm.exe --headless-update [频道URL]`
+4. **手动 / 离线**：看 `app/1.20/index.json` 里每个包的 `file` 字段（如 `engine.core-4d36264717f50bbd.zip`），
+   把对应的 `<sha256>.zip` 下载后改名放进 `assets/packs/`；整个 `assets/packs` 目录也可以直接拷到另一台机器。
+
+### Android
+
+1. 首次启动按清单下载到 `Android/data/org.openyamm.android/files/content/`（`index.json` + `packs/*.zip`）。
+2. **离线 / 搬家**：本仓库 `build-android/make_content_bundle.ps1` 把这个目录打成一个 zip，拷进手机解压到同一路径即可。
+3. **增量**：1.19 → 1.20 的安卓内容 112 个包里 99 个完全相同，只有 13 个变化（合计 0.141 GiB），
+   已经下过 1.19 内容的手机只需换这 13 个包和 `index.json`。
 
 ---
 
