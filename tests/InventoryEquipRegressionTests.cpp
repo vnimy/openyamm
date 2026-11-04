@@ -9,6 +9,7 @@
 #include "game/items/ItemRuntime.h"
 #include "game/party/Party.h"
 #include "game/party/SpellIds.h"
+#include "game/tables/ItemTable.h"
 
 #include "tests/RegressionGameData.h"
 
@@ -577,6 +578,60 @@ TEST_CASE("inventory item use potions and horseshoe apply the expected effects")
     CHECK_EQ(pMember->permanentBonuses.intellect, 50);
     CHECK(horseshoeResult.consumed);
     CHECK_EQ(pMember->skillPoints, 5u);
+}
+
+TEST_CASE("merged items stay usable when a text mod localises their names")
+{
+    OpenYAMM::Engine::AssetFileSystem assets = {};
+    OpenYAMM::Game::ItemTable itemTable = {};
+    // The deployed translated table replaces the engine's items.txt, so these are its names for the merged rows.
+    const std::vector<std::vector<std::string>> itemRows = {
+        {"634", "item302", "长笛"},
+        {"643", "item311", "托伯斯克果"},
+        {"655", "item329", "绿苹果"},
+        {"656", "item326", "马蹄铁"},
+        {"1418", "7item260", "精灵灯"},
+        {"1432", "7item274", "红苹果"},
+        {"1434", "7item277", "拨弦琴"},
+        {"1435", "7item276", "风笛"},
+        {"1436", "7item278", "格芬哈特的号角"},
+        {"1448", "7item290", "马蹄铁"},
+        {"1452", "7item288", "瓶中之城"},
+        {"2083", "horsshu", "马蹄铁"},
+        {"2098", "flute", "长笛"},
+        {"2104", "apple", "苹果"},
+    };
+
+    REQUIRE(itemTable.load(assets, itemRows, {}));
+
+    const auto classify = [&itemTable](uint32_t itemId)
+    {
+        OpenYAMM::Game::InventoryItem item = {};
+        item.objectDescriptionId = itemId;
+        return OpenYAMM::Game::InventoryItemUseRuntime::classifyItemUse(item, itemTable);
+    };
+
+    for (uint32_t foodItemId : {643u, 655u, 1432u, 2104u})
+    {
+        CHECK_MESSAGE(classify(foodItemId) == OpenYAMM::Game::InventoryItemUseAction::EatFoodItem, foodItemId);
+    }
+
+    for (uint32_t instrumentItemId : {634u, 1434u, 1435u, 1436u, 2098u})
+    {
+        CHECK_MESSAGE(
+            classify(instrumentItemId) == OpenYAMM::Game::InventoryItemUseAction::PlayInstrument,
+            instrumentItemId);
+    }
+
+    for (uint32_t horseshoeItemId : {656u, 1448u, 2083u})
+    {
+        CHECK_MESSAGE(
+            classify(horseshoeItemId) == OpenYAMM::Game::InventoryItemUseAction::UseHorseshoe,
+            horseshoeItemId);
+    }
+
+    CHECK_EQ(classify(1418), OpenYAMM::Game::InventoryItemUseAction::UseGenieLamp);
+    CHECK_EQ(classify(1452), OpenYAMM::Game::InventoryItemUseAction::UseTempleInABottle);
 }
 
 TEST_CASE("item generator unique rare item marks party and does not repeat")

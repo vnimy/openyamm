@@ -20,7 +20,19 @@ namespace
 constexpr int MinutesPerDay = 24 * 60;
 constexpr int DaysPerMonth = 28;
 constexpr uint32_t GreenAppleItemId = 655;
-constexpr uint32_t HorseshoeItemId = 656;
+constexpr uint32_t Mm6HorseshoeItemId = 656;
+constexpr uint32_t Mm7HorseshoeItemId = 1448;
+constexpr uint32_t Mm8HorseshoeItemId = 2083;
+constexpr uint32_t RedAppleItemId = 1432;
+constexpr uint32_t AppleItemId = 2104;
+constexpr uint32_t ToberskFruitItemId = 643;
+constexpr uint32_t Mm6FluteItemId = 634;
+constexpr uint32_t LuteItemId = 1434;
+constexpr uint32_t FaeriePipesItemId = 1435;
+constexpr uint32_t GryphonheartTrumpetItemId = 1436;
+constexpr uint32_t Mm8FluteItemId = 2098;
+constexpr uint32_t GenieLampItemId = 1418;
+constexpr uint32_t TempleInABottleItemId = 1452;
 constexpr uint32_t DimensionDoorScrollItemId = 190;
 constexpr uint32_t ChargedConnectorStoneItemId = 624;
 constexpr uint32_t DischargedConnectorStoneItemId = 625;
@@ -638,11 +650,40 @@ std::string itemCannotBeUsedStatusText(const ItemDefinition &itemDefinition)
     return itemDisplayNameForStatus(itemDefinition) + " can not be used that way";
 }
 
+bool isHorseshoeItem(const InventoryItem &item, const ItemDefinition &itemDefinition)
+{
+    // The merged base table carries one horseshoe per world, and a text mod may replace that table with localised
+    // item names, so the merged item ids decide and only the English name remains a fallback (custom content).
+    switch (item.objectDescriptionId)
+    {
+        case Mm6HorseshoeItemId:
+        case Mm7HorseshoeItemId:
+        case Mm8HorseshoeItemId:
+            return true;
+        default:
+            break;
+    }
+
+    return itemNameEquals(itemDefinition, "horseshoe");
+}
+
 bool isFoodItem(const InventoryItem &item, const ItemDefinition &itemDefinition)
 {
+    // The merged base table carries these foods once per world, and a text mod may replace that table with localised
+    // item names, so the merged item ids decide and only the English names remain a fallback (custom content).
+    switch (item.objectDescriptionId)
+    {
+        case GreenAppleItemId:
+        case RedAppleItemId:
+        case AppleItemId:
+        case ToberskFruitItemId:
+            return true;
+        default:
+            break;
+    }
+
     // Whole names only: "Labyrinth Grapple" is a polearm, not an apple.
-    return item.objectDescriptionId == GreenAppleItemId
-        || itemNameEquals(itemDefinition, "apple")
+    return itemNameEquals(itemDefinition, "apple")
         || itemNameEquals(itemDefinition, "red apple")
         || itemNameEquals(itemDefinition, "green apple")
         || itemNameEquals(itemDefinition, "tobersk fruit");
@@ -650,6 +691,22 @@ bool isFoodItem(const InventoryItem &item, const ItemDefinition &itemDefinition)
 
 std::optional<SoundId> instrumentSoundId(const ItemDefinition &itemDefinition)
 {
+    // Instruments are matched by their merged item ids for the same reason as the foods above. A flute answers with
+    // the lute sound because "lute" is a substring of "flute": the English names decided that before the ids did.
+    switch (itemDefinition.itemId)
+    {
+        case LuteItemId:
+        case Mm6FluteItemId:
+        case Mm8FluteItemId:
+            return SoundId::LuteGuitar;
+        case FaeriePipesItemId:
+            return SoundId::PanFlute;
+        case GryphonheartTrumpetItemId:
+            return SoundId::Trumpet;
+        default:
+            break;
+    }
+
     if (itemNameContains(itemDefinition, "lute"))
     {
         return SoundId::LuteGuitar;
@@ -967,12 +1024,12 @@ InventoryItemUseAction InventoryItemUseRuntime::classifyItemUse(
         return InventoryItemUseAction::ReadMessageScroll;
     }
 
-    if (item.objectDescriptionId == HorseshoeItemId || itemNameEquals(*pItemDefinition, "horseshoe"))
+    if (isHorseshoeItem(item, *pItemDefinition))
     {
         return InventoryItemUseAction::UseHorseshoe;
     }
 
-    if (itemNameEquals(*pItemDefinition, "genie lamp"))
+    if (item.objectDescriptionId == GenieLampItemId || itemNameEquals(*pItemDefinition, "genie lamp"))
     {
         return InventoryItemUseAction::UseGenieLamp;
     }
@@ -992,7 +1049,7 @@ InventoryItemUseAction InventoryItemUseRuntime::classifyItemUse(
         return InventoryItemUseAction::PlayInstrument;
     }
 
-    if (itemNameEquals(*pItemDefinition, "temple in a bottle"))
+    if (item.objectDescriptionId == TempleInABottleItemId || itemNameEquals(*pItemDefinition, "temple in a bottle"))
     {
         return InventoryItemUseAction::UseTempleInABottle;
     }
