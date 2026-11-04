@@ -220,6 +220,27 @@ void DebugConsole::clearCommands()
     m_commands.clear();
 }
 
+void DebugConsole::setAiAdviceTextProvider(std::function<std::string()> provider)
+{
+    m_aiAdviceTextProvider = std::move(provider);
+}
+
+void DebugConsole::copyAiAdviceToClipboard()
+{
+    const std::string text = m_aiAdviceTextProvider ? m_aiAdviceTextProvider() : std::string();
+
+    if (text.empty())
+    {
+        addMessage(MessageKind::Warning, UiText::translate("No party yet: start a game before asking for advice."));
+        return;
+    }
+
+    ImGui::SetClipboardText(text.c_str());
+    addMessage(
+        MessageKind::Success,
+        UiText::translate("AI advice copied to the clipboard.") + " (" + std::to_string(text.size()) + " bytes)");
+}
+
 void DebugConsole::setItemOptions(std::vector<ItemOption> itemOptions)
 {
     std::sort(
@@ -854,6 +875,13 @@ void DebugConsole::renderConsoleWindow(int width, int height)
         ImGui::SetClipboardText(joinedMessageText().c_str());
     }
 
+    ImGui::SameLine();
+
+    if (ImGui::Button(UiText::translate("AI Advice").c_str()))
+    {
+        copyAiAdviceToClipboard();
+    }
+
     ImGui::Separator();
     const float inputHeight = ImGui::GetFrameHeightWithSpacing();
     const float resizeHandleHeight = 8.0f;
@@ -1034,6 +1062,13 @@ void DebugConsole::renderMobileConsoleWindow(int width, int height)
     if (ImGui::Button(UiText::translate("Clear").c_str()))
     {
         clearMessages();
+    }
+
+    ImGui::SameLine();
+
+    if (ImGui::Button(UiText::translate("AI Advice").c_str()))
+    {
+        copyAiAdviceToClipboard();
     }
 
     ImGui::SameLine();
@@ -1244,6 +1279,11 @@ void DebugConsole::renderMobileQuickActions()
     const std::string uiReportLabel = toggleLabel("UI Text Report", UiText::unresolvedReportEnabled());
     commandButton(uiReportLabel.c_str(), UiText::unresolvedReportEnabled() ? "uireport off" : "uireport on");
     commandButton("Dump UI Text", "uireport dump");
+
+    if (ImGui::Button(UiText::translate("AI Advice").c_str(), ImVec2(-1.0f, 0.0f)))
+    {
+        copyAiAdviceToClipboard();
+    }
 }
 
 void DebugConsole::renderMobileQuestBitControls()

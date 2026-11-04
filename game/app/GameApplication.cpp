@@ -7,6 +7,7 @@
 
 #include "game/StringUtils.h"
 #include "game/app/ProfilingControl.h"
+#include "game/debug/AiAdvicePrompt.h"
 #include "game/debug/GameplayDebugTrace.h"
 #include "game/debug/ImGuiCjkFont.h"
 #include "game/ui/UiText.h"
@@ -36,6 +37,7 @@
 #include "game/tables/ClassMultiplierTable.h"
 #include "game/tables/ClassSkillTable.h"
 #include "game/tables/ItemTable.h"
+#include "game/tables/JournalAutonoteTable.h"
 #include "game/tables/NpcDialogTable.h"
 #include "game/ui/screens/ArcomageScreen.h"
 #include "game/ui/screens/CutsceneVideoScreen.h"
@@ -3011,6 +3013,52 @@ void GameApplication::registerDebugConsoleCommands()
             }
 
             return commandResult(true, out.str());
+        }});
+
+    // One builder for the AI advice text: the console button copies it, `aiadvice` prints it for scripting and checks.
+    const auto aiAdvicePrompt = [this, activeParty]() -> std::string
+    {
+        Party *pParty = activeParty();
+
+        if (pParty == nullptr)
+        {
+            return {};
+        }
+
+        std::vector<std::string> autonotes;
+
+        for (const JournalAutonoteEntry &entry : m_gameSession.data().journalAutonoteTable().entries())
+        {
+            if (pParty->hasAutonote(entry.id))
+            {
+                autonotes.push_back(entry.text);
+            }
+        }
+
+        return buildAiAdvicePrompt(*pParty, m_activeWorldManifest.id, m_gameSession.currentMapFileName(), autonotes);
+    };
+
+    m_debugConsole.setAiAdviceTextProvider(aiAdvicePrompt);
+
+    m_debugConsole.registerCommand({
+        .name = "aiadvice",
+        .description = "Print the AI advice prompt for the current party; the console's AI Advice button copies it.",
+        .usage = "aiadvice",
+        .callback = [aiAdvicePrompt, commandResult](const DebugConsole::CommandContext &context)
+        {
+            if (!context.args.empty())
+            {
+                return commandResult(false, "Usage: aiadvice");
+            }
+
+            const std::string prompt = aiAdvicePrompt();
+
+            if (prompt.empty())
+            {
+                return commandResult(false, "No active party.");
+            }
+
+            return commandResult(true, prompt);
         }});
 
     m_debugConsole.registerCommand({

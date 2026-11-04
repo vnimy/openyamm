@@ -25,6 +25,7 @@ add_library(openyamm_game STATIC
     arcomage/ArcomageLoader.cpp
     arcomage/ArcomageRules.cpp
     data/ActorNameResolver.cpp
+    debug/AiAdvicePrompt.cpp
     debug/DebugConsole.cpp
     debug/GameplayDebugTrace.cpp
     debug/MawTestParties.cpp

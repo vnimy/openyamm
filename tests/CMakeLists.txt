@@ -127,6 +127,7 @@ add_executable(openyamm_unit_tests
     ViewFrustumTests.cpp
     WaterRenderingTests.cpp
     PartyRegressionTests.cpp
+    AiAdvicePromptTests.cpp
     TechnologySkillTests.cpp
     PathMapTests.cpp
     PathPlannerTests.cpp
@@ -134,6 +135,7 @@ add_executable(openyamm_unit_tests
     ScreenManagerTests.cpp
     ScreenshotTourTests.cpp
     ../game/debug/ScreenshotTour.cpp
+    ../game/debug/AiAdvicePrompt.cpp
     ScenarioYamlLoaderTests.cpp
     ../game/scenario/ScenarioYamlLoader.cpp
     SkyStateTests.cpp

@@ -1,0 +1,13 @@
+id: test.debug.ai_advice
+title: "调试控制台 AI 建议：提示词带队伍与进度数据"
+world: mm7
+mode: faithful
+steps:
+  - new_game_flow: {start_map: 7out01.odm}
+  # 按钮复制的就是这条命令的输出：开头是给模型的指令，随后是实时数据。
+  - console: {line: "aiadvice", expect_contains: "【这份数据的范围】"}
+  - console: {line: "aiadvice", expect_contains: "## 当前进度"}
+  - console: {line: "aiadvice", expect_contains: "金币："}
+  - console: {line: "aiadvice", expect_contains: "### 1. "}
+  - console: {line: "aiadvice", expect_contains: "属性：力量"}
+  - console: {line: "aiadvice", expect_contains: "- 技能："}

@@ -85,6 +85,8 @@ public:
     void setMapOptions(std::vector<MapOption> mapOptions);
     void setMapOptionsFromMapStats(const MapStats &mapStats);
     void setDebugToggleStates(bool immortal, bool unlimitedMana, bool invisible);
+    // The AI advice button asks for the text when it is clicked (the live state, not a cached one) and copies it.
+    void setAiAdviceTextProvider(std::function<std::string()> provider);
 
     void setEnabled(bool enabled);
     void toggleEnabled();
@@ -123,6 +125,7 @@ private:
     void renderMobileQuestBitControls();
     void renderMobileAwardControls();
     void renderQuickActions();
+    void copyAiAdviceToClipboard();
     void renderQuestBitControls();
     void renderAwardControls();
     void renderMapControls();
@@ -142,6 +145,7 @@ private:
     void beginTouchScrollGuard();
     void endTouchScrollGuard();
 
+    std::function<std::string()> m_aiAdviceTextProvider;
     std::unordered_map<std::string, CommandDefinition> m_commands;
     std::vector<Message> m_messages;
     size_t m_totalMessageCount = 0;
