@@ -1239,6 +1239,11 @@ void DebugConsole::renderMobileQuickActions()
     commandButton(immortalLabel.c_str(), "config toggle immortal");
     commandButton(manaLabel.c_str(), "config toggle unlimited_mana");
     commandButton(invisibleLabel.c_str(), "config toggle invisible");
+
+    // 手机上输入命令很麻烦，所以报告开关必须有按钮，否则安卓端根本用不上。
+    const std::string uiReportLabel = toggleLabel("UI Text Report", UiText::unresolvedReportEnabled());
+    commandButton(uiReportLabel.c_str(), UiText::unresolvedReportEnabled() ? "uireport off" : "uireport on");
+    commandButton("Dump UI Text", "uireport dump");
 }
 
 void DebugConsole::renderMobileQuestBitControls()
@@ -1443,8 +1448,9 @@ void DebugConsole::renderQuickActions()
 {
     const auto toggleLabel = [](std::string_view name, bool value)
     {
-        std::string label(name);
-        label += value ? " [On]" : " [Off]";
+        // The suffix is translated separately so a translation can move or drop it.
+        std::string label = UiText::translate(std::string(name));
+        label += UiText::translate(value ? " [On]" : " [Off]");
         return label;
     };
 

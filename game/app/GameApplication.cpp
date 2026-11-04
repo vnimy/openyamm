@@ -3001,7 +3001,9 @@ void GameApplication::registerDebugConsoleCommands()
             }
 
             std::ostringstream out;
-            out << texts.size() << " untranslated UI strings:";
+            out << UiText::translateTemplate(
+                "{count} untranslated UI strings:",
+                {{"{count}", std::to_string(texts.size())}});
 
             for (const std::string &text : texts)
             {
