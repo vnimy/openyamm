@@ -204,9 +204,12 @@ D:/Projects/MM678/
 ```bash
 git remote add upstream https://github.com/pjasicek/openyamm.git   # 只需一次
 git fetch upstream --tags
-git switch -c fork/1.20 upstream/v1.20
-git merge fork/1.19          # 或者在 fork/1.19 上直接 merge v1.20
+git switch zh-cn
+git merge upstream/v1.21     # 分支名不带版本号，跨版本只做一次 merge
 ```
+
+`zh-cn` 是这条 fork 唯一的长期分支（远端对应 `origin/main`）。分支名不带版本号，所以跨大版本时
+不新建 `fork/<版本>` 分支，只把上游 tag merge 进来；下面的冲突热点表按同样方式维护。
 
 冲突热点（改动集中的地方）：
 
